@@ -1,0 +1,23 @@
+{
+    "name": "tinyml_anomaly",
+    "version": "1.0.0",
+    "description": "TinyML Anomaly Guard - Edge device anomaly detection with lightweight ML models",
+    "author": "Cynapse",
+    "animal": "🐁",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "main.py",
+    "requires_signature": false,
+    "dependencies": [
+        "python",
+        "tensorflow-lite"
+    ],
+    "commands": {
+        "train": "Train anomaly detection model",
+        "detect": "Run anomaly detection",
+        "export": "Export model to TFLite"
+    }
+}

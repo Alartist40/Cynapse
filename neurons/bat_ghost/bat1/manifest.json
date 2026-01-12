@@ -1,0 +1,14 @@
+{
+    "stick_id": "bat1",
+    "role": "Whisper Wake",
+    "description": "Shard 1 carrier with ultrasonic wake-up functionality",
+    "shard_hash": "",
+    "shard_index": 1,
+    "total_shards": 3,
+    "size": 0,
+    "features": [
+        "ultrasonic_wake",
+        "esp32_firmware"
+    ],
+    "readme": "Plug me in, whistle 18 kHz, I wake up"
+}

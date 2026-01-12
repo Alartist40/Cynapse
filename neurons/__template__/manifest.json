@@ -1,0 +1,15 @@
+{
+    "name": "__template__",
+    "version": "1.0.0",
+    "description": "Template neuron - copy this folder to create a new neuron",
+    "author": "Your Name",
+    "animal": "animal_name",
+    "platform": ["win", "linux", "mac"],
+    "entry_point": "main.py",
+    "requires_signature": false,
+    "dependencies": [],
+    "commands": {
+        "run": "Execute the main function",
+        "help": "Show help information"
+    }
+}

@@ -1,0 +1,8 @@
+{
+    "assembly_key": "YOUR_ASSEMBLY_KEY_HERE_32_CHARS",
+    "openai_api_key": "",
+    "anthropic_api_key": "",
+    "huggingface_token": "",
+    "whisper_model_path": "neurons/elara/whisper/ggml-tiny.en-q5_1.bin",
+    "elara_model_path": "neurons/elara/model/elara.gguf"
+}

@@ -1,0 +1,14 @@
+- name: "Clean Temporary Files"
+  tag: "clean_temp"
+  cmd: ["cmd", "/c", "del", "/q", "/f", "/s", "%TEMP%\\*"]
+  timeout: 30
+  
+- name: "Flush DNS"
+  tag: "flush_dns"
+  cmd: ["ipconfig", "/flushdns"]
+  timeout: 10
+
+- name: "Restart Explorer"
+  tag: "restart_explorer"
+  cmd: ["taskkill", "/f", "/im", "explorer.exe", "&", "start", "explorer.exe"]
+  timeout: 15

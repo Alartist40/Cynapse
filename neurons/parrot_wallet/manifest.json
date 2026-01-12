@@ -1,0 +1,23 @@
+{
+    "name": "parrot_wallet",
+    "version": "1.0.0",
+    "description": "Off-Grid Voice Wallet - Offline cryptocurrency wallet with voice commands",
+    "author": "Cynapse",
+    "animal": "🦜",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "wallet.py",
+    "requires_signature": false,
+    "dependencies": [
+        "python",
+        "bip39"
+    ],
+    "commands": {
+        "generate": "Generate new wallet",
+        "balance": "Check wallet balance",
+        "speak": "Speak text using TTS"
+    }
+}

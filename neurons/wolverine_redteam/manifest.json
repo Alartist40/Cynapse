@@ -1,0 +1,23 @@
+{
+    "name": "wolverine_redteam",
+    "version": "1.0.0",
+    "description": "Local RAG Red-Team - Offline retrieval-augmented generation for security testing",
+    "author": "Cynapse",
+    "animal": "🐺",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "redteam.py",
+    "requires_signature": false,
+    "dependencies": [
+        "python",
+        "chromadb"
+    ],
+    "commands": {
+        "ingest": "Ingest documents for RAG",
+        "query": "Query the knowledge base",
+        "attack": "Generate attack scenarios"
+    }
+}

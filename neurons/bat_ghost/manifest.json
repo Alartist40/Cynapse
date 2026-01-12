@@ -1,0 +1,23 @@
+{
+    "name": "bat_ghost",
+    "version": "1.0.0",
+    "description": "Ghost Shell - Distributed AI model across 3 USB sticks with ultrasonic wake",
+    "author": "Cynapse",
+    "animal": "🦇",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "assemble.py",
+    "requires_signature": false,
+    "dependencies": [
+        "pyaudio",
+        "numpy"
+    ],
+    "commands": {
+        "assemble": "Combine shards into working model",
+        "split": "Split a model into encrypted shards",
+        "detect": "Listen for 18 kHz whistle"
+    }
+}

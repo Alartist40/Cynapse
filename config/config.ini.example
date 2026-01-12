@@ -1,0 +1,30 @@
+[general]
+# Cynapse Hub Configuration
+hub_name = Cynapse Hub
+version = 1.0.0
+log_level = INFO
+
+[voice]
+# Voice control settings
+whistle_frequency = 18000
+whistle_threshold = 1000000
+sample_rate = 48000
+chunk_size = 1024
+
+[assembly]
+# Shard assembly settings
+temp_dir = temp
+assembled_model = temp/assembled.gguf
+enable_encryption = true
+
+[logging]
+# Audit log settings
+log_dir = temp/logs
+log_file = audit.ndjson
+max_log_size_mb = 100
+
+[neurons]
+# Neuron discovery settings
+neurons_dir = neurons
+verify_signatures = true
+timeout_seconds = 30

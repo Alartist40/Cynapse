@@ -1,0 +1,9 @@
+[package]
+name = "sign-model"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ed25519-dalek = { version = "2", default-features = false, features = ["rand_core", "std"] }
+blake3 = "1"
+rand_core = { version = "0.6", features = ["std"]  }

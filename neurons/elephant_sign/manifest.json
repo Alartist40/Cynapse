@@ -1,0 +1,23 @@
+{
+    "name": "elephant_sign",
+    "version": "1.0.0",
+    "description": "Signed-Model Distribution - Cryptographic signing and verification for ML models",
+    "author": "Cynapse",
+    "animal": "🐘",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "sign.py",
+    "requires_signature": false,
+    "dependencies": [
+        "python",
+        "cryptography"
+    ],
+    "commands": {
+        "sign": "Sign a model or binary",
+        "verify": "Verify a signature",
+        "keygen": "Generate signing keys"
+    }
+}

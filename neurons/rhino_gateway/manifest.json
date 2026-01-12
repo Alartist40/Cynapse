@@ -1,0 +1,21 @@
+{
+    "name": "rhino_gateway",
+    "version": "1.0.0",
+    "description": "Zero-Trust LLM Gateway - Secure API proxy with rate limiting and access control",
+    "author": "Cynapse",
+    "animal": "🦏",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "main.go",
+    "requires_signature": false,
+    "dependencies": [
+        "go"
+    ],
+    "commands": {
+        "run": "Start the gateway server",
+        "config": "Configure gateway settings"
+    }
+}

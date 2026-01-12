@@ -1,0 +1,19 @@
+- name: "Network Reset"
+  tag: "reset_network"
+  cmd: ["netsh", "winsock", "reset"]
+  timeout: 10
+
+- name: "Flush DNS"
+  tag: "flush_dns"
+  cmd: ["ipconfig", "/flushdns"]
+  timeout: 10
+
+- name: "Renew IP"
+  tag: "renew_ip"
+  cmd: ["ipconfig", "/renew"]
+  timeout: 15
+
+- name: "Ping Google (Check Internet)"
+  tag: "ping_check"
+  cmd: ["ping", "8.8.8.8"]
+  timeout: 10

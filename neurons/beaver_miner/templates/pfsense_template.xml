@@ -1,0 +1,15 @@
+<rule>
+  <type>{{ action_type }}</type>
+  <interface>wan</interface>
+  <ipprotocol>inet</ipprotocol>
+  <protocol>{{ protocol }}</protocol>
+  <source>
+    {{ source_xml }}
+  </source>
+  <destination>
+    {{ destination_xml }}
+    {{ port_xml }}
+  </destination>
+  {{ schedule_xml }}
+  <descr>{{ description }}</descr>
+</rule>

@@ -1,0 +1,22 @@
+{
+    "name": "canary_token",
+    "version": "1.0.0",
+    "description": "AI Canarytoken - Honeypot generator with AI-powered bait creation",
+    "author": "Cynapse",
+    "animal": "🐦",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "canary.py",
+    "requires_signature": false,
+    "dependencies": [
+        "python"
+    ],
+    "commands": {
+        "generate": "Generate canary tokens",
+        "monitor": "Monitor for canary triggers",
+        "bait": "Create AI-generated bait files"
+    }
+}

@@ -1,0 +1,79 @@
+# Cynapse Hub - Git Ignore
+
+# User configuration (contains secrets)
+config/config.ini
+config/user_keys.json
+
+# Temporary files
+temp/
+*.log
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+env/
+.env/
+
+# Model files (too large for git)
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+
+# Shard files
+neurons/bat_ghost/bat1/shard1.gguf
+neurons/bat_ghost/bat2/shard2.gguf
+neurons/bat_ghost/bat3/shard3.gguf
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Compiled
+*.exe
+*.dll
+*.dylib
+
+# Logs
+*.ndjson
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# ESP32 Firmware
+*.ino
+*.cpp.o
+*.ino.o

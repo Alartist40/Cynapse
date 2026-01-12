@@ -1,0 +1,24 @@
+# Docker build artifacts
+*.tar
+*.tar.gz
+
+# Container runtime
+.dockerignore
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Test outputs
+test_output/
+reports/

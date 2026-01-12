@@ -1,0 +1,19 @@
+{
+  "llm": {
+    "model_path": "models/mistral7b_int4.gguf",
+    "temperature": 0.1,
+    "max_tokens": 256,
+    "n_ctx": 2048
+  },
+  "voice": {
+    "duration": 5,
+    "sample_rate": 16000,
+    "whisper_model": "tiny"
+  },
+  "templates": {
+    "directory": "templates"
+  },
+  "verifier": {
+    "docker_timeout": 30
+  }
+}

@@ -1,0 +1,8 @@
+# Bat-3 CTF Challenge Flag
+FLAG{CYNAPSE_GHOST_SHELL_BREAKOUT_2026}
+
+# This file simulates a fake credit card (for CTF demo only)
+# Card Number: 4111-1111-1111-1111
+# Expiry: 12/30
+# CVV: 123
+# This is NOT a real credit card - it's a test number used in security training

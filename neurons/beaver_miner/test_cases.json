@@ -1,0 +1,86 @@
+[
+    {
+        "description": "Block SSH from specific IP after 6 PM",
+        "input": "Block SSH from 192.168.1.50 after 6 pm",
+        "expected_json": {
+            "src_ip": "192.168.1.50",
+            "dst_ip": "any",
+            "proto": "tcp",
+            "dst_port": "22",
+            "action": "deny",
+            "time_start": "18:00",
+            "time_end": "23:59",
+            "platform": "any"
+        }
+    },
+    {
+        "description": "Allow HTTP from subnet",
+        "input": "Allow HTTP from 10.0.0.0/24",
+        "expected_json": {
+            "src_ip": "10.0.0.0/24",
+            "dst_ip": "any",
+            "proto": "tcp",
+            "dst_port": "80",
+            "action": "allow",
+            "time_start": "00:00",
+            "time_end": "23:59",
+            "platform": "any"
+        }
+    },
+    {
+        "description": "Block RDP from any during night hours",
+        "input": "Block RDP from any between 9 pm and 6 am",
+        "expected_json": {
+            "src_ip": "any",
+            "dst_ip": "any",
+            "proto": "tcp",
+            "dst_port": "3389",
+            "action": "deny",
+            "time_start": "21:00",
+            "time_end": "06:00",
+            "platform": "any"
+        }
+    },
+    {
+        "description": "Deny ICMP from subnet",
+        "input": "Deny ICMP from 172.16.0.0/16",
+        "expected_json": {
+            "src_ip": "172.16.0.0/16",
+            "dst_ip": "any",
+            "proto": "icmp",
+            "dst_port": "any",
+            "action": "deny",
+            "time_start": "00:00",
+            "time_end": "23:59",
+            "platform": "any"
+        }
+    },
+    {
+        "description": "Allow HTTPS from specific IP",
+        "input": "Allow HTTPS from 203.0.113.45",
+        "expected_json": {
+            "src_ip": "203.0.113.45",
+            "dst_ip": "any",
+            "proto": "tcp",
+            "dst_port": "443",
+            "action": "allow",
+            "time_start": "00:00",
+            "time_end": "23:59",
+            "platform": "any"
+        }
+    },
+    {
+        "description": "Block FTP from any",
+        "input": "Block FTP from any",
+        "expected_json": {
+            "src_ip": "any",
+            "dst_ip": "any",
+            "proto": "tcp",
+            "dst_port": "21",
+            "action": "deny",
+            "time_start": "00:00",
+            "time_end": "23:59",
+            "platform": "any"
+        }
+    }
+]

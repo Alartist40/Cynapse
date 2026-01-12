@@ -1,0 +1,19 @@
+{
+    "stick_id": "bat3",
+    "role": "CTF Shard",
+    "description": "Shard 3 carrier with CTF challenge functionality",
+    "shard_hash": "",
+    "shard_index": 3,
+    "total_shards": 3,
+    "size": 0,
+    "features": [
+        "ctf_challenge",
+        "red_team"
+    ],
+    "ctf": {
+        "flag_file": "flag10.txt",
+        "difficulty": "medium",
+        "hint": "Break out of the container to find me"
+    },
+    "readme": "Break me - flag inside"
+}

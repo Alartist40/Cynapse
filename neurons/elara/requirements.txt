@@ -1,0 +1,13 @@
+torch>=2.0
+transformers
+numpy
+tiktoken
+datasets
+wandb
+tqdm
+# Training dependencies
+numpy
+datasets
+tiktoken
+# Note: For AMD/ROCm, install torch manually via: pip install torch --index-url https://download.pytorch.org/whl/rocm5.6
+# Note: For CPU only (Mobile/Lightweight), install via: pip install torch --index-url https://download.pytorch.org/whl/cpu

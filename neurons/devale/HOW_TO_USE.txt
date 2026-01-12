@@ -1,0 +1,49 @@
+=== dev_Ale - Usage Instructions ===
+
+🎯 WHAT IS DEV_ALE?
+dev_Ale is a portable Windows application that combines:
+- IT Support & Troubleshooting
+- System Diagnostics & Hardware Information  
+- Developer Tool Installation
+
+🚀 HOW TO USE:
+1. Double-click "dev_Ale.exe"
+2. No installation required - it's completely portable!
+3. Use the simple menu to access all features
+
+🔧 FEATURES:
+• IT SUPPORT:
+  - Slow computer diagnosis
+  - Virus suspicion tools
+  - System maintenance utilities
+  - Temporary file cleanup
+
+• CHECK SYSTEM:
+  - Detailed hardware information
+  - Storage analysis
+  - Network statistics
+  - Complete system specs
+
+• DEVELOPER OPTION:
+  - Install development tools automatically
+  - Choose your profession (Frontend, Backend, Data Science, etc.)
+  - Beginner or Professional toolkits
+  - Uses Windows Package Manager (winget)
+
+🛡️ ADMINISTRATOR PRIVILEGES:
+Some features may require administrator rights. If a tool doesn't work, try:
+- Right-clicking dev_Ale.exe
+- Selecting "Run as administrator"
+
+🗑️ UNINSTALLATION:
+Simply delete the "dev_Ale.exe" file - no complicated uninstall process!
+
+❓ TROUBLESHOOTING:
+- If the app doesn't start, make sure you have Windows 10 or 11
+- Some antivirus software may flag new applications - you may need to allow it
+- Check the app.log file for detailed error information
+
+📧 SUPPORT:
+For issues or feature requests, contact the developer.
+
+Enjoy using dev_Ale! 🎉

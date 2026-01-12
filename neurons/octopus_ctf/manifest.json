@@ -1,0 +1,22 @@
+{
+    "name": "octopus_ctf",
+    "version": "1.0.0",
+    "description": "Container Escape Trainer - CTF challenges for container security training",
+    "author": "Cynapse",
+    "animal": "🐙",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "main.py",
+    "requires_signature": false,
+    "dependencies": [
+        "docker"
+    ],
+    "commands": {
+        "start": "Start CTF challenge container",
+        "verify": "Verify challenge completion",
+        "reset": "Reset challenge environment"
+    }
+}

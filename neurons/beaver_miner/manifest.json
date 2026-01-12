@@ -1,0 +1,22 @@
+{
+    "name": "beaver_miner",
+    "version": "1.0.0",
+    "description": "AI Firewall Rule-Miner - Extract and generate firewall rules using AI analysis",
+    "author": "Cynapse",
+    "animal": "🦫",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "rule_miner.py",
+    "requires_signature": false,
+    "dependencies": [
+        "python"
+    ],
+    "commands": {
+        "mine": "Mine rules from traffic logs",
+        "generate": "Generate firewall rules",
+        "verify": "Verify rule correctness"
+    }
+}

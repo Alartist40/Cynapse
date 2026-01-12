@@ -1,0 +1,23 @@
+{
+    "name": "owl_ocr",
+    "version": "1.0.0",
+    "description": "One-file Privacy OCR - Offline document redaction with Tesseract",
+    "author": "Cynapse",
+    "animal": "🦉",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "redact.py",
+    "requires_signature": false,
+    "dependencies": [
+        "python",
+        "tesseract"
+    ],
+    "commands": {
+        "redact": "Redact sensitive information from documents",
+        "scan": "Scan documents for PII",
+        "batch": "Process multiple documents"
+    }
+}

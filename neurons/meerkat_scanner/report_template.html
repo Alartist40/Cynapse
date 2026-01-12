@@ -1,0 +1,10 @@
+<!doctype html>
+<title>Air-Gap Scan</title>
+<meta charset="utf-8">
+<style>body{font-family:Arial,Helvetica,sans-serif;margin:2em}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 8px}th{background:#eee}.high{background:#fee}</style>
+<h1>Air-Gap Update Scanner</h1>
+<p>Scan: {{DATE}} | Total: {{TOTAL}} | 🔴 High: {{HIGHS}} | 🟡 Medium: {{MEDS}}</p>
+<table>
+<thead><tr><th>Package</th><th>Version</th><th>CVE</th><th>CVSS</th><th>Summary</th></tr></thead>
+<tbody>{{TABLE}}</tbody>
+</table>

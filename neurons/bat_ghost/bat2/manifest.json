@@ -1,0 +1,19 @@
+{
+    "stick_id": "bat2",
+    "role": "Canary Shard",
+    "description": "Shard 2 carrier with canarytoken decoy functionality",
+    "shard_hash": "",
+    "shard_index": 2,
+    "total_shards": 3,
+    "size": 0,
+    "features": [
+        "canarytoken",
+        "decoy_aws_key"
+    ],
+    "canarytoken": {
+        "type": "aws_key",
+        "fake_access_key": "AKIAIOSFODNN7EXAMPLE",
+        "alert_on_access": true
+    },
+    "readme": "I'm a decoy - touch me and I scream"
+}

@@ -1,0 +1,22 @@
+{
+    "name": "meerkat_scanner",
+    "version": "1.0.0",
+    "description": "Air-Gap Update Scanner - Offline CVE vulnerability scanner with local database",
+    "author": "Cynapse",
+    "animal": "🦡",
+    "platform": [
+        "win",
+        "linux",
+        "mac"
+    ],
+    "entry_point": "scan.py",
+    "requires_signature": false,
+    "dependencies": [
+        "python"
+    ],
+    "commands": {
+        "scan": "Scan a target for vulnerabilities",
+        "build-db": "Build the CVE database",
+        "report": "Generate vulnerability report"
+    }
+}
