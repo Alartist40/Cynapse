@@ -176,10 +176,14 @@ cynapse/
 │
 ├── build/                        # [BUILD] Build scripts
 │   ├── build_all.sh              # Unix build
-│   └── build_all.ps1             # Windows build
+│   ├── build_all.ps1             # Windows build
+│   └── portable/                 # USB-ready distribution
+│       ├── python/               # Embedded Python
+│       ├── cynapse/              # Application copy
+│       ├── run_cynapse.bat       # Windows launcher
+│       └── run_hivemind.bat      # HiveMind launcher
 │
-└── tests/                        # [TEST] Test suite
-    └── test_hub.py               # All tests
+└── tests/                        # [TEST] (empty - tests removed)
 ```
 
 ---
@@ -478,4 +482,4 @@ python assemble.py --split /path/to/model.gguf
 
 ---
 
-*Last updated: 2026-01-09*
+*Last updated: 2026-01-21*

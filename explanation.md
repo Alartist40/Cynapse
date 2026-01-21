@@ -65,10 +65,24 @@ This document breaks down every component of the Cynapse ecosystem, explaining *
 
 ---
 
-## 📉 Summary
+## � Portable Deployment
 
-*   **The Critical 20%**: `hivemind.py`, `elara`, `airllm`, `trainer.py`. Focus your energy here.
+### `build_portable.py`
+*   **What**: Creates a self-contained Windows distribution with embedded Python.
+*   **Pareto Value**: **High**. Enables deployment on any Windows PC without Python - critical for USB stick deployment.
+
+### `no_dependency.md`
+*   **What**: Strategy document for cross-platform portability.
+*   **Pareto Value**: **Reference**. Documents the approach; `build_portable.py` does the actual work.
+
+---
+
+## �📉 Summary
+
+*   **The Critical 20%**: `hivemind.py`, `elara`, `airllm`, `trainer.py`, `build_portable.py`. Focus your energy here.
 *   **The Useful 60%**: `meerkat`, `bat_ghost`, `router.py`, `memory.py`. Maintain these.
-*   **The Trivial/Bloat 20%**: `devale` (unless specifically used), `rhino_gateway` (unless deploying publicly).
+*   **The Trivial/Bloat 20%**: `devale` (removed), `rhino_gateway` (unless deploying publicly).
 
 This structure ensures you know exactly what code is driving value and what is just "noise".
+
+*Last updated: 2026-01-21*

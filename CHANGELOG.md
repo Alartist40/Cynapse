@@ -2,6 +2,35 @@
 
 All notable changes to Cynapse Ghost Shell Hub are documented in this file.
 
+## [1.1.0] - 2026-01-21
+
+### 🐛 Bug Fixes
+
+- **Fixed ModuleNotFoundError in hivemind.py**: Refactored with lazy imports - heavy dependencies (torch, transformers) only load when specific features are used
+- **Fixed AdamW import error in trainer.py**: Removed top-level torch import, teacher model loads on-demand
+- **Fixed router import in terminal_chat.py**: Added robust fallback pattern for router module
+
+### 🚀 New Features
+
+#### Portable USB Deployment
+- **New**: `build_portable.py` - Creates self-contained Windows distribution with embedded Python
+- **New**: `no_dependency.md` - Strategy document for running on systems without Python
+- **New**: `build/portable/` - USB-ready distribution with launcher scripts
+
+### 🗑️ Removed
+
+- Deleted test files: `test_hub.py`, `test_neurons.py`, `tests/test_hub.py`
+- Deleted temporary files: `results.md`, `report.md`, `error_log.txt`, `pylint_report.txt`
+- Removed `devale` neuron from test expectations (neuron does not exist)
+
+### 📝 Documentation
+
+- Updated `README.md` with portable deployment instructions
+- Updated directory structure to reflect new files
+- Updated testing section with verification commands
+
+---
+
 ## [1.0.0] - 2026-01-09
 
 ### 🎉 Initial Release

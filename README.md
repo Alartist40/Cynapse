@@ -243,9 +243,17 @@ python hivemind.py interact --auto-route
 ```
 cynapse/
 ├── cynapse.py              # Main orchestrator
+├── hivemind.py             # HiveMind CLI (lazy loading)
+├── build_portable.py       # Portable build script
+├── no_dependency.md        # Portability strategy
 ├── config/
 │   ├── config.ini.example  # Configuration template
 │   └── user_keys.json.example  # API keys template
+├── hivemind/               # HiveMind AI ecosystem
+│   ├── queen/              # Queen model trainer
+│   ├── drones/             # Specialist routers
+│   ├── interact/           # Chat interface
+│   └── learn/              # Adaptation logic
 ├── neurons/                # 12 security tools
 │   ├── bat_ghost/          # Ghost Shell system
 │   ├── rhino_gateway/      # Zero-Trust Gateway
@@ -259,7 +267,8 @@ cynapse/
 │   └── storage/            # Model & voice data
 ├── assets/                 # Logos and icons
 ├── build/                  # Build scripts
-└── tests/                  # Test suite
+│   └── portable/           # USB-ready distribution
+└── airllm/                 # 70B model loader
 ```
 
 ---
@@ -302,29 +311,31 @@ verify_signatures = true
 
 ## 🧪 Testing
 
-### Run All Tests
+### Verify Installation
 
 ```bash
 cd cynapse
-python tests/test_hub.py
-```
-
-### Run Specific Tests
-
-```bash
-python tests/test_hub.py TestNeuronDiscovery
-python tests/test_hub.py TestManifestValidation
-```
-
-### Verify Hub
-
-```bash
-python cynapse.py --test
+python cynapse.py --help
+python hivemind.py --help
 ```
 
 ---
 
 ## 🔨 Building
+
+### Portable USB Deployment (No Python Required)
+
+Create a standalone distribution that runs on any Windows PC:
+
+```bash
+cd cynapse
+python build_portable.py
+# Output: build/portable/
+```
+
+Copy `build/portable/` to a USB stick and run `run_cynapse.bat` on any Windows machine.
+
+See [no_dependency.md](no_dependency.md) for detailed portability strategies.
 
 ### Windows
 

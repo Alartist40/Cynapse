@@ -5,7 +5,16 @@ try:
 except ImportError:
     ollama = None
 
-from cynapse.hivemind.drones.router import route_query
+# Robust router import
+try:
+    from hivemind.drones.router import route_query
+except ImportError:
+    try:
+        from cynapse.hivemind.drones.router import route_query
+    except ImportError:
+        def route_query(query):
+            """Fallback router that always routes to queen."""
+            return "queen"
 
 def chat_loop(model_name="queen", auto_route=False, voice=False):
     if ollama is None:
