@@ -215,17 +215,24 @@ HiveMind allows you to train a custom model (Queen) using large open-source mode
 
 ### Quick Usage
 
+**The Easiest Way: Interactive Menu**
+Simply run the script without arguments to launch the dashboard:
+```bash
+python hivemind.py
+# Opens the control panel:
+# 1. [Interact] Chat with Queen & Drones
+# 2. [Feed]     Train Queen on 70B Model
+# 3. [Learn]    Teach Queen your style
+```
+
+### Manual Commands
+If you prefer direct commands:
 ```bash
 # Feed: Train Queen (3B) using a Teacher (AirLLM 70B)
-python hivemind.py feed --teacher meta-llama/Llama-2-70b-chat-hf --dataset my_data.jsonl
+python hivemind.py feed --teacher meta-llama/Llama-2-70b-chat-hf
 
-# Interact: Chat with automatic routing to Drones
+# Interact: Chat with automatic routing
 python hivemind.py interact --auto-route
-
-# Learn: Teach Queen your style
-python hivemind.py learn --mode observe
-# ... chat and correct ...
-python hivemind.py learn --mode apply
 ```
 
 
