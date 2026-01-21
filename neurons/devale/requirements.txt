@@ -1,5 +1,0 @@
-customtkinter
-PyYAML
-psutil
-packaging
-pyinstaller

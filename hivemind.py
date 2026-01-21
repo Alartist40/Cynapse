@@ -8,19 +8,41 @@ import subprocess
 import sys
 import os
 
-# Ensure current directory is in path
-current_dir = os.path.dirname(os.path.abspath(__file__))
+# Robust import setup
+import sys
+import os
+
+# We need to add the directory containing the 'cynapse' package to sys.path
+# 'hivemind.py' is in '.../cynapse/hivemind.py'
+# So we need '.../' (the parent of 'cynapse') in sys.path to do 'from cynapse...'
+# OR we need '.../cynapse' in sys.path to do 'from hivemind...' 
+
+current_dir = os.path.dirname(os.path.abspath(__file__)) # .../cynapse
+parent_dir = os.path.dirname(current_dir) # .../ (project root)
+
+# Add project root so we can import 'cynapse'
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Add current dir so we can import 'hivemind' modules if running as script inside cynapse
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 try:
-    # Import directly from the hivemind package (local folder)
-    from hivemind.queen.trainer import HiveMindTrainer
-    from hivemind.interact.terminal_chat import chat_loop
-    from hivemind.learn.adapter import observe_and_adapt
-except ImportError as e:
-    print(f"[Fatal Error] Could not import HiveMind modules: {e}")
-    sys.exit(1)
+    # Try importing as part of the cynapse package
+    from cynapse.hivemind.queen.trainer import HiveMindTrainer
+    from cynapse.hivemind.interact.terminal_chat import chat_loop
+    from cynapse.hivemind.learn.adapter import observe_and_adapt
+except ImportError:
+    # If that fails, try local relative imports (e.g. if run as 'python hivemind.py')
+    try:
+        from hivemind.queen.trainer import HiveMindTrainer
+        from hivemind.interact.terminal_chat import chat_loop
+        from hivemind.learn.adapter import observe_and_adapt
+    except ImportError as e:
+        print(f"[Fatal Error] Could not import HiveMind modules: {e}")
+        # print(f"sys.path: {sys.path}")
+        sys.exit(1)
 
 def run_interactive_menu():
     while True:

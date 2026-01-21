@@ -1,6 +1,7 @@
 
 import torch
-from transformers import AdamW
+import torch
+from torch.optim import AdamW
 try:
     from cynapse.airllm import AutoModel
 except ImportError:

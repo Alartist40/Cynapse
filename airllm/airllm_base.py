@@ -15,7 +15,11 @@ from transformers.quantizers import AutoHfQuantizer, HfQuantizer
 
 from .profiler import LayeredProfiler
 
-from optimum.bettertransformer import BetterTransformer
+try:
+    from optimum.bettertransformer import BetterTransformer
+except ImportError:
+    BetterTransformer = None
+    print(">>>> BetterTransformer not available in optimum, proceeding without it.")
 
 from .utils import clean_memory, load_layer, \
     find_or_create_local_splitted_path

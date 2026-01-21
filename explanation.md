@@ -43,11 +43,9 @@ This document breaks down every component of the Cynapse ecosystem, explaining *
 *   **What**: A proxy to control LLM access.
 *   **Pareto Value**: **Low (for now)**. Unless you are serving this to others, it's infrastructure overhead. Useful for security, but helps "maintenance" rather than "growth".
 
-### 4. DevAle (`neurons/devale`)
-*   **What**: An AI development assistant with GUI components (`gui/`) and build scripts (`build.py`).
-*   **Pareto Value**: **Low / Liability**.
-    *   *Analysis*: This appears to be a separate, standalone application copied into the neurons folder. Its complex build system (`pyinstaller` specs) and GUI dependencies add bloat without integrating tightly into the voice/terminal workflow of Cynapse.
-    *   *Recommendation*: Keep it if you specifically need its GUI features, otherwise consider it "reference code" rather than a core neuron.
+### 4. DevAle (Removed)
+*   **Status**: **[DELETED]**.
+*   **Reason**: Identified as liability/bloat. It was a standalone GUI application that did not integrity with the core text/voice-based HiveMind system. Removed to keep codebase clean and security-focused.
 
 ### 5. Bat Ghost (`neurons/bat_ghost`)
 *   **What**: The distributed shard system (USB sticks).
