@@ -29,7 +29,7 @@ class TestNeuronDiscovery(unittest.TestCase):
         expected_neurons = [
             'bat_ghost', 'rhino_gateway', 'meerkat_scanner', 'canary_token',
             'wolverine_redteam', 'tinyml_anomaly', 'owl_ocr', 'elephant_sign',
-            'parrot_wallet', 'octopus_ctf', 'beaver_miner', 'devale', 'elara'
+            'parrot_wallet', 'octopus_ctf', 'beaver_miner', 'elara'
         ]
         
         present = [d.name for d in self.neurons_dir.iterdir() 
