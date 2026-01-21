@@ -1,0 +1,44 @@
+{
+    "drone_coder": {
+        "model": "codeqwen:7b",
+        "specialty": "python, rust, debugging, algorithms",
+        "trigger_keywords": [
+            "code",
+            "debug",
+            "function",
+            "algorithm",
+            "compile",
+            "python",
+            "rust",
+            "error",
+            "exception"
+        ]
+    },
+    "drone_human": {
+        "model": "llama2:13b-chat",
+        "specialty": "empathy, negotiation, conflict resolution",
+        "trigger_keywords": [
+            "feel",
+            "help",
+            "sorry",
+            "angry",
+            "sad",
+            "emotion",
+            "love",
+            "hate"
+        ]
+    },
+    "drone_reasoner": {
+        "model": "deepseek-r1:8b",
+        "specialty": "logic, math, proof, step-by-step",
+        "trigger_keywords": [
+            "prove",
+            "calculate",
+            "therefore",
+            "logic",
+            "math",
+            "solve",
+            "equation"
+        ]
+    }
+}

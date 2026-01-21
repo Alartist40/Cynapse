@@ -34,6 +34,16 @@ This document maps every component in the Cynapse Ghost Shell Hub system, their 
 │  │  │ Shard 1 │  │ Shard 2 │  │ Shard 3 │  │   + Detector    │ │    │
 │  │  └─────────┘  └─────────┘  └─────────┘  └─────────────────┘ │    │
 │  └─────────────────────────────────────────────────────────────┘    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│         │                                                            │
+│         ▼                                                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                     HIVEMIND (Personal AI)                   │    │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────────────┐ │    │
+│  │  │  QUEEN  │  │ DRONES  │  │ WORKERS │  │   HONEYCOMB     │ │    │
+│  │  │   3B    │  │ Ollama  │  │ AirLLM  │  │   Vector DB     │ │    │
+│  │  └─────────┘  └─────────┘  └─────────┘  └─────────────────┘ │    │
+│  └─────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -44,6 +54,7 @@ This document maps every component in the Cynapse Ghost Shell Hub system, their 
 ```
 cynapse/
 ├── cynapse.py                    # [CORE] Main orchestrator
+├── hivemind.py                   # [CORE] HiveMind CLI
 ├── requirements.txt              # [CONFIG] Python dependencies
 ├── .gitignore                    # [CONFIG] Git ignore rules
 ├── README.md                     # [DOCS] Project documentation
@@ -53,6 +64,12 @@ cynapse/
 ├── config/                       # [CONFIG] Configuration directory
 │   ├── config.ini.example        # Hub settings template
 │   └── user_keys.json.example    # API keys template
+│
+├── hivemind/                     # [HIVEMIND] AI Ecosystem
+│   ├── queen/                    # Queen Model logic
+│   ├── drones/                   # Specialist routers
+│   ├── interact/                 # Chat interface
+│   └── learn/                    # Adaptation logic
 │
 ├── neurons/                      # [NEURONS] Security tools
 │   ├── __template__/             # Template for new neurons

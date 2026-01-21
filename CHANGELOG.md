@@ -6,7 +6,7 @@ All notable changes to Cynapse Ghost Shell Hub are documented in this file.
 
 ### 🎉 Initial Release
 
-The first complete release of Cynapse Ghost Shell Hub, integrating 12 security tools into a unified voice-controlled ecosystem.
+The first complete release of Cynapse Ghost Shell Hub, integrating 12 security tools into a unified voice-controlled ecosystem, plus the **HiveMind** Personal AI Ecosystem.
 
 ---
 

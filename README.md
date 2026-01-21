@@ -91,6 +91,7 @@ cynapse> help
 | 10 | 🦫 | **Beaver Miner** | AI firewall rule generator |
 | 11 | 🦌 | **DevAle** | AI development assistant |
 | 12 | 🌙 | **Elara** | Custom 2.8B parameter AI model |
+| 13 | 🐝 | **HiveMind** | Personal AI Ecosystem (Queen + Drones) |
 
 ---
 
@@ -203,7 +204,30 @@ python whistle_detector.py --generate-test
 | Whistle 18 kHz | Wake Ghost Shell |
 | "Scan network" | Run Meerkat Scanner |
 | "Redact document" | Run Owl OCR |
+| "Redact document" | Run Owl OCR |
 | "Exit" | Shut down hub |
+
+---
+
+## 🐝 HiveMind Ecosystem
+
+HiveMind allows you to train a custom model (Queen) using large open-source models (Workers) and route queries to specialists (Drones).
+
+### Quick Usage
+
+```bash
+# Feed: Train Queen (3B) using a Teacher (AirLLM 70B)
+python hivemind.py feed --teacher meta-llama/Llama-2-70b-chat-hf --dataset my_data.jsonl
+
+# Interact: Chat with automatic routing to Drones
+python hivemind.py interact --auto-route
+
+# Learn: Teach Queen your style
+python hivemind.py learn --mode observe
+# ... chat and correct ...
+python hivemind.py learn --mode apply
+```
+
 
 ---
 
