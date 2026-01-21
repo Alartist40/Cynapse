@@ -617,7 +617,7 @@ airllm/airllm_qwen.py:8:0: C0115: Missing class docstring (missing-class-docstri
 airllm/airllm_qwen.py:14:8: R1725: Consider using Python 3 style super() without arguments (super-with-arguments)
 airllm/airllm_qwen.py:38:29: W0212: Access to a protected member _ntk_alpha_cached_list of a client class (protected-access)
 airllm/airllm_qwen.py:43:8: W0212: Access to a protected member _ntk_alpha_cached_list of a client class (protected-access)
-airllm/airllm_qwen.py:1:0: F0002: airllm/airllm_qwen.py: Fatal error while checking 'airllm/airllm_qwen.py'. Please open an issue in our bug tracker so we address this. There is a pre-filled template that you can use in '/home/jules/.cache/pylint/pylint-crash-2026-01-21-05-46-11.txt'. (astroid-error)
+airllm/airllm_qwen.py:1:0: F0002: airllm/airllm_qwen.py: Fatal error while checking 'airllm/airllm_qwen.py'. Please open an issue in our bug tracker so we address this. There is a pre-filled template that you can use in '/home/jules/.cache/pylint/pylint-crash-2026-01-21-07-09-11.txt'. (astroid-error)
 ************* Module airllm.auto_model
 airllm/auto_model.py:23:0: C0301: Line too long (128/100) (line-too-long)
 airllm/auto_model.py:25:0: C0301: Line too long (102/100) (line-too-long)
@@ -647,7 +647,7 @@ airllm/airllm_chatglm.py:52:0: C0304: Final newline missing (missing-final-newli
 airllm/airllm_chatglm.py:1:0: C0114: Missing module docstring (missing-module-docstring)
 airllm/airllm_chatglm.py:8:0: C0115: Missing class docstring (missing-class-docstring)
 airllm/airllm_chatglm.py:14:8: R1725: Consider using Python 3 style super() without arguments (super-with-arguments)
-airllm/airllm_chatglm.py:1:0: F0002: airllm/airllm_chatglm.py: Fatal error while checking 'airllm/airllm_chatglm.py'. Please open an issue in our bug tracker so we address this. There is a pre-filled template that you can use in '/home/jules/.cache/pylint/pylint-crash-2026-01-21-05-46-11.txt'. (astroid-error)
+airllm/airllm_chatglm.py:1:0: F0002: airllm/airllm_chatglm.py: Fatal error while checking 'airllm/airllm_chatglm.py'. Please open an issue in our bug tracker so we address this. There is a pre-filled template that you can use in '/home/jules/.cache/pylint/pylint-crash-2026-01-21-07-09-11.txt'. (astroid-error)
 ************* Module airllm.persist.model_persister
 airllm/persist/model_persister.py:39:0: C0304: Final newline missing (missing-final-newline)
 airllm/persist/model_persister.py:1:0: C0114: Missing module docstring (missing-module-docstring)
@@ -698,5 +698,5 @@ airllm/persist/mlx_model_persister.py:1:0: R0801: Similar lines in 2 files
                                                                                          hf_token=hf_token,
                                                                                          delete_original=delete_original) (duplicate-code)
 
------------------------------------
-Your code has been rated at 0.00/10
+------------------------------------------------------------------
+Your code has been rated at 0.00/10 (previous run: 0.00/10, +0.00)
