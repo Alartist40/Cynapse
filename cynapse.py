@@ -118,7 +118,11 @@ class Neuron:
             
         # Use elephant_sign verifier if available
         verifier = NEURONS_DIR / "elephant_sign" / "verify.py"
-        if verifier.exists() and self.binary:
+        if not verifier.exists():
+            print(f"CRITICAL: Signature verifier 'elephant_sign' not found. Cannot verify neuron '{self.manifest.name}'.")
+            return False
+
+        if self.binary:
             try:
                 result = subprocess.run(
                     [sys.executable, str(verifier), str(self.binary)],
@@ -129,7 +133,9 @@ class Neuron:
                 return result.returncode == 0
             except Exception:
                 return False
-        return True
+
+        # Fails if binary does not exist
+        return False
     
     def execute(self, *args, **kwargs) -> subprocess.CompletedProcess:
         """Execute the neuron with given arguments."""
