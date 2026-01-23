@@ -77,3 +77,6 @@ desktop.ini
 *.ino
 *.cpp.o
 *.ino.o
+
+# Cynapse hidden directory
+.cynapse/

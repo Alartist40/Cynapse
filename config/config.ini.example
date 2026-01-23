@@ -19,7 +19,7 @@ enable_encryption = true
 
 [logging]
 # Audit log settings
-log_dir = temp/logs
+log_dir = .cynapse/logs
 log_file = audit.ndjson
 max_log_size_mb = 100
 

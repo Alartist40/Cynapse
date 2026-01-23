@@ -44,7 +44,7 @@ BASE_DIR = Path(__file__).parent.resolve()
 NEURONS_DIR = BASE_DIR / "neurons"
 TEMP_DIR = BASE_DIR / "temp"
 CONFIG_DIR = BASE_DIR / "config"
-LOG_FILE = TEMP_DIR / "logs" / "audit.ndjson"
+LOG_FILE = BASE_DIR / ".cynapse" / "logs" / "audit.ndjson"
 
 
 @dataclass
