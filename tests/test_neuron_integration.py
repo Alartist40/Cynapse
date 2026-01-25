@@ -21,7 +21,14 @@ class TestNeuronIntegration(unittest.TestCase):
     pass
 
 def discover_neurons():
-    """Discover all neurons in the neurons/ directory."""
+    """
+    Locate neuron directories under the project's neurons/ folder.
+    
+    Only entries that are directories, do not start with an underscore, and contain a manifest.json file are returned. If the neurons/ directory does not exist, an empty list is returned.
+    
+    Returns:
+        List[pathlib.Path]: Paths to discovered neuron directories that include a manifest.json, or an empty list if none are found.
+    """
     neurons_dir = Path(__file__).parent.parent / "neurons"
     if not neurons_dir.exists():
         return []
@@ -41,10 +48,29 @@ def discover_neurons():
 import time
 
 def create_neuron_integration_test(neuron_path):
-    """Creates a test case for a single neuron."""
+    """
+    Create a unittest test method that exercises a neuron's declared commands and validates its manifest.
+    
+    The generated test will:
+    - Assert the neuron's manifest is present.
+    - Skip the test if the manifest contains no commands.
+    - For named interactive neurons, verify a runnable binary exists, launch it briefly, and ensure it does not exit immediately.
+    - For other neurons, invoke each declared command with a `--help` argument and assert the command exits with an expected return code; fail on timeouts or unexpected errors.
+    - Convert any unexpected exception into a test failure that names the neuron.
+    
+    Parameters:
+        neuron_path (pathlib.Path): Filesystem path to the neuron's directory (containing its manifest and files).
+    
+    Returns:
+        Callable[[unittest.TestCase], None]: A function suitable for attaching as a unittest.TestCase method that performs the described integration checks for the neuron at `neuron_path`.
+    """
 
     def test_neuron_commands(self):
-        """Generic test for a single neuron's commands."""
+        """
+        Run integration checks for a single neuron by validating its manifest and exercising its declared commands.
+        
+        If the manifest has no commands the test is skipped. Interactive neurons (e.g., canary_token) are smoke-tested by launching their binary and ensuring it does not exit immediately; non-interactive neurons have each declared command invoked with `--help` and must return an acceptable exit code. The test fails for missing binaries, unexpected process exits, unacceptable return codes, timeouts, or any exception encountered while testing the neuron.
+        """
         try:
             neuron = Neuron(neuron_path)
 

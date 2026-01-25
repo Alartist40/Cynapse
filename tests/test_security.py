@@ -19,7 +19,11 @@ class TestSecurity(unittest.TestCase):
     """Tests the security features of the Cynapse ecosystem."""
 
     def test_signature_verification(self):
-        """Test that the signature verification feature is working correctly."""
+        """
+        Checks neuron signature verification by tampering with and restoring a neuron's binary.
+        
+        Searches for a neuron whose manifest.requires_signature is True and skips the test if none is found. Overwrites the neuron's binary with tampered bytes and asserts that verify() returns `False`, then restores the original binary and asserts that verify() returns `True`.
+        """
         hub = CynapseHub()
 
         # Find a neuron that requires a signature

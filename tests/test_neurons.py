@@ -22,7 +22,14 @@ class TestAllNeurons(unittest.TestCase):
     pass
 
 def discover_neurons():
-    """Discover all neurons in the neurons/ directory."""
+    """
+    Locate neuron project directories under the repository's `neurons/` folder.
+    
+    Searches the sibling `neurons/` directory for subdirectories that contain a `manifest.json` file and returns their paths. Directories whose names start with an underscore are ignored. If the `neurons/` directory does not exist, an empty list is returned.
+    
+    Returns:
+        list[pathlib.Path]: Paths to neuron directories that include a `manifest.json`.
+    """
     neurons_dir = Path(__file__).parent.parent / "neurons"
     if not neurons_dir.exists():
         return []
@@ -40,10 +47,34 @@ def discover_neurons():
     return neuron_paths
 
 def create_neuron_test(neuron_path):
-    """Creates a test case for a single neuron."""
+    """
+    Create and return a unittest-compatible test function that performs smoke tests for a neuron located at the given path.
+    
+    Parameters:
+        neuron_path (pathlib.Path): Path to the neuron's project directory (must contain a manifest.json).
+    
+    Returns:
+        test_neuron (callable): A test function suitable for attaching to a unittest.TestCase; when invoked it will validate the neuron's manifest, report declared dependencies, and perform a smoke test (interactive neurons are launched briefly, non-interactive neurons are invoked with `--help`).
+    """
+    """
+    Run smoke checks for a single neuron: verify manifest, report dependencies, and exercise the neuron's executable.
+    
+    This test verifies that the neuron's manifest is present and that the manifest name matches the directory name, prints any declared dependencies, and then performs a smoke test:
+    - For known interactive neurons, attempts to start the neuron's binary and ensures it does not exit immediately.
+    - For other neurons, runs the neuron with `--help` and accepts return codes 0 or 1.
+    
+    On any unexpected condition (missing manifest, missing binary for interactive neurons, non-acceptable return code, timeout, or other exceptions) the test will fail with a descriptive message.
+    """
 
     def test_neuron(self):
-        """Generic test for a single neuron."""
+        """
+        Run a smoke test for the neuron located at `neuron_path`.
+        
+        Verifies the neuron has a loaded manifest whose name appears in the path, prints any declared dependencies, and exercises the neuron:
+        - For interactive neurons ('canary_token', 'parrot_wallet'): ensures a runnable binary exists, launches it, expects it to remain running for 2 seconds, then terminates it.
+        - For non-interactive neurons: runs the neuron with `--help` and expects an exit code of `0` or `1`.
+        The test fails if the manifest is missing or mismatched, an expected binary is absent, the help invocation returns an unexpected code, the help invocation times out, or any other exception occurs.
+        """
         try:
             neuron = Neuron(neuron_path)
 
