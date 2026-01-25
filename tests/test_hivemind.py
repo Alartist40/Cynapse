@@ -17,7 +17,11 @@ class TestHiveMind(unittest.TestCase):
     """Tests the HiveMind AI ecosystem."""
 
     def test_hivemind_script_execution_with_help(self):
-        """Test that the hivemind.py script can be executed with --help."""
+        """
+        Verify hivemind.py executes with the --help flag.
+        
+        Asserts the script exists, runs it with the current Python interpreter, and verifies the process exits with code 0 or 1. Fails the test if execution times out or any unexpected exception occurs.
+        """
         hivemind_script = Path(__file__).parent.parent / "hivemind.py"
         self.assertTrue(hivemind_script.exists(), "hivemind.py should exist")
 
