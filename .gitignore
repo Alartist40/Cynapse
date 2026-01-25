@@ -4,6 +4,9 @@
 config/config.ini
 config/user_keys.json
 
+# Application Data (logs, etc.)
+.cynapse/
+
 # Temporary files
 temp/
 *.log
@@ -38,7 +41,7 @@ env/
 # Model files (too large for git)
 *.gguf
 *.bin
-*.safetensors
+*.safensors
 *.pt
 *.pth
 *.onnx
@@ -77,4 +80,3 @@ desktop.ini
 *.ino
 *.cpp.o
 *.ino.o
-.cynapse/
