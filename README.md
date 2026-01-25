@@ -260,8 +260,9 @@ cynapse/
 │   ├── meerkat_scanner/    # CVE Scanner
 │   ├── elara/              # Custom 2.8B AI model
 │   └── ...
-├── temp/                   # RAM-disk operations
+├── .cynapse/               # Internal data (logs, etc.)
 │   └── logs/               # Audit logs (NDJSON)
+├── temp/                   # RAM-disk operations
 ├── data/
 │   ├── training/           # Training documents
 │   └── storage/            # Model & voice data
