@@ -98,10 +98,12 @@ for neuron_path in neuron_paths:
     test_name = f"test_{neuron_name}_integration"
 
     if neuron_name in unbuildable_neurons:
-        @unittest.skip(f"Skipping {neuron_name} due to build failures.")
-        def test_skipped(self):
-            pass
-        setattr(TestNeuronIntegration, test_name, test_skipped)
+        def make_skipped_test(name):
+            @unittest.skip(f"Skipping {name} due to build failures.")
+            def test_skipped(self):
+                pass
+            return test_skipped
+        setattr(TestNeuronIntegration, test_name, make_skipped_test(neuron_name))
     else:
         test = create_neuron_integration_test(neuron_path)
         setattr(TestNeuronIntegration, test_name, test)
