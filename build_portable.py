@@ -170,8 +170,8 @@ def copy_application():
                 shutil.copy2(src, dst)
                 print(f"  Copied file: {item}")
     
-    # Ensure temp/logs exists
-    (APP_DIR / "temp" / "logs").mkdir(parents=True, exist_ok=True)
+    # Ensure .cynapse/logs exists for audit logging
+    (APP_DIR / ".cynapse" / "logs").mkdir(parents=True, exist_ok=True)
     
     return True
 

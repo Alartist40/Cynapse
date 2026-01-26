@@ -46,7 +46,7 @@ The first complete release of Cynapse Ghost Shell Hub, integrating 12 security t
 - **Manifest Loading**: Parses `manifest.json` for each neuron
 - **Signature Verification**: Verifies binary signatures using Elephant Sign
 - **Command Execution Engine**: Runs neurons with proper subprocess handling
-- **Audit Logging**: NDJSON format logging to `temp/logs/audit.ndjson`
+- **Audit Logging**: NDJSON format logging to `.cynapse/logs/audit.ndjson`
 - **Voice Control Integration**: Background thread for whistle detection
 - **CLI Interface**: Interactive command-line with help, list, status commands
 
