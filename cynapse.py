@@ -96,16 +96,29 @@ class Neuron:
         )
     
     def _find_binary(self) -> Optional[Path]:
-        """Find the entry point binary/script"""
-        entry = self.path / self.manifest.entry_point
-        if entry.exists():
-            return entry
+        """Find the entry point binary/script and verify it's within the neuron's directory."""
+        entry_point_path = self.path / self.manifest.entry_point
+
+        # Security Check: Resolve the absolute path and verify it's a sub-path of the neuron's directory.
+        resolved_entry = entry_point_path.resolve()
+        neuron_base_path = self.path.resolve()
+
+        if os.path.commonpath([resolved_entry, neuron_base_path]) != str(neuron_base_path):
+            raise PermissionError(
+                f"Path traversal attempt detected in neuron '{self.manifest.name}'"
+            )
+
+        if resolved_entry.exists():
+            return resolved_entry
         
         # Try common extensions
         for ext in ['.py', '.exe', '.sh', '.ps1']:
             candidates = list(self.path.glob(f"*{ext}"))
             if candidates:
-                return candidates[0]
+                # Also verify fallback candidates to prevent traversal
+                resolved_candidate = candidates[0].resolve()
+                if os.path.commonpath([resolved_candidate, neuron_base_path]) == str(neuron_base_path):
+                    return resolved_candidate
         return None
     
     def verify(self) -> bool:
