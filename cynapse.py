@@ -15,6 +15,7 @@ import threading
 import configparser
 import sys
 import os
+import shutil
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
@@ -96,16 +97,29 @@ class Neuron:
         )
     
     def _find_binary(self) -> Optional[Path]:
-        """Find the entry point binary/script"""
-        entry = self.path / self.manifest.entry_point
-        if entry.exists():
-            return entry
+        """Find the entry point binary/script, with path traversal protection."""
+        entry_point_str = self.manifest.entry_point
+        if not entry_point_str:
+            return None
+
+        # 🛡️ SENTINEL: Path Traversal Check
+        # Resolve the real path of the neuron directory and the intended entry point.
+        # This prevents a malicious manifest from using ".." to escape the neuron's directory.
+        neuron_base_path = self.path.resolve()
+        intended_entry_path = (self.path / entry_point_str).resolve()
+
+        # Check if the resolved entry point is safely within the neuron's directory.
+        # Using os.path.commonpath is a reliable way to do this in Python 3.8,
+        # which doesn't have pathlib.Path.is_relative_to().
+        common_path = os.path.commonpath([str(neuron_base_path), str(intended_entry_path)])
+
+        if common_path != str(neuron_base_path):
+            print(f"CRITICAL: Path traversal attempt in neuron '{self.manifest.name}' blocked. Entry point: '{entry_point_str}'")
+            return None
+
+        if intended_entry_path.exists() and intended_entry_path.is_file():
+            return intended_entry_path
         
-        # Try common extensions
-        for ext in ['.py', '.exe', '.sh', '.ps1']:
-            candidates = list(self.path.glob(f"*{ext}"))
-            if candidates:
-                return candidates[0]
         return None
     
     def verify(self) -> bool:
@@ -439,6 +453,44 @@ Cynapse Hub Status:
                 print(f"  ⚠️ {name}: error - {e}")
                 failed += 1
         
+        # 🛡️ SENTINEL: Test for path traversal vulnerability
+        print("\n  🛡️  Sentinel: Testing for Path Traversal...")
+        malicious_neuron_path = NEURONS_DIR / "_malicious_test_neuron"
+        try:
+            malicious_neuron_path.mkdir(exist_ok=True)
+            malicious_manifest = {
+                "name": "MaliciousTest",
+                "version": "1.0.0",
+                "description": "A test for path traversal.",
+                "author": "Sentinel",
+                "animal": "🐍",
+                "platform": ["win", "linux", "mac"],
+                "entry_point": "../cynapse.py", # Attempt to escape the neuron's directory
+                "requires_signature": False,
+                "dependencies": [],
+                "commands": {}
+            }
+            with open(malicious_neuron_path / "manifest.json", 'w') as f:
+                json.dump(malicious_manifest, f)
+
+            # This should fail to find a binary due to the path traversal protection
+            malicious_neuron = Neuron(malicious_neuron_path)
+
+            if malicious_neuron.binary is None:
+                print("  ✅ Malicious neuron path traversal correctly blocked.")
+                passed += 1
+            else:
+                print(f"  ❌ Malicious neuron path traversal FAILED. Binary resolved to: {malicious_neuron.binary}")
+                failed += 1
+
+        except Exception as e:
+            print(f"  ⚠️  Error during path traversal test: {e}")
+            failed += 1
+        finally:
+            # Clean up the temporary malicious neuron
+            if malicious_neuron_path.exists():
+                shutil.rmtree(malicious_neuron_path)
+
         print(f"\nResults: {passed} passed, {failed} failed")
         return failed == 0
 
