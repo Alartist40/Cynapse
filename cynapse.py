@@ -98,8 +98,19 @@ class Neuron:
     def _find_binary(self) -> Optional[Path]:
         """Find the entry point binary/script"""
         entry = self.path / self.manifest.entry_point
-        if entry.exists():
-            return entry
+
+        # Security: Prevent path traversal using a robust method.
+        resolved_entry = entry.resolve()
+        resolved_base = self.path.resolve()
+        try:
+            # This will raise ValueError if the path is outside the base directory.
+            resolved_entry.relative_to(resolved_base)
+        except ValueError:
+            print(f"CRITICAL: Path traversal attempt in neuron '{self.manifest.name}'. Entry point '{self.manifest.entry_point}' is outside its directory.", file=sys.stderr)
+            return None
+
+        if resolved_entry.exists():
+            return resolved_entry
         
         # Try common extensions
         for ext in ['.py', '.exe', '.sh', '.ps1']:
