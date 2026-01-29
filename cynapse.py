@@ -99,17 +99,18 @@ class Neuron:
         """Find the entry point binary/script"""
         entry = self.path / self.manifest.entry_point
 
-        # Security: Prevent path traversal. The entry point must be within the neuron's directory.
+        # Security: Prevent path traversal using a robust method.
         resolved_entry = entry.resolve()
         resolved_base = self.path.resolve()
-        if not str(resolved_entry).startswith(str(resolved_base)):
-            # This is a security risk. Log it or raise an error.
-            # For now, we'll prevent execution by returning None.
+        try:
+            # This will raise ValueError if the path is outside the base directory.
+            resolved_entry.relative_to(resolved_base)
+        except ValueError:
             print(f"CRITICAL: Path traversal attempt in neuron '{self.manifest.name}'. Entry point '{self.manifest.entry_point}' is outside its directory.", file=sys.stderr)
             return None
 
-        if entry.exists():
-            return entry
+        if resolved_entry.exists():
+            return resolved_entry
         
         # Try common extensions
         for ext in ['.py', '.exe', '.sh', '.ps1']:
