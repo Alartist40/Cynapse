@@ -112,11 +112,17 @@ class Neuron:
         if resolved_entry.exists():
             return resolved_entry
         
-        # Try common extensions
+        # Try common extensions, ensuring they are also validated.
         for ext in ['.py', '.exe', '.sh', '.ps1']:
-            candidates = list(self.path.glob(f"*{ext}"))
-            if candidates:
-                return candidates[0]
+            for candidate in self.path.glob(f"*{ext}"):
+                try:
+                    # Perform the same path traversal check on the fallback candidate.
+                    candidate.resolve().relative_to(resolved_base)
+                    return candidate  # Return the first valid candidate.
+                except ValueError:
+                    # This candidate is outside the neuron's directory, log and ignore it.
+                    print(f"CRITICAL: Path traversal attempt in neuron '{self.manifest.name}'. Fallback candidate '{candidate.name}' is outside its directory.", file=sys.stderr)
+                    continue  # Check the next candidate.
         return None
     
     def verify(self) -> bool:
