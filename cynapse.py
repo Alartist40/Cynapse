@@ -43,7 +43,10 @@ LOGO = r"""
 # Get base directory
 BASE_DIR = Path(__file__).parent.resolve()
 # Security: Keywords that trigger redaction in audit logs
-SENSITIVE_KEYWORDS = ['key', 'secret', 'token', 'password', 'seed', 'auth', 'private']
+SENSITIVE_KEYWORDS = [
+    'key', 'secret', 'token', 'password', 'seed', 'auth', 'private',
+    'apikey', 'bearer', 'passphrase', 'access_key', 'secret_key', 'credentials'
+]
 NEURONS_DIR = BASE_DIR / "neurons"
 TEMP_DIR = BASE_DIR / "temp"
 CONFIG_DIR = BASE_DIR / "config"
@@ -375,7 +378,11 @@ class CynapseHub:
             except subprocess.TimeoutExpired:
                 pass
             except Exception as e:
-                self.logger.log("voice_loop_error", {"error": str(e)})
+                # Security: Sanitize error messages in the voice loop to prevent information leakage.
+                error_msg = str(e)
+                if any(kw in error_msg.lower() for kw in SENSITIVE_KEYWORDS) or len(error_msg) > 256:
+                    error_msg = f"{type(e).__name__} (redacted)"
+                self.logger.log("voice_loop_error", {"error": error_msg})
             
             time.sleep(0.1)
     
