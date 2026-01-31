@@ -10,6 +10,7 @@ License: MIT
 import json
 import time
 import hashlib
+import logging
 import subprocess
 import threading
 import configparser
@@ -41,6 +42,8 @@ LOGO = r"""
 
 # Get base directory
 BASE_DIR = Path(__file__).parent.resolve()
+# Security: Keywords that trigger redaction in audit logs
+SENSITIVE_KEYWORDS = ['key', 'secret', 'token', 'password', 'seed', 'auth', 'private']
 NEURONS_DIR = BASE_DIR / "neurons"
 TEMP_DIR = BASE_DIR / "temp"
 CONFIG_DIR = BASE_DIR / "config"
@@ -186,6 +189,17 @@ class AuditLogger:
     def __init__(self, log_file: Path):
         self.log_file = log_file
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+
+        # Security: Restrict directory permissions to owner only (0700)
+        if os.name != 'nt':
+            try:
+                os.chmod(self.log_file.parent, 0o700)
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    f"Security: Failed to set restricted permissions on log directory {self.log_file.parent}",
+                    exc_info=True
+                )
         
     def log(self, event: str, data: Dict[str, Any] = None):
         """Log an event in NDJSON format."""
@@ -195,8 +209,22 @@ class AuditLogger:
             "event": event,
             "data": data or {}
         }
-        with open(self.log_file, 'a') as f:
-            f.write(json.dumps(entry) + '\n')
+
+        with self._lock:
+            try:
+                # Security: Use os.open with O_CREAT and mode 0o600 for restricted file creation.
+                # Use explicit utf-8 encoding for consistency.
+                flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+                fd = os.open(self.log_file, flags, 0o600)
+                with os.fdopen(fd, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps(entry) + '\n')
+
+                # Best effort: ensure existing file permissions are also restricted
+                if os.name != 'nt':
+                    os.chmod(self.log_file, 0o600)
+            except Exception as e:
+                # Fail securely: log to stderr but don't crash the hub if logging fails
+                print(f"CRITICAL: Failed to write to audit log: {e}", file=sys.stderr)
 
 
 class CynapseHub:
@@ -268,7 +296,17 @@ class CynapseHub:
             print(f"Error: Signature verification failed for '{name}'")
             return None
         
-        self.logger.log("neuron_execute_start", {"name": name, "args": list(args)})
+        # Security: Redact potentially sensitive arguments to prevent information disclosure in logs.
+        # Mask arguments that are long or contain sensitive keywords.
+        redacted_args = []
+        for arg in args:
+            arg_str = str(arg)
+            if len(arg_str) > 64 or any(kw in arg_str.lower() for kw in SENSITIVE_KEYWORDS):
+                redacted_args.append(f"<redacted:{len(arg_str)} chars>")
+            else:
+                redacted_args.append(arg_str)
+
+        self.logger.log("neuron_execute_start", {"name": name, "args": redacted_args})
         
         try:
             result = neuron.execute(*args)
@@ -280,8 +318,22 @@ class CynapseHub:
             })
             return result
         except Exception as e:
-            self.logger.log("neuron_execute_error", {"name": name, "error": str(e)})
-            print(f"Error executing {name}: {e}")
+            # Security: Subprocess errors often contain the full command line with arguments.
+            # Avoid logging the raw exception string to prevent secret leakage in logs.
+            error_type = type(e).__name__
+            if isinstance(e, subprocess.TimeoutExpired):
+                error_msg = f"Command timed out after {e.timeout}s"
+            elif isinstance(e, subprocess.CalledProcessError):
+                error_msg = f"Command failed with return code {e.returncode}"
+            else:
+                error_msg = str(e)
+
+            # Final safety check for sensitive keywords in any error message
+            if any(kw in error_msg.lower() for kw in SENSITIVE_KEYWORDS) or len(error_msg) > 256:
+                error_msg = f"{error_type} (sensitive or verbose details redacted)"
+
+            self.logger.log("neuron_execute_error", {"name": name, "error": error_msg})
+            print(f"Error executing {name}: {error_msg}")
             return None
     
     def start_voice_listener(self):
