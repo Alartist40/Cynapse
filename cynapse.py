@@ -197,7 +197,8 @@ class AuditLogger:
                 os.chmod(self.log_file.parent, 0o700)
             except Exception as e:
                 logging.getLogger(__name__).warning(
-                    f"Security: Failed to set restricted permissions on log directory {self.log_file.parent}: {e}"
+                    f"Security: Failed to set restricted permissions on log directory {self.log_file.parent}",
+                    exc_info=True
                 )
         
     def log(self, event: str, data: Dict[str, Any] = None):
