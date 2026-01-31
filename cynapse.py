@@ -10,6 +10,7 @@ License: MIT
 import json
 import time
 import hashlib
+import logging
 import subprocess
 import threading
 import configparser
@@ -194,8 +195,10 @@ class AuditLogger:
         if os.name != 'nt':
             try:
                 os.chmod(self.log_file.parent, 0o700)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    f"Security: Failed to set restricted permissions on log directory {self.log_file.parent}: {e}"
+                )
         
     def log(self, event: str, data: Dict[str, Any] = None):
         """Log an event in NDJSON format."""
@@ -329,7 +332,7 @@ class CynapseHub:
                 error_msg = f"{error_type} (sensitive or verbose details redacted)"
 
             self.logger.log("neuron_execute_error", {"name": name, "error": error_msg})
-            print(f"Error executing {name}: {e}")
+            print(f"Error executing {name}: {error_msg}")
             return None
     
     def start_voice_listener(self):
