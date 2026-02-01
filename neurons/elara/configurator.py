@@ -16,16 +16,35 @@ comes up with a better simple Python solution I am all ears.
 
 import sys
 from ast import literal_eval
+from pathlib import Path
 
 for arg in sys.argv[1:]:
     if '=' not in arg:
         # assume it's the name of a config file
         assert not arg.startswith('--')
         config_file = arg
-        print(f"Overriding config with {config_file}:")
-        with open(config_file) as f:
-            print(f.read())
-        exec(open(config_file).read())
+
+        # Security: Validate that the config file is within the 'config' directory
+        # to prevent arbitrary file read and execution.
+        config_path = Path(config_file).resolve()
+        # Since this script is run via exec() in sample.py/train.py,
+        # __file__ refers to the calling script's location.
+        base_dir = Path(__file__).parent.resolve()
+        config_dir = base_dir / "config"
+
+        try:
+            config_path.relative_to(config_dir)
+        except ValueError:
+            print(f"CRITICAL: Unauthorized config file access: {config_file}")
+            sys.exit(1)
+
+        if not config_path.is_file():
+            print(f"Error: Config file not found: {config_file}")
+            sys.exit(1)
+
+        print(f"Overriding config with {config_file}")
+        with open(config_path, 'r', encoding='utf-8') as f:
+            exec(f.read())
     else:
         # assume it's a --key=value argument
         assert arg.startswith('--')

@@ -11,3 +11,8 @@
 **Vulnerability:** Use of `os.system()` with formatted strings in neuron scripts allowed for potential command injection if parameters (like `event` or `filename`) were ever influenced by user input.
 **Learning:** Even internal tool scripts must use secure execution patterns like `subprocess.run()` with argument lists to maintain a defense-in-depth posture.
 **Prevention:** Replace `os.system()` with `subprocess.run(list_of_args)` across all neurons.
+
+## 2026-02-12 - [Arbitrary Code Execution via Config File Injection]
+**Vulnerability:** A "Poor Man's Configurator" pattern used `exec(open(config_file).read())` on a file path provided via command-line arguments, without validating that the path was safe or within expected boundaries. It also printed the file's content, leading to arbitrary file read.
+**Learning:** Utilities that dynamically load and execute code from files are extremely high-risk. If they are necessary for flexibility, they MUST be strictly scoped to a trusted directory and use robust path validation.
+**Prevention:** Use `pathlib.Path.resolve()` and `Path.relative_to()` to ensure any file being executed is within a restricted subdirectory (e.g., `config/`). Avoid printing file contents that are about to be executed.
