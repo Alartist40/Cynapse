@@ -6,3 +6,8 @@
 **Vulnerability:** raw exception objects (e) printed to the console contained the full command line, including sensitive arguments (seeds, keys) passed to neurons.
 **Learning:** Sanitizing logs is not enough; any output stream (stdout/stderr) that surfaces errors to the user must also be redacted to prevent secret leakage in shared or recorded terminal sessions.
 **Prevention:** Always print sanitized error messages instead of raw exception objects when dealing with sensitive inputs.
+
+## 2026-02-05 - [Command Injection in Neuron Scripts]
+**Vulnerability:** Use of `os.system()` with formatted strings in neuron scripts allowed for potential command injection if parameters (like `event` or `filename`) were ever influenced by user input.
+**Learning:** Even internal tool scripts must use secure execution patterns like `subprocess.run()` with argument lists to maintain a defense-in-depth posture.
+**Prevention:** Replace `os.system()` with `subprocess.run(list_of_args)` across all neurons.

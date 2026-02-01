@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, datetime, pathlib, getpass, socket, ctypes, ctypes.wintypes, time, os, sys, select
+import json, datetime, pathlib, getpass, socket, ctypes, ctypes.wintypes, time, os, sys, select, subprocess
 
 LOG   = pathlib.Path("canary.log")
 BAIT  = pathlib.Path("Canary").resolve()
@@ -12,6 +12,15 @@ def hostname():
     return socket.gethostname()
 
 def alert(bait_file, event):
+    """
+    Record an intrusion event for a bait file and notify via log, stdout, and text-to-speech.
+    
+    Builds a payload containing the current timestamp, system username, hostname, current process name and executable, the provided bait file path, and the event description; appends the payload as a single JSON line to the global LOG, attempts to invoke the local elara_tts.py script with a short spoken notification, and prints the payload to stdout.
+    
+    Parameters:
+        bait_file (str | pathlib.Path): Path or identifier of the bait file that was accessed.
+        event (str): Short description of the observed event.
+    """
     payload = {
         "time": datetime.datetime.now().isoformat(timespec='seconds'),
         "user": user(),
@@ -27,10 +36,14 @@ def alert(bait_file, event):
         f.write("\n")
     # 2. voice (your Elara Kokoro TTS - calling via python for portability)
     try:
-        # Using sys.native to invoke python to ensure we use the same environment/path resolution as running process if possible, 
-        # or just 'python' if in PATH. 
-        cmd = f'python elara_tts.py "Canary tripped on {event}"'
-        os.system(cmd) 
+        # Security: Use subprocess.run with a list of arguments instead of os.system
+        # to prevent potential command injection.
+        subprocess.run(
+            [sys.executable, "elara_tts.py", f"Canary tripped on {event}"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
     except Exception as e:
         print(f"[-] TTS failed: {e}")
         
