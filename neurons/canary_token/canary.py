@@ -12,6 +12,15 @@ def hostname():
     return socket.gethostname()
 
 def alert(bait_file, event):
+    """
+    Record an intrusion event for a bait file and notify via log, stdout, and text-to-speech.
+    
+    Builds a payload containing the current timestamp, system username, hostname, current process name and executable, the provided bait file path, and the event description; appends the payload as a single JSON line to the global LOG, attempts to invoke the local elara_tts.py script with a short spoken notification, and prints the payload to stdout.
+    
+    Parameters:
+        bait_file (str | pathlib.Path): Path or identifier of the bait file that was accessed.
+        event (str): Short description of the observed event.
+    """
     payload = {
         "time": datetime.datetime.now().isoformat(timespec='seconds'),
         "user": user(),
