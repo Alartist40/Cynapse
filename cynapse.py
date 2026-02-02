@@ -530,12 +530,24 @@ def main():
             hub = CynapseHub()
             hub._list_neurons()
             sys.exit(0)
+        elif sys.argv[1] == '--tui':
+            # Launch the Synaptic Fortress TUI
+            try:
+                from tui.main import CynapseTUI
+                tui = CynapseTUI()
+                tui.run()
+            except ImportError as e:
+                print(f"Error loading TUI: {e}")
+                print("Make sure the tui package is available.")
+                sys.exit(1)
+            sys.exit(0)
         elif sys.argv[1] == '--help':
             print("Cynapse Hub - Ghost Shell Security Ecosystem")
             print("\nUsage: python cynapse.py [options] [neuron] [args...]")
             print("\nOptions:")
             print("  --test    Run verification tests")
             print("  --list    List all neurons")
+            print("  --tui     Launch the Synaptic Fortress TUI")
             print("  --help    Show this help")
             print("\nRun without arguments to start interactive mode.")
             sys.exit(0)

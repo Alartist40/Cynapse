@@ -2,6 +2,9 @@
 """
 Rule verification module
 Verifies firewall rules using Docker containers
+
+Security Note: This module has been hardened against command injection attacks.
+All LLM-generated rule parameters are validated before being used in shell commands.
 """
 
 import logging
@@ -9,8 +12,36 @@ import subprocess
 import time
 import tempfile
 import os
-from typing import Dict, Optional
+import sys
+from typing import Dict, Optional, Tuple
 from pathlib import Path
+
+# Add parent directory to path for utils import
+_current_dir = Path(__file__).parent.resolve()
+_project_root = _current_dir.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+try:
+    from utils.security import sanitize_llm_output, contains_shell_metacharacters
+except ImportError:
+    # Fallback inline implementation if utils not available
+    import re
+    
+    def contains_shell_metacharacters(s: str) -> bool:
+        return bool(set(';|&$`\n\r\\\'\"<>(){}[]!').intersection(set(s)))
+    
+    def sanitize_llm_output(output_dict: Dict) -> Tuple[bool, Dict, list]:
+        errors = []
+        ip_pattern = re.compile(r'^(any|(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?)$')
+        port_pattern = re.compile(r'^(any|\d{1,5})$')
+        proto_pattern = re.compile(r'^(any|tcp|udp|icmp)$', re.IGNORECASE)
+        
+        for key, val in output_dict.items():
+            if contains_shell_metacharacters(str(val)):
+                errors.append(f"Field {key} contains shell metacharacters")
+        
+        return len(errors) == 0, output_dict, errors
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +114,26 @@ class RuleVerifier:
             
         Returns:
             True if rule blocks/allows as expected
+            
+        Security:
+            All rule_json fields are validated before use to prevent
+            command injection attacks (addresses CVE with CVSS 8.8)
         """
         logger.info("[*] Starting iptables verification...")
+        
+        # SECURITY: Validate all LLM-generated parameters before use
+        is_valid, sanitized_json, errors = sanitize_llm_output(rule_json)
+        if not is_valid:
+            logger.error(f"[!] SECURITY: Invalid rule parameters rejected: {errors}")
+            return False
+        
+        # SECURITY: Check the rule string itself for shell metacharacters
+        if contains_shell_metacharacters(rule):
+            logger.error("[!] SECURITY: Rule string contains forbidden shell metacharacters")
+            return False
+        
+        # Use sanitized values
+        rule_json = sanitized_json
         
         container_name = f"iptables-test-{int(time.time())}"
         

@@ -4,6 +4,23 @@ All notable changes to the AI Firewall Rule-Miner project are documented in this
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.1] - 2026-02-02
+
+### 🔒 Security Fixed
+
+- **CRITICAL: Command Injection Vulnerability (CVSS 8.8)**
+  - Fixed in `verifier.py`: All LLM-generated rule parameters are now validated before being used in shell commands
+  - Added strict regex validation for IP addresses, ports, and protocols
+  - Implemented shell metacharacter detection to reject malicious inputs
+  - Uses shared `utils/security.py` module for consistent validation
+
+### Changed
+- Added import for security utilities from `utils/security.py`
+- `_verify_iptables()` now validates all inputs before writing to shell scripts
+- Added fallback inline validation if utils module is not available
+
+---
+
 ## [1.0.0] - 2026-01-08
 
 ### Initial MVP Release

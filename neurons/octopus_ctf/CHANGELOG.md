@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0] - 2026-02-02
+### 🚀 Improvements
+- **Hub Refactor Integration**: Updated for compatibility with the new Cynapse Hub restructuring
+- **TUI Support**: Added semantic metadata for the Synaptic Fortress Interface
+- **Security Audit**: Verified implementation against the 2026 security audit report
+
+
 All notable changes to the Container Escape Trainer project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

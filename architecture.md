@@ -59,11 +59,34 @@ cynapse/
 ├── .gitignore                    # [CONFIG] Git ignore rules
 ├── README.md                     # [DOCS] Project documentation
 ├── CHANGELOG.md                  # [DOCS] Version history
+├── DEPENDENCIES.md               # [DOCS] Dependency documentation
 ├── architecture.md               # [DOCS] This file
 │
 ├── config/                       # [CONFIG] Configuration directory
 │   ├── config.ini.example        # Hub settings template
 │   └── user_keys.json.example    # API keys template
+│
+├── utils/                        # [UTILS] Shared utilities (v1.2.0+)
+│   ├── __init__.py               # Package initialization
+│   └── security.py               # Input validation, sanitization
+│
+├── tui/                          # [TUI] Synaptic Fortress Interface (v1.2.0+)
+│   ├── __init__.py               # Package initialization
+│   ├── main.py                   # TUI entry point
+│   ├── colors.py                 # ANSI 256 color palette
+│   ├── symbols.py                # Semantic symbol dictionary
+│   ├── state.py                  # Centralized state management
+│   ├── layout.py                 # Four-zone layout architecture
+│   ├── keybindings.py            # Keyboard controls
+│   ├── modes/                    # Interface mode renderers
+│   │   ├── neural_assembly.py    # USB shard visualization
+│   │   ├── pharmacode.py         # Model loading display
+│   │   ├── operations.py         # RAG laboratory
+│   │   └── breach.py             # Emergency alert overlay
+│   └── widgets/                  # Reusable UI components
+│       ├── status_bar.py         # Top perimeter bar
+│       ├── sentinel_grid.py      # Neuron list sidebar
+│       └── animations.py         # Animation system
 │
 ├── hivemind/                     # [HIVEMIND] AI Ecosystem
 │   ├── queen/                    # Queen Model logic
