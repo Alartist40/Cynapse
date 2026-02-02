@@ -232,7 +232,7 @@ def main():
                 
                 # 2. Transcribe
                 text_raw = transcribe(wav).lower()
-                print(f"[D] Raw Transcript: {text_raw}")
+                # Security: Removed raw transcript print to prevent seed leakage in logs/console
                 text_split = text_raw.split()
                 
                 # Clean up audio file immediately
@@ -244,7 +244,8 @@ def main():
                 print(f"[D] Valid words found: {len(words)}")
                 
                 if len(words) < 24:
-                    print("[-] Need 24 valid words. Found:", words)
+                    # Security: Do not print the words themselves, only the count
+                    print(f"[-] Need 24 valid words. Found: {len(words)}")
                     # Blink output red to indicate failure
                     for _ in range(3):
                         write(LED_RED, 1); time.sleep(0.2); write(LED_RED, 0); time.sleep(0.2)

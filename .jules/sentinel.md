@@ -16,3 +16,8 @@
 **Vulnerability:** A "Poor Man's Configurator" pattern used `exec(open(config_file).read())` on a file path provided via command-line arguments, without validating that the path was safe or within expected boundaries. It also printed the file's content, leading to arbitrary file read.
 **Learning:** Utilities that dynamically load and execute code from files are extremely high-risk. If they are necessary for flexibility, they MUST be strictly scoped to a trusted directory and use robust path validation.
 **Prevention:** Use `pathlib.Path.resolve()` and `Path.relative_to()` to ensure any file being executed is within a restricted subdirectory (e.g., `config/`). Avoid printing file contents that are about to be executed.
+
+## 2026-02-15 - [Sensitive Data Exposure in Console Output]
+**Vulnerability:** The parrot_wallet neuron printed the full raw transcript (containing the 24-word BIP39 seed) and the list of valid words found to the console during its operation.
+**Learning:** Debugging prints that surface raw user input or sensitive derived data (like wallet seeds) are a significant risk, especially in a hub-based system where stdout is captured and logged or displayed in shared terminals.
+**Prevention:** Ensure all sensitive data processing is silent or uses redaction/counting instead of printing raw values. Audit all neuron scripts for "leakage" via stdout/stderr.
