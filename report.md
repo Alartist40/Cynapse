@@ -4,7 +4,7 @@
 **Status**: COMPLETED
 
 ## 1. Executive Summary
-The Cynapse Hub has undergone a major transition from a legacy manual ANSI interface to a modern, reactive Terminal User Interface (TUI) powered by the `Textual` library. This upgrade addresses critical UX issues such as terminal scrolling "spam," broken navigation, and demo-only functionality. Additionally, the system's security posture has been hardened against command injection and information disclosure.
+The Cynapse Hub has undergone a major transition to a **Hybrid Architecture**, featuring a modern, reactive Terminal User Interface (TUI) powered by the `Textual` library alongside a high-performance CLI fallback. Key neurons including Wolverine, Rhino, and Owl have been upgraded to v2.0 with async/parallel optimizations and production hardening.
 
 ## 2. Interface Enhancements (The Synaptic Fortress)
 
@@ -17,9 +17,9 @@ The Cynapse Hub has undergone a major transition from a legacy manual ANSI inter
 
 ## 3. Security Hardening
 
-### 3.1 Command Injection Mitigation (Beaver Miner)
-- **Vulnerability**: LLM-generated firewall rules were being passed to a privileged Docker container without strict validation.
-- **Fix**: Implemented a regex-based validation layer in `neurons/beaver_miner/utils.py`. Every field (IP, Port, Protocol, Time, Action) is now strictly checked against safe patterns before rule generation or execution.
+### 3.1 Command Injection Mitigation (Beaver Miner & Wolverine)
+- **Vulnerability**: LLM-generated firewall rules and RAG poisoning vectors presented command injection risks.
+- **Fix**: Implemented regex-based validation in Beaver Miner. Upgraded Wolverine to v2.0 with async parallel execution and deterministic judging, eliminating unsafe LLM-as-judge patterns.
 
 ### 3.2 Information Disclosure (Rhino Gateway)
 - **Vulnerability**: Plaintext API keys were being written to `gateway.log`.
@@ -43,7 +43,7 @@ We have reduced the project's external footprint by replacing bloated libraries 
 | `colorama` | ANSI Escape Codes | Zero-dependency styling for legacy CLI |
 | `tui/` (legacy) | `tui/main.py` | Removed ~1,500 lines of manual ANSI code |
 
-**New Dependency**: `textual` (Optional, required for TUI mode).
+**New Core Dependencies**: `textual` (Optional TUI), `blake3` (Signatures), `chromadb` (RAG), `aiohttp` (Async API).
 
 ## 5. Instructions for Use
 

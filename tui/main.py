@@ -48,6 +48,7 @@ class SynapticFortress(App):
     security_status = reactive("secure")
     voice_active = reactive(False)
     integrity = reactive(100.0)
+    mode = reactive("maintenance")
 
     BINDINGS = [
         Binding("h", "help", "Help"),
@@ -109,6 +110,20 @@ class SynapticFortress(App):
         if self.hub._running:
             self.voice_active = True
             self.run_worker(self._voice_monitor_loop, thread=True, name="voice_monitor")
+
+    def watch_mode(self, new_mode: str):
+        """Reactive watcher for mode changes."""
+        try:
+            activation_title = self.query_one("#activation-title", Static)
+            if new_mode == "assembly":
+                activation_title.update("GHOST SHELL ASSEMBLY")
+                self.log_message("[magenta]Initiating neural shard recombination...[/magenta]", zone="activation")
+            elif new_mode == "audit":
+                activation_title.update("SECURITY AUDIT MODE")
+            else:
+                activation_title.update("ACTIVATION CHAMBER")
+        except Exception:
+            pass
 
     def log_message(self, message: str, zone: str = "console") -> None:
         """Log a message to one of the RichLog widgets."""
