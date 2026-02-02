@@ -8,12 +8,12 @@ The Cynapse Hub has undergone a major transition from a legacy manual ANSI inter
 
 ## 2. Interface Enhancements (The Synaptic Fortress)
 
-### 2.1 Textual TUI Migration
+### 2.1 Hybrid Presentation Layer
 - **Stability**: Implemented a state-of-the-art interface using `textual`. It uses an alternate screen buffer to ensure the dashboard remains fixed and "stays in place," eliminating the scrolling issues found in the previous version.
-- **Unified Command Center**: The TUI now integrates directly with the `CynapseHub` class. It performs a real-time "Discovery Scan" on startup and allows for the actual execution of neurons via the input console.
-- **Reactive Status**: The status bar (Security, Integrity, Voice, Shards) updates in real-time based on the Hub's internal state.
-- **Navigation**: Fixed arrow key and `hjkl` navigation. Previously, these keys were misread as "Exit" commands; they now correctly control selection within the Neuron Sidebar.
-- **Background Execution**: Neurons are now launched in background threads (`asyncio.to_thread`), preventing the UI from freezing during long-running security tasks.
+- **Graceful Fallback**: The system now automatically detects terminal capabilities. If the environment lacks `textual` or uses a "dumb" terminal, it falls back to a minimal, high-performance CLI mode.
+- **Unified Command Center**: The TUI integrates directly with the `CynapseHub` class, surfacing the same core logic as the CLI but with reactive status monitoring.
+- **Navigation**: Fixed arrow key and `hjkl` navigation. Robust event handling prevents escape sequence collisions.
+- **Thread Safety**: Hardened the Hub with reentrant locking (`threading.RLock`) to ensure the UI and background voice loop can operate simultaneously without race conditions.
 
 ## 3. Security Hardening
 
@@ -43,7 +43,7 @@ We have reduced the project's external footprint by replacing bloated libraries 
 | `colorama` | ANSI Escape Codes | Zero-dependency styling for legacy CLI |
 | `tui/` (legacy) | `hub_tui.py` | Removed ~500 lines of manual ANSI code |
 
-**New Dependency**: `textual` (Required for the modern interface).
+**New Dependency**: `textual` (Optional, required for TUI mode).
 
 ## 5. Instructions for Use
 
