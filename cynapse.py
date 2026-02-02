@@ -562,19 +562,18 @@ def main():
             # Launch the Textual-based TUI
             try:
                 # Redirect stderr to devnull to avoid UI corruption from warnings/noise
-                # but keep a reference to original for cleanup
                 original_stderr = sys.stderr
                 sys.stderr = open(os.devnull, 'w')
 
-                from hub_tui import CynapseApp
-                app = CynapseApp()
+                from tui.main import SynapticFortress
+                app = SynapticFortress()
                 app.run()
 
                 sys.stderr = original_stderr
             except ImportError:
                 sys.stderr = sys.__stderr__
-                print("Error: 'textual' package not found. Modern TUI requires 'pip install textual'.")
-                print("Falling back to CLI mode...")
+                print("Error: 'textual' package not found or TUI module missing.")
+                print("Modern TUI requires 'pip install textual'. Falling back to CLI mode...")
                 hub = CynapseHub()
                 hub.cli_loop()
             except Exception as e:
@@ -613,8 +612,8 @@ def main():
         if supports_tui():
             # Try to launch TUI by default
             try:
-                from hub_tui import CynapseApp
-                app = CynapseApp()
+                from tui.main import SynapticFortress
+                app = SynapticFortress()
                 app.run()
             except ImportError:
                 hub = CynapseHub()

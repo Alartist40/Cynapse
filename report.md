@@ -41,7 +41,7 @@ We have reduced the project's external footprint by replacing bloated libraries 
 | `requests` | `urllib.request` | Reduced 110MB+ environment overhead |
 | `PyPDF2` | `pypdf` (already present) | Eliminated duplicate functionality and CVE risks |
 | `colorama` | ANSI Escape Codes | Zero-dependency styling for legacy CLI |
-| `tui/` (legacy) | `hub_tui.py` | Removed ~500 lines of manual ANSI code |
+| `tui/` (legacy) | `tui/main.py` | Removed ~1,500 lines of manual ANSI code |
 
 **New Dependency**: `textual` (Optional, required for TUI mode).
 

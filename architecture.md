@@ -55,7 +55,9 @@ This document maps every component in the Cynapse Ghost Shell Hub system, their 
 ```
 cynapse/
 ├── cynapse.py                    # [CORE] Main orchestrator
-├── hub_tui.py                    # [UI] Reactive Textual TUI
+├── tui/                          # [UI] Modern reactive interface
+│   ├── main.py                   # Textual Application
+│   └── styles.css                # Interface styling
 ├── hivemind.py                   # [CORE] HiveMind CLI
 ├── requirements.txt              # [CONFIG] Python dependencies
 ├── .gitignore                    # [CONFIG] Git ignore rules
@@ -197,7 +199,7 @@ cynapse/
 | Component | File | Purpose |
 |-----------|------|---------|
 | **Orchestrator** | `cynapse.py` | Central hub that discovers, verifies, and executes neurons. |
-| **Reactive TUI** | `hub_tui.py` | Modern, stable terminal interface using Textual. Optional. |
+| **Reactive TUI** | `tui/main.py` | Modern, stable terminal interface using Textual. Optional. |
 | **Config Loader** | `cynapse.py: _load_config()` | Reads INI configuration. |
 | **Neuron Discovery** | `cynapse.py: _discover_neurons()` | Scans neurons/ directory |
 | **Audit Logger** | `cynapse.py: AuditLogger` | NDJSON event logging |
@@ -316,9 +318,10 @@ GPTConfig:
 ### 3.1 Hybrid Architecture
 Cynapse implements a **Hybrid Presentation Layer**. It detects terminal capabilities and the presence of dependencies to provide the best possible experience while maintaining absolute portability.
 
-### 3.2 Modern TUI (`hub_tui.py`)
+### 3.2 Modern TUI (`tui/main.py`)
 - Reactive dashboard using Textual.
 - Persistent status monitoring and animated scans.
+- High-fidelity styling via `tui/styles.css`.
 - Requires: `pip install textual`.
 
 ### 3.3 Cynapse CLI (`cynapse.py`)

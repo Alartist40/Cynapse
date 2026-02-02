@@ -1,0 +1,102 @@
+/* Cynapse - Synaptic Fortress Theme */
+
+#app-container {
+    background: #0d1117;
+    color: #c9d1d9;
+}
+
+#perimeter {
+    height: 3;
+    layout: horizontal;
+    background: #5a189a;
+    color: white;
+    text-style: bold;
+    border-bottom: double #9d4edd;
+}
+
+#perimeter Static {
+    width: 1fr;
+    padding: 0 1;
+    content-align: center middle;
+}
+
+.status-secure { color: #ffd700; }
+.status-breach { color: #ff0000; background: #330000; }
+
+#main-content {
+    height: 1fr;
+}
+
+#sentinel {
+    width: 30;
+    border-right: double #5a189a;
+    background: #161b22;
+}
+
+#sentinel-title {
+    text-align: center;
+    text-style: bold;
+    padding: 1;
+    background: #5a189a;
+    color: #ffd700;
+}
+
+#neuron-list {
+    height: 1fr;
+}
+
+#right-panel {
+    width: 1fr;
+}
+
+#activation {
+    height: 40%;
+    border-bottom: solid #5a189a;
+    background: #0d1117;
+}
+
+#activation-title, #operations-title {
+    padding: 0 1;
+    text-style: bold italic;
+    color: #9d4edd;
+    background: #161b22;
+}
+
+#activation-log, #console {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#operations {
+    height: 60%;
+}
+
+#chat-input {
+    dock: bottom;
+    height: 3;
+    border-top: solid #5a189a;
+    background: #161b22;
+    color: #00e5ff;
+}
+
+/* Scrollbar styling */
+RichLog {
+    scrollbar-color: #5a189a;
+    scrollbar-color-hover: #9d4edd;
+}
+
+/* ListView styling */
+NeuronItem {
+    padding: 0 1;
+    color: #888888;
+}
+
+NeuronItem:hover {
+    background: #5a189a33;
+}
+
+ListView > ListItem.--highlight {
+    background: #5a189a;
+    color: white;
+    text-style: bold;
+}
