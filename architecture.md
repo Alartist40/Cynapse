@@ -10,11 +10,12 @@ This document maps every component in the Cynapse Ghost Shell Hub system, their 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        CYNAPSE HUB (32 GB USB)                       │
 ├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │
-│  │  CYNAPSE.PY │◄─│   CONFIG    │  │   LOGGER    │                  │
-│  │ Orchestrator│  │  Settings   │  │   NDJSON    │                  │
-│  └──────┬──────┘  └─────────────┘  └─────────────┘                  │
-│         │                                                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │  HUB_TUI.PY │  │  CYNAPSE.PY │◄─│   CONFIG    │  │   LOGGER    │  │
+│  │ Reactive UI │  │ Orchestrator│  │  Settings   │  │   NDJSON    │  │
+│  └──────┬──────┘  └──────┬──────┘  └─────────────┘  └─────────────┘  │
+│         └──────┬─────────┘                                           │
+│                │                                                     │
 │         ▼                                                            │
 │  ┌─────────────────────────────────────────────────────────────┐    │
 │  │                    NEURONS (12 Tools)                        │    │
@@ -54,6 +55,7 @@ This document maps every component in the Cynapse Ghost Shell Hub system, their 
 ```
 cynapse/
 ├── cynapse.py                    # [CORE] Main orchestrator
+├── hub_tui.py                    # [UI] Reactive Textual TUI
 ├── hivemind.py                   # [CORE] HiveMind CLI
 ├── requirements.txt              # [CONFIG] Python dependencies
 ├── .gitignore                    # [CONFIG] Git ignore rules
@@ -195,6 +197,7 @@ cynapse/
 | Component | File | Purpose |
 |-----------|------|---------|
 | **Orchestrator** | `cynapse.py` | Central hub that discovers, verifies, and executes neurons |
+| **Reactive TUI** | `hub_tui.py` | Modern, stable terminal interface using Textual |
 | **Config Loader** | `cynapse.py: _load_config()` | Reads INI configuration |
 | **Neuron Discovery** | `cynapse.py: _discover_neurons()` | Scans neurons/ directory |
 | **Audit Logger** | `cynapse.py: AuditLogger` | NDJSON event logging |

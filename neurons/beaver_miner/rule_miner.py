@@ -67,6 +67,13 @@ class RuleMiner:
         logger.info("[*] Parsing rule with local LLM...")
         rule_json = self.llm_handler.english_to_json(sentence)
         logger.info(f"[+] Generated JSON: {json.dumps(rule_json, indent=2)}")
+
+        # Security: Validate the JSON rule to prevent command injection
+        from utils import validate_json_rule
+        if not validate_json_rule(rule_json):
+            logger.error("[!] Security Alert: LLM generated invalid or unsafe rule parameters.")
+            raise ValueError("Unsafe rule parameters detected. Aborting generation for security.")
+
         return rule_json
     
     def generate_rules(self, rule_json: Dict, 

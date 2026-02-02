@@ -103,32 +103,23 @@ class Neuron:
     
     def _find_binary(self) -> Optional[Path]:
         """Find the entry point binary/script"""
+        from utils.security import validate_path_traversal
+
         entry = self.path / self.manifest.entry_point
 
         # Security: Prevent path traversal using a robust method.
-        resolved_entry = entry.resolve()
-        resolved_base = self.path.resolve()
-        try:
-            # This will raise ValueError if the path is outside the base directory.
-            resolved_entry.relative_to(resolved_base)
-        except ValueError:
-            print(f"CRITICAL: Path traversal attempt in neuron '{self.manifest.name}'. Entry point '{self.manifest.entry_point}' is outside its directory.", file=sys.stderr)
+        if not validate_path_traversal(self.path, entry, f"neuron '{self.manifest.name}'"):
             return None
 
-        if resolved_entry.exists():
-            return resolved_entry
+        if entry.exists():
+            return entry
         
         # Try common extensions, ensuring they are also validated.
         for ext in ['.py', '.exe', '.sh', '.ps1']:
             for candidate in self.path.glob(f"*{ext}"):
-                try:
-                    # Perform the same path traversal check on the fallback candidate.
-                    candidate.resolve().relative_to(resolved_base)
+                # Perform the same path traversal check on the fallback candidate.
+                if validate_path_traversal(self.path, candidate, f"neuron '{self.manifest.name}' fallback"):
                     return candidate  # Return the first valid candidate.
-                except ValueError:
-                    # This candidate is outside the neuron's directory, log and ignore it.
-                    print(f"CRITICAL: Path traversal attempt in neuron '{self.manifest.name}'. Fallback candidate '{candidate.name}' is outside its directory.", file=sys.stderr)
-                    continue  # Check the next candidate.
         return None
     
     def verify(self) -> bool:
@@ -279,28 +270,44 @@ class CynapseHub:
                 print(f"Warning: Failed to load neuron {path.name}: {e}")
     
     def list_neurons(self) -> List[str]:
-        """List all available neurons."""
+        """List all available neuron names."""
         return list(self.neurons.keys())
+
+    def get_all_neurons(self) -> List[Neuron]:
+        """Get all loaded neuron objects."""
+        return list(self.neurons.values())
     
     def get_neuron(self, name: str) -> Optional[Neuron]:
         """Get a neuron by name."""
         return self.neurons.get(name.lower())
     
-    def run_neuron(self, name: str, *args) -> Optional[subprocess.CompletedProcess]:
-        """Run a neuron with given arguments."""
+    def run_neuron(self, name: str, *args, **kwargs) -> Optional[subprocess.CompletedProcess]:
+        """
+        Run a neuron with given arguments.
+
+        Args:
+            name: Name of the neuron
+            *args: Arguments to pass to the neuron
+            **kwargs:
+                silent: If True, don't print errors to stdout
+                timeout: Custom timeout for execution
+        """
+        silent = kwargs.get('silent', False)
         neuron = self.get_neuron(name)
+
         if not neuron:
             self.logger.log("neuron_not_found", {"name": name})
-            print(f"Error: Neuron '{name}' not found")
+            if not silent:
+                print(f"Error: Neuron '{name}' not found")
             return None
             
         if not neuron.verify():
             self.logger.log("signature_verification_failed", {"name": name})
-            print(f"Error: Signature verification failed for '{name}'")
+            if not silent:
+                print(f"Error: Signature verification failed for '{name}'")
             return None
         
         # Security: Redact potentially sensitive arguments to prevent information disclosure in logs.
-        # Mask arguments that are long or contain sensitive keywords.
         redacted_args = []
         for arg in args:
             arg_str = str(arg)
@@ -312,7 +319,7 @@ class CynapseHub:
         self.logger.log("neuron_execute_start", {"name": name, "args": redacted_args})
         
         try:
-            result = neuron.execute(*args)
+            result = neuron.execute(*args, timeout=kwargs.get('timeout', 300))
             self.logger.log("neuron_execute_complete", {
                 "name": name,
                 "returncode": result.returncode,
@@ -322,7 +329,6 @@ class CynapseHub:
             return result
         except Exception as e:
             # Security: Subprocess errors often contain the full command line with arguments.
-            # Avoid logging the raw exception string to prevent secret leakage in logs.
             error_type = type(e).__name__
             if isinstance(e, subprocess.TimeoutExpired):
                 error_msg = f"Command timed out after {e.timeout}s"
@@ -336,7 +342,8 @@ class CynapseHub:
                 error_msg = f"{error_type} (sensitive or verbose details redacted)"
 
             self.logger.log("neuron_execute_error", {"name": name, "error": error_msg})
-            print(f"Error executing {name}: {error_msg}")
+            if not silent:
+                print(f"Error executing {name}: {error_msg}")
             return None
     
     def start_voice_listener(self):
@@ -530,12 +537,33 @@ def main():
             hub = CynapseHub()
             hub._list_neurons()
             sys.exit(0)
+        elif sys.argv[1] == '--tui':
+            # Launch the Textual-based TUI
+            try:
+                from hub_tui import CynapseApp
+                app = CynapseApp()
+                app.run()
+            except ImportError as e:
+                print(f"Error loading TUI: {e}")
+                print("Make sure the textual package is installed.")
+                # Fallback to the manual TUI if it exists and hub_tui doesn't
+                try:
+                    from tui.main import CynapseTUI
+                    tui = CynapseTUI()
+                    tui.run()
+                except ImportError:
+                    sys.exit(1)
+            except Exception as e:
+                print(f"TUI Error: {e}")
+                sys.exit(1)
+            sys.exit(0)
         elif sys.argv[1] == '--help':
             print("Cynapse Hub - Ghost Shell Security Ecosystem")
             print("\nUsage: python cynapse.py [options] [neuron] [args...]")
             print("\nOptions:")
             print("  --test    Run verification tests")
             print("  --list    List all neurons")
+            print("  --tui     Launch the Synaptic Fortress TUI")
             print("  --help    Show this help")
             print("\nRun without arguments to start interactive mode.")
             sys.exit(0)

@@ -59,9 +59,9 @@ This document breaks down every component of the Cynapse ecosystem, explaining *
 *   **What**: Library to run 70B models on limited RAM by paging to disk.
 *   **Pareto Value**: **High**. Enables the "Teacher" functionality of HiveMind. Without it, you cannot train effectively locally.
 
-### 2. Cynapse Hub (`cynapse.py`)
-*   **What**: The legacy voice/whistle orchestrator.
-*   **Pareto Value**: **Middle**. It's cool for the "Batman" aesthetic (whistle to wake), but for actual AI development, the `hivemind.py` CLI is more practical.
+### 2. Cynapse Hub (`cynapse.py` & `hub_tui.py`)
+*   **What**: The voice/whistle orchestrator and its modern reactive TUI.
+*   **Pareto Value**: **High**. With the new TUI, it provides a professional-grade command center for all security operations.
 
 ---
 

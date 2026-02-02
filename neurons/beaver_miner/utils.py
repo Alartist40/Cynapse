@@ -152,15 +152,18 @@ def print_banner():
     print(banner)
 
 
+import re
+
 def validate_json_rule(rule_json: Dict) -> bool:
     """
-    Validate that a rule JSON has all required fields
+    Validate that a rule JSON has all required fields and they are safe.
+    Uses regex to prevent command injection.
     
     Args:
         rule_json: Rule dictionary to validate
         
     Returns:
-        True if valid, False otherwise
+        True if valid and safe, False otherwise
     """
     required_fields = [
         "src_ip", "dst_ip", "proto", "dst_port",
@@ -171,6 +174,30 @@ def validate_json_rule(rule_json: Dict) -> bool:
         if field not in rule_json:
             return False
     
+    # Validation Patterns
+    # IP: Supports IPv4, IPv4/Mask, or "any"
+    ip_pattern = r"^(any|(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?)$"
+    # Port: 1-5 digits or "any"
+    port_pattern = r"^(any|\d{1,5})$"
+    # Proto: common protocols
+    proto_pattern = r"^(any|tcp|udp|icmp|ip)$"
+    # Time: HH:MM
+    time_pattern = r"^\d{2}:\d{2}$"
+
+    # Validate each field
+    if not re.match(ip_pattern, str(rule_json["src_ip"]), re.I):
+        return False
+    if not re.match(ip_pattern, str(rule_json["dst_ip"]), re.I):
+        return False
+    if not re.match(port_pattern, str(rule_json["dst_port"]), re.I):
+        return False
+    if not re.match(proto_pattern, str(rule_json["proto"]), re.I):
+        return False
+    if not re.match(time_pattern, str(rule_json["time_start"])):
+        return False
+    if not re.match(time_pattern, str(rule_json["time_end"])):
+        return False
+
     # Validate action
     if rule_json["action"] not in ["allow", "deny"]:
         return False
