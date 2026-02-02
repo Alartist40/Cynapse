@@ -73,6 +73,14 @@ cynapse> list
 cynapse> help
 ```
 
+### Modern TUI Mode (Recommended)
+
+For a stable, non-scrolling interface with real-time status monitoring:
+
+```bash
+python cynapse.py --tui
+```
+
 ---
 
 ## 🧠 The 12 Neurons

@@ -103,32 +103,23 @@ class Neuron:
     
     def _find_binary(self) -> Optional[Path]:
         """Find the entry point binary/script"""
+        from utils.security import validate_path_traversal
+
         entry = self.path / self.manifest.entry_point
 
         # Security: Prevent path traversal using a robust method.
-        resolved_entry = entry.resolve()
-        resolved_base = self.path.resolve()
-        try:
-            # This will raise ValueError if the path is outside the base directory.
-            resolved_entry.relative_to(resolved_base)
-        except ValueError:
-            print(f"CRITICAL: Path traversal attempt in neuron '{self.manifest.name}'. Entry point '{self.manifest.entry_point}' is outside its directory.", file=sys.stderr)
+        if not validate_path_traversal(self.path, entry, f"neuron '{self.manifest.name}'"):
             return None
 
-        if resolved_entry.exists():
-            return resolved_entry
+        if entry.exists():
+            return entry
         
         # Try common extensions, ensuring they are also validated.
         for ext in ['.py', '.exe', '.sh', '.ps1']:
             for candidate in self.path.glob(f"*{ext}"):
-                try:
-                    # Perform the same path traversal check on the fallback candidate.
-                    candidate.resolve().relative_to(resolved_base)
+                # Perform the same path traversal check on the fallback candidate.
+                if validate_path_traversal(self.path, candidate, f"neuron '{self.manifest.name}' fallback"):
                     return candidate  # Return the first valid candidate.
-                except ValueError:
-                    # This candidate is outside the neuron's directory, log and ignore it.
-                    print(f"CRITICAL: Path traversal attempt in neuron '{self.manifest.name}'. Fallback candidate '{candidate.name}' is outside its directory.", file=sys.stderr)
-                    continue  # Check the next candidate.
         return None
     
     def verify(self) -> bool:
@@ -239,6 +230,7 @@ class CynapseHub:
         self.neurons: Dict[str, Neuron] = {}
         self._voice_thread = None
         self._running = False
+        self._lock = threading.RLock()  # Thread safety for Hub state and execution
         
         # Discover neurons
         self._discover_neurons()
@@ -262,82 +254,100 @@ class CynapseHub:
         if not NEURONS_DIR.exists():
             return
             
-        for path in NEURONS_DIR.iterdir():
-            if not path.is_dir():
-                continue
-            if path.name.startswith('_'):
-                continue
-                
-            manifest_file = path / "manifest.json"
-            if not manifest_file.exists():
-                continue
-                
-            try:
-                neuron = Neuron(path)
-                self.neurons[neuron.manifest.name.lower()] = neuron
-            except Exception as e:
-                print(f"Warning: Failed to load neuron {path.name}: {e}")
+        with self._lock:
+            for path in NEURONS_DIR.iterdir():
+                if not path.is_dir():
+                    continue
+                if path.name.startswith('_'):
+                    continue
+
+                manifest_file = path / "manifest.json"
+                if not manifest_file.exists():
+                    continue
+
+                try:
+                    neuron = Neuron(path)
+                    self.neurons[neuron.manifest.name.lower()] = neuron
+                except Exception as e:
+                    print(f"Warning: Failed to load neuron {path.name}: {e}")
     
     def list_neurons(self) -> List[str]:
-        """List all available neurons."""
+        """List all available neuron names."""
         return list(self.neurons.keys())
+
+    def get_all_neurons(self) -> List[Neuron]:
+        """Get all loaded neuron objects."""
+        return list(self.neurons.values())
     
     def get_neuron(self, name: str) -> Optional[Neuron]:
         """Get a neuron by name."""
         return self.neurons.get(name.lower())
     
-    def run_neuron(self, name: str, *args) -> Optional[subprocess.CompletedProcess]:
-        """Run a neuron with given arguments."""
-        neuron = self.get_neuron(name)
-        if not neuron:
-            self.logger.log("neuron_not_found", {"name": name})
-            print(f"Error: Neuron '{name}' not found")
-            return None
-            
-        if not neuron.verify():
-            self.logger.log("signature_verification_failed", {"name": name})
-            print(f"Error: Signature verification failed for '{name}'")
-            return None
-        
-        # Security: Redact potentially sensitive arguments to prevent information disclosure in logs.
-        # Mask arguments that are long or contain sensitive keywords.
-        redacted_args = []
-        for arg in args:
-            arg_str = str(arg)
-            if len(arg_str) > 64 or any(kw in arg_str.lower() for kw in SENSITIVE_KEYWORDS):
-                redacted_args.append(f"<redacted:{len(arg_str)} chars>")
-            else:
-                redacted_args.append(arg_str)
+    def run_neuron(self, name: str, *args, **kwargs) -> Optional[subprocess.CompletedProcess]:
+        """
+        Run a neuron with given arguments (thread-safe).
 
-        self.logger.log("neuron_execute_start", {"name": name, "args": redacted_args})
-        
-        try:
-            result = neuron.execute(*args)
-            self.logger.log("neuron_execute_complete", {
-                "name": name,
-                "returncode": result.returncode,
-                "stdout_len": len(result.stdout),
-                "stderr_len": len(result.stderr)
-            })
-            return result
-        except Exception as e:
-            # Security: Subprocess errors often contain the full command line with arguments.
-            # Avoid logging the raw exception string to prevent secret leakage in logs.
-            error_type = type(e).__name__
-            if isinstance(e, subprocess.TimeoutExpired):
-                error_msg = f"Command timed out after {e.timeout}s"
-            elif isinstance(e, subprocess.CalledProcessError):
-                error_msg = f"Command failed with return code {e.returncode}"
-            else:
-                error_msg = str(e)
+        Args:
+            name: Name of the neuron
+            *args: Arguments to pass to the neuron
+            **kwargs:
+                silent: If True, don't print errors to stdout
+                timeout: Custom timeout for execution
+        """
+        with self._lock:
+            silent = kwargs.get('silent', False)
+            neuron = self.get_neuron(name)
 
-            # Final safety check for sensitive keywords in any error message
-            if any(kw in error_msg.lower() for kw in SENSITIVE_KEYWORDS) or len(error_msg) > 256:
-                error_msg = f"{error_type} (sensitive or verbose details redacted)"
+            if not neuron:
+                self.logger.log("neuron_not_found", {"name": name})
+                if not silent:
+                    print(f"Error: Neuron '{name}' not found")
+                return None
 
-            self.logger.log("neuron_execute_error", {"name": name, "error": error_msg})
-            print(f"Error executing {name}: {error_msg}")
-            return None
+            if not neuron.verify():
+                self.logger.log("signature_verification_failed", {"name": name})
+                if not silent:
+                    print(f"Error: Signature verification failed for '{name}'")
+                return None
+
+            # Security: Redact potentially sensitive arguments to prevent information disclosure in logs.
+            redacted_args = []
+            for arg in args:
+                arg_str = str(arg)
+                if len(arg_str) > 64 or any(kw in arg_str.lower() for kw in SENSITIVE_KEYWORDS):
+                    redacted_args.append(f"<redacted:{len(arg_str)} chars>")
+                else:
+                    redacted_args.append(arg_str)
+
+            self.logger.log("neuron_execute_start", {"name": name, "args": redacted_args})
+
+            try:
+                result = neuron.execute(*args, timeout=kwargs.get('timeout', 300))
+                self.logger.log("neuron_execute_complete", {
+                    "name": name,
+                    "returncode": result.returncode,
+                    "stdout_len": len(result.stdout),
+                    "stderr_len": len(result.stderr)
+                })
+                return result
+            except Exception as e:
+                # Security: Subprocess errors often contain the full command line with arguments.
+                error_type = type(e).__name__
+                if isinstance(e, subprocess.TimeoutExpired):
+                    error_msg = f"Command timed out after {e.timeout}s"
+                elif isinstance(e, subprocess.CalledProcessError):
+                    error_msg = f"Command failed with return code {e.returncode}"
+                else:
+                    error_msg = str(e)
+
+                # Final safety check for sensitive keywords in any error message
+                if any(kw in error_msg.lower() for kw in SENSITIVE_KEYWORDS) or len(error_msg) > 256:
+                    error_msg = f"{error_type} (sensitive or verbose details redacted)"
+
+                self.logger.log("neuron_execute_error", {"name": name, "error": error_msg})
+                if not silent:
+                    print(f"Error executing {name}: {error_msg}")
+                return None
     
     def start_voice_listener(self):
         """Start the voice control listener in a background thread."""
@@ -519,6 +529,18 @@ Cynapse Hub Status:
         return failed == 0
 
 
+def supports_tui() -> bool:
+    """Check if the current terminal supports the modern TUI."""
+    if not sys.stdout.isatty():
+        return False
+
+    term = os.getenv('TERM', '').lower()
+    if term in ['dumb', 'vt100', 'linux']:
+        return False
+
+    return True
+
+
 def main():
     """Main entry point."""
     if len(sys.argv) > 1:
@@ -530,14 +552,50 @@ def main():
             hub = CynapseHub()
             hub._list_neurons()
             sys.exit(0)
+        elif sys.argv[1] == '--tui':
+            if not supports_tui():
+                print("Warning: Terminal does not support modern TUI. Falling back to CLI.")
+                hub = CynapseHub()
+                hub.cli_loop()
+                sys.exit(0)
+
+            # Launch the Textual-based TUI
+            try:
+                # Redirect stderr to devnull to avoid UI corruption from warnings/noise
+                # but keep a reference to original for cleanup
+                original_stderr = sys.stderr
+                sys.stderr = open(os.devnull, 'w')
+
+                from hub_tui import CynapseApp
+                app = CynapseApp()
+                app.run()
+
+                sys.stderr = original_stderr
+            except ImportError:
+                sys.stderr = sys.__stderr__
+                print("Error: 'textual' package not found. Modern TUI requires 'pip install textual'.")
+                print("Falling back to CLI mode...")
+                hub = CynapseHub()
+                hub.cli_loop()
+            except Exception as e:
+                sys.stderr = sys.__stderr__
+                print(f"TUI Error: {e}")
+                sys.exit(1)
+            sys.exit(0)
+        elif sys.argv[1] == '--cli':
+            hub = CynapseHub()
+            hub.cli_loop()
+            sys.exit(0)
         elif sys.argv[1] == '--help':
             print("Cynapse Hub - Ghost Shell Security Ecosystem")
             print("\nUsage: python cynapse.py [options] [neuron] [args...]")
             print("\nOptions:")
+            print("  --tui     Launch modern reactive TUI (default if supported)")
+            print("  --cli     Force legacy interactive CLI mode")
             print("  --test    Run verification tests")
             print("  --list    List all neurons")
             print("  --help    Show this help")
-            print("\nRun without arguments to start interactive mode.")
+            print("\nRun without arguments to start TUI (if supported) or CLI.")
             sys.exit(0)
         else:
             # Run neuron directly
@@ -552,8 +610,18 @@ def main():
                 sys.exit(result.returncode)
             sys.exit(1)
     else:
-        hub = CynapseHub()
-        hub.cli_loop()
+        if supports_tui():
+            # Try to launch TUI by default
+            try:
+                from hub_tui import CynapseApp
+                app = CynapseApp()
+                app.run()
+            except ImportError:
+                hub = CynapseHub()
+                hub.cli_loop()
+        else:
+            hub = CynapseHub()
+            hub.cli_loop()
 
 
 if __name__ == "__main__":

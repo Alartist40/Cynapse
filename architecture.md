@@ -10,11 +10,12 @@ This document maps every component in the Cynapse Ghost Shell Hub system, their 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        CYNAPSE HUB (32 GB USB)                       │
 ├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │
-│  │  CYNAPSE.PY │◄─│   CONFIG    │  │   LOGGER    │                  │
-│  │ Orchestrator│  │  Settings   │  │   NDJSON    │                  │
-│  └──────┬──────┘  └─────────────┘  └─────────────┘                  │
-│         │                                                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │  HUB_TUI.PY │  │  CYNAPSE.PY │◄─│   CONFIG    │  │   LOGGER    │  │
+│  │ Reactive UI │  │ Orchestrator│  │  Settings   │  │   NDJSON    │  │
+│  └──────┬──────┘  └──────┬──────┘  └─────────────┘  └─────────────┘  │
+│         └──────┬─────────┘                                           │
+│                │                                                     │
 │         ▼                                                            │
 │  ┌─────────────────────────────────────────────────────────────┐    │
 │  │                    NEURONS (12 Tools)                        │    │
@@ -54,6 +55,7 @@ This document maps every component in the Cynapse Ghost Shell Hub system, their 
 ```
 cynapse/
 ├── cynapse.py                    # [CORE] Main orchestrator
+├── hub_tui.py                    # [UI] Reactive Textual TUI
 ├── hivemind.py                   # [CORE] HiveMind CLI
 ├── requirements.txt              # [CONFIG] Python dependencies
 ├── .gitignore                    # [CONFIG] Git ignore rules
@@ -194,8 +196,9 @@ cynapse/
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| **Orchestrator** | `cynapse.py` | Central hub that discovers, verifies, and executes neurons |
-| **Config Loader** | `cynapse.py: _load_config()` | Reads INI configuration |
+| **Orchestrator** | `cynapse.py` | Central hub that discovers, verifies, and executes neurons. |
+| **Reactive TUI** | `hub_tui.py` | Modern, stable terminal interface using Textual. Optional. |
+| **Config Loader** | `cynapse.py: _load_config()` | Reads INI configuration. |
 | **Neuron Discovery** | `cynapse.py: _discover_neurons()` | Scans neurons/ directory |
 | **Audit Logger** | `cynapse.py: AuditLogger` | NDJSON event logging |
 | **Voice Listener** | `cynapse.py: _voice_loop()` | Background whistle detection |
@@ -305,6 +308,23 @@ GPTConfig:
   recursion_depth: 2      # TRM iterations
   use_diffusion_head: True # TiDAR enabled
 ```
+
+---
+
+## Interfaces
+
+### 3.1 Hybrid Architecture
+Cynapse implements a **Hybrid Presentation Layer**. It detects terminal capabilities and the presence of dependencies to provide the best possible experience while maintaining absolute portability.
+
+### 3.2 Modern TUI (`hub_tui.py`)
+- Reactive dashboard using Textual.
+- Persistent status monitoring and animated scans.
+- Requires: `pip install textual`.
+
+### 3.3 Cynapse CLI (`cynapse.py`)
+- Standard input/output loop for minimal environments.
+- Supports direct neuron command routing.
+- Zero external dependencies required for core functionality.
 
 ---
 

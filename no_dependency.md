@@ -90,6 +90,7 @@ For basic functionality without AI features, Cynapse can run with **zero externa
 - Basic CLI interface
 
 # Features requiring dependencies:
+- Modern TUI (requires: textual - optional, falls back to CLI)
 - AI Chat (requires: ollama)
 - Voice Control (requires: whistle detection)
 - Training (requires: torch, transformers)

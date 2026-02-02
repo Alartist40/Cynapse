@@ -1,4 +1,4 @@
-# TUI Architecture Specification: Cynapse Unified Hub
+# TUI Architecture Specification: Cynapse Unified Hub [IMPLEMENTED]
 
 ## 1. UX Philosophy
 - **Paradigm**: Modern, reactive TUI with a persistent dashboard and modal interaction.
@@ -46,30 +46,28 @@
 | Audit Feed | `RichLog` | Real-time view of `audit.ndjson` entries |
 | Settings Modal| `ModalScreen` | Configuration of whistle frequency, API keys |
 
-## 4. Technology Stack Recommendation
+## 4. Technology Stack
 
-**Recommendation: Textual (Python)**
+**Implemented via: Textual (Python)**
 - **Rationale**:
     - **Async-Native**: Built on `asyncio`, perfect for long-running tasks like model assembly or voice listening without freezing the UI.
-    - **CSS Styling**: Allows for "Cynapse Green" or "Ghost Shell Dark" themes without manual ANSI math.
-    - **Legacy GUI Replacement**: Replaces the removed `devale` GUI with a more efficient, keyboard-driven alternative.
-    - **Zero-Dependency (almost)**: Only depends on `rich`, fitting the minimal bloat strategy.
+    - **CSS Styling**: Provides high-fidelity cyberpunk themes with minimal performance overhead.
+    - **Stability**: Uses an alternate screen buffer to prevent scrolling "spam" and provide a persistent dashboard.
 
-## 5. Migration Strategy
+## 5. Implementation Status
 
-### 5.1 Orchestration Abstraction
-Refactor `CynapseHub` to be a backend class:
-- **hub_backend.py**: Business logic (discovery, execution, logging).
-- **hub_tui.py**: Textual interface that calls `backend.run_neuron()`.
-- **hub_cli.py**: Legacy CLI for minimal environments.
+### 5.1 Orchestration
+`CynapseHub` has been refactored in `cynapse.py` to support programmatic access.
+- **hub_tui.py**: The implemented Textual interface.
+- **cynapse.py --tui**: Main entry point for the modern interface.
+- **cynapse.py (no args)**: Remains available for minimal CLI environments.
 
-### 5.2 Feature Parity Roadmap
-| GUI/CLI Feature | TUI Equivalent | Priority |
-|-----------------|----------------|----------|
-| Neuron Selection | Sidebar + Filter ( `/` ) | P0 |
-| Model Assembly | Center Panel Animation + Status | P0 |
-| AI Chat | Dedicated Chat Tab/Pane | P1 |
-| Audit Log View | Live Scrollable Feed Panel | P2 |
+### 5.2 Completed Features
+- [x] **Neuron Sidebar**: Interactive list of all 12 neurons with descriptions.
+- [x] **Stable Dashboard**: Non-scrolling status bar and persistent console.
+- [x] **Background Execution**: Neurons run in separate threads to keep UI responsive.
+- [x] **Discovery Scan**: Animated initial scan surfacing neuron capabilities.
+- [x] **Integrated Hub**: Real-time voice listener status and manual security scans.
 
 ## 6. Dependency Analysis
 - **New Dependency**: `textual` (≈ 2.5 MB including dependencies).
