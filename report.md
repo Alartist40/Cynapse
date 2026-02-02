@@ -69,3 +69,17 @@ Cynapse follows a modular orchestrator pattern where a central hub manages indep
 | P0 | API Key Logging in Rhino Gateway | High (Security) | Low |
 | P1 | Missing Signature Verifier | High (Stability) | Medium |
 | P2 | Pypdf Vulnerabilities | Medium | Low |
+
+
+## 8. Forensic Details & Connection Matrix
+
+### 8.1 Intent vs. Implementation Gaps
+- **Voice Commands**: The README documents voice commands like "Scan network" for Meerkat and "Redact document" for Owl. However, the current implementation in `cynapse.py` only handles the 18 kHz whistle trigger to initiate model assembly. No speech-to-text (STT) intent-matching logic was found in the core orchestrator.
+- **Inter-Neuron Bridge**: `architecture.md` describes a bridge between `meerkat_scanner` and `beaver_miner` (CVE to Firewall rules). Forensic analysis shows no programmatic link between these neurons; they currently operate as siloed entities.
+
+### 8.2 Resource Management & Concurrency
+- **Logging Overhead**: The `AuditLogger` opens, appends, and closes the NDJSON log file on every event. While thread-safe via `threading.Lock`, this approach may introduce I/O bottlenecks during high-frequency security events.
+- **Subprocess Proliferation**: The Hub launches a new `sys.executable` instance for every whistle check in the `_voice_loop`. In a production "Ghost Shell" environment, this results in significant process overhead.
+
+### 8.3 Hardcoded Knowledge
+- **TinyML experts**: The `tinyml_anomaly` neuron uses hardcoded `int8` weights in `model.cpp`. While efficient for edge devices (ESP32), it limits field-adaptability without a full recompilation/re-flash.
