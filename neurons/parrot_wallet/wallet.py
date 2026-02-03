@@ -213,6 +213,43 @@ def show_qr(text):
     except Exception as e:
         print(f"[!] Failed to show QR: {e}")
 
+# ---------- logic ----------
+def process_recording(wav_path):
+    """
+    Process a recorded WAV file: transcribe, validate BIP39 words, and derive address.
+    Returns the derived address string or None if failed.
+    """
+    # 1. Transcribe
+    text_raw = transcribe(wav_path).lower()
+    # Security: Removed raw transcript print to prevent seed leakage in logs/console
+    text_split = text_raw.split()
+
+    # Clean up audio file immediately
+    if os.path.exists(wav_path):
+        os.remove(wav_path)
+
+    # 2. Extract BIP39
+    words = first24_valid(text_split)
+    print(f"[D] Valid words found: {len(words)}")
+
+    if len(words) < 24:
+        # Security: Do not print the words themselves, only the count
+        print(f"[-] Need 24 valid words. Found: {len(words)}")
+        return None
+
+    # 3. Derive
+    seed = seed_from_words(words)
+    addr = derive_address(seed)
+
+    # 4. Scrub sensitive local variables
+    words = ["x"] * 24
+    seed = b"\x00" * 64
+    text_raw = "x" * 100
+    del words, seed, text_raw
+    gc.collect()
+
+    return addr
+
 # ---------- main ----------
 def main():
     setup()
@@ -230,45 +267,23 @@ def main():
                 if not wav:
                     continue
                 
-                # 2. Transcribe
-                text_raw = transcribe(wav).lower()
-                # Security: Removed raw transcript print to prevent seed leakage in logs/console
-                text_split = text_raw.split()
+                # 2. Process
+                addr = process_recording(wav)
                 
-                # Clean up audio file immediately
-                if os.path.exists(wav):
-                    os.remove(wav)
-                
-                # 3. Extract BIP39
-                words = first24_valid(text_split)
-                print(f"[D] Valid words found: {len(words)}")
-                
-                if len(words) < 24:
-                    # Security: Do not print the words themselves, only the count
-                    print(f"[-] Need 24 valid words. Found: {len(words)}")
+                if not addr:
                     # Blink output red to indicate failure
                     for _ in range(3):
                         write(LED_RED, 1); time.sleep(0.2); write(LED_RED, 0); time.sleep(0.2)
                     write(LED_GREEN, 1)
                     continue
                 
-                # 4. Derive
-                seed = seed_from_words(words)
-                addr = derive_address(seed)
                 print(f"[+] Address: {addr}")
                 
-                # 5. Show QR
+                # 3. Show QR
                 show_qr(addr)
                 
-                # 6. Scrub & Reboot
+                # 4. Reboot
                 print("[!] Wiping RAM and Rebooting in 60s...")
-                # Overwrite sensitive variables
-                words = ["x"] * 24
-                seed = b"\x00" * 64
-                text_raw = "x" * 100
-                del words, seed, text_raw
-                gc.collect()
-                
                 time.sleep(60)
                 subprocess.run(["sudo", "reboot"])
                 
