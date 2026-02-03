@@ -219,36 +219,46 @@ def process_recording(wav_path):
     Process a recorded WAV file: transcribe, validate BIP39 words, and derive address.
     Returns the derived address string or None if failed.
     """
-    # 1. Transcribe
-    text_raw = transcribe(wav_path).lower()
-    # Security: Removed raw transcript print to prevent seed leakage in logs/console
-    text_split = text_raw.split()
+    text_raw = ""
+    text_split = []
+    words = []
+    seed = b""
 
-    # Clean up audio file immediately
-    if os.path.exists(wav_path):
-        os.remove(wav_path)
+    try:
+        # 1. Transcribe
+        text_raw = transcribe(wav_path).lower()
+        # Security: Removed raw transcript print to prevent seed leakage in logs/console
+        text_split = text_raw.split()
 
-    # 2. Extract BIP39
-    words = first24_valid(text_split)
-    print(f"[D] Valid words found: {len(words)}")
+        # 2. Extract BIP39
+        words = first24_valid(text_split)
+        print(f"[D] Valid words found: {len(words)}")
 
-    if len(words) < 24:
-        # Security: Do not print the words themselves, only the count
-        print(f"[-] Need 24 valid words. Found: {len(words)}")
-        return None
+        if len(words) < 24:
+            # Security: Do not print the words themselves, only the count
+            print(f"[-] Need 24 valid words. Found: {len(words)}")
+            return None
 
-    # 3. Derive
-    seed = seed_from_words(words)
-    addr = derive_address(seed)
+        # 3. Derive
+        seed = seed_from_words(words)
+        return derive_address(seed)
+    finally:
+        # 4. Robust cleanup and scrubbing
+        try:
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
+        except Exception:
+            pass # Silently ignore removal errors so scrubbing is never skipped
 
-    # 4. Scrub sensitive local variables
-    words = ["x"] * 24
-    seed = b"\x00" * 64
-    text_raw = "x" * 100
-    del words, seed, text_raw
-    gc.collect()
+        # Overwrite sensitive data with neutral placeholders
+        words = ["x"] * 24
+        text_split = ["x"] * 24
+        seed = b"\x00" * 64
+        text_raw = "x" * 100
 
-    return addr
+        # Explicitly delete and collect
+        del words, seed, text_raw, text_split
+        gc.collect()
 
 # ---------- main ----------
 def main():
