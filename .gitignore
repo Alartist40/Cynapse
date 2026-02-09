@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+.env
+logs/
+cynapse/data/temp/
+cynapse/data/storage/
+cynapse/data/models/
+opencode/
+hivemind.db
+trouble.md
+fix.md
