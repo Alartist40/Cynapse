@@ -32,8 +32,10 @@ import tty
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from cynapse.core.hub import CynapseHub
 from cynapse.neurons.elephant.tui import verify_for_tui
+from cynapse.core.hivemind import HiveMind, HiveConfig
 
 # ---------------------------------------------------------------------------
 # ANSI Color Palette (256-color)
@@ -228,17 +230,34 @@ class Terminal:
 
     def clear(self):
         """Clear screen"""
-        print("\033[2J\033[H", end="")
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
 
     def move(self, x: int, y: int):
         """Move cursor to position (1-indexed)"""
-        print(f"\033[{y};{x}H", end="")
+        sys.stdout.write(f"\033[{y};{x}H")
+
+
+    def write(self, text: str):
+        """Write to buffer (no flush)"""
+        sys.stdout.write(text)
+
+    def flush(self):
+        """Flush buffer to screen"""
+        sys.stdout.flush()
+
+    def print_at(self, x: int, y: int, text: str):
+        """Move cursor and write text in one operation"""
+        self.move(x, y)
+        self.write(text)
 
     def hide_cursor(self):
-        print("\033[?25l", end="")
+        sys.stdout.write("\033[?25l")
+        sys.stdout.flush()
 
     def show_cursor(self):
-        print("\033[?25h", end="")
+        sys.stdout.write("\033[?25h")
+        sys.stdout.flush()
 
     def read_key(self, timeout: float = 0.05) -> Optional[str]:
         """Non-blocking key read"""
@@ -259,13 +278,14 @@ class Animator:
     def __init__(self, state: HiveState):
         self.state = state
         self.last_frame = 0
-        self.frame_interval = 0.25  # 4fps
+        self.frame_interval = 0.1  # 10fps for smoother UI
 
     def tick(self) -> bool:
         """Update animation state, return True if frame changed"""
         now = time.time()
         if now - self.last_frame >= self.frame_interval:
             self.state.frame += 1
+
             self.state.spinner_idx = self.state.frame % len(self.SPINNER)
             self.last_frame = now
             return True
@@ -297,6 +317,11 @@ class ZoneRenderer:
 
     def color(self, code: str, text: str) -> str:
         return f"{code}{text}{self.colors.RESET}"
+    
+    def print_at(self, x: int, y: int, text: str):
+        """Helper to move and print in one go"""
+        self.term.move(x, y)
+        self.term.write(text)
 
 class PerimeterZone(ZoneRenderer):
     """Zone 1: Top status bar"""
@@ -343,9 +368,9 @@ class PerimeterZone(ZoneRenderer):
         content = f"{self.colors.DEEP_PURPLE}{self.sym.VLINE}{self.colors.RESET}{left}{' ' * center_space}{right}{self.colors.DEEP_PURPLE}{self.sym.VLINE}{self.colors.RESET}"
 
         self.term.move(1, 1)
-        print(line)
+        self.term.write(line)
         self.term.move(1, 2)
-        print(content)
+        self.term.write(content)
 
 class SentinelGridZone(ZoneRenderer):
     """Zone 2: Left sidebar - neuron/bee status"""
@@ -357,12 +382,10 @@ class SentinelGridZone(ZoneRenderer):
 
         # Draw border
         for y in range(start_y, start_y + h):
-            self.term.move(w, y)
-            print(f"{self.colors.DEEP_PURPLE}{self.sym.VLINE}{self.colors.RESET}")
+            self.term.print_at(w, y, f"{self.colors.DEEP_PURPLE}{self.sym.VLINE}{self.colors.RESET}")
 
         # Title
-        self.term.move(2, start_y)
-        print(f"{self.colors.SYNAPSE_VIOLET}SENTINEL GRID{self.colors.RESET}")
+        self.term.print_at(2, start_y, f"{self.colors.SYNAPSE_VIOLET}SENTINEL GRID{self.colors.RESET}")
 
         # Neuron list
         for i, neuron in enumerate(self.state.neurons):
@@ -394,7 +417,7 @@ class SentinelGridZone(ZoneRenderer):
                 color = self.colors.DORMANT_GRAY
 
             line = f"{cursor} {neuron.animal} {neuron.name[:15]:<15} {sym} {self.color(color, status)}"
-            print(line[:w-2])
+            self.term.print_at(2, y, line[:w-2])
 
             # Alert if present
             if neuron.alert:
@@ -402,7 +425,7 @@ class SentinelGridZone(ZoneRenderer):
                 if y < start_y + h:
                     self.term.move(4, y)
                     alert_text = f"└ {neuron.alert[:w-6]}"
-                    print(self.color(self.colors.WARNING_AMBER, alert_text))
+                    self.term.write(self.color(self.colors.WARNING_AMBER, alert_text))
 
 class ActivationChamberZone(ZoneRenderer):
     """Zone 3: Top-right - dynamic visualization"""
@@ -429,8 +452,7 @@ class ActivationChamberZone(ZoneRenderer):
 
     def _draw_assembly(self, x: int, y: int, w: int, h: int):
         """Ghost Shell shard assembly visualization"""
-        self.term.move(x, y)
-        print(f"{self.colors.SYNAPSE_VIOLET}NEURAL ASSEMBLY MODE{self.colors.RESET}")
+        self.term.print_at(x, y, f"{self.colors.SYNAPSE_VIOLET}NEURAL ASSEMBLY MODE{self.colors.RESET}")
 
         # Draw synaptic pathways
         for i, shard in enumerate(self.state.shards):
@@ -456,7 +478,7 @@ class ActivationChamberZone(ZoneRenderer):
                 status = self.color(self.colors.DORMANT_GRAY, "[standby]")
 
             line = f"{pre} >{conn}> {post}  {status}"
-            print(line[:w])
+            self.term.print_at(x, row_y, line[:w])
 
             # Progress bar (if assembling)
             if shard.present and not shard.verified:
@@ -465,7 +487,8 @@ class ActivationChamberZone(ZoneRenderer):
                     self.term.move(x + 10, bar_y)
                     filled = int(shard.progress / 100 * 20)
                     bar = "█" * filled + "░" * (20 - filled)
-                    print(f"{self.colors.CYAN_ELECTRIC}└ decrypting... [{bar}]{self.colors.RESET}")
+                    bar = "█" * filled + "░" * (20 - filled)
+                    self.term.write(f"{self.colors.CYAN_ELECTRIC}└ decrypting... [{bar}]{self.colors.RESET}")
 
         # Bottom stats
         stats_y = y + h - 2
@@ -476,8 +499,7 @@ class ActivationChamberZone(ZoneRenderer):
 
     def _draw_pharmacode(self, x: int, y: int, w: int, h: int):
         """Model loading/training visualization"""
-        self.term.move(x, y)
-        print(f"{self.colors.SYNAPSE_VIOLET}PHARMACODE INJECTION{self.colors.RESET}")
+        self.term.print_at(x, y, f"{self.colors.SYNAPSE_VIOLET}PHARMACODE INJECTION{self.colors.RESET}")
 
         ampule_names = ["TiDAR_DIFFUSION", "ROPE_EMBEDDINGS", "EXPERT_MoE"]
 
@@ -507,7 +529,7 @@ class ActivationChamberZone(ZoneRenderer):
                 status_text = self.color(self.colors.DORMANT_GRAY, "[standby]")
 
             line = f"{name[:15]:<15} [{self.colors.CYAN_ELECTRIC}{bar}{self.colors.RESET}] {prog:>3}% {status_sym} {status_text}"
-            print(line[:w])
+            self.term.print_at(x, row_y, line[:w])
 
         # Metrics
         self.term.move(x, y + h - 2)
@@ -518,24 +540,19 @@ class ActivationChamberZone(ZoneRenderer):
         """Breach alert overlay"""
         # Full zone red background
         for row in range(y, y + h):
-            self.term.move(x, row)
-            print(f"{self.colors.BREACH_BG}{' ' * (w-1)}{self.colors.RESET}")
+            self.term.print_at(x, row, f"{self.colors.BREACH_BG}{' ' * (w-1)}{self.colors.RESET}")
 
         # Center text
         center_y = y + h // 2
-        self.term.move(x + 2, center_y - 2)
-        print(f"{self.colors.BREACH_RED}{self.sym.BREACH} BREACH DETECTED{self.colors.RESET}")
+        self.term.print_at(x + 2, center_y - 2, f"{self.colors.BREACH_RED}{self.sym.BREACH} BREACH DETECTED{self.colors.RESET}")
 
-        self.term.move(x + 2, center_y)
-        print(f"{self.colors.WHITE_MATTER}Critical: {self.state.last_breach or 'Unknown'}{self.colors.RESET}")
+        self.term.print_at(x + 2, center_y, f"{self.colors.WHITE_MATTER}Critical: {self.state.last_breach or 'Unknown'}{self.colors.RESET}")
 
-        self.term.move(x + 2, center_y + 2)
-        print(f"{self.colors.WARNING_AMBER}[Enter] Isolate  [s] Audit  [L] Lockdown{self.colors.RESET}")
+        self.term.print_at(x + 2, center_y + 2, f"{self.colors.WARNING_AMBER}[Enter] Isolate  [s] Audit  [L] Lockdown{self.colors.RESET}")
 
     def _draw_maintenance(self, x: int, y: int, w: int, h: int):
         """Idle/Maintenance view"""
-        self.term.move(x, y)
-        print(f"{self.colors.SYNAPSE_VIOLET}SYSTEM MAINTENANCE{self.colors.RESET}")
+        self.term.print_at(x, y, f"{self.colors.SYNAPSE_VIOLET}SYSTEM MAINTENANCE{self.colors.RESET}")
 
         info = [
             f"Mode: {self.state.mode.name}",
@@ -549,8 +566,7 @@ class ActivationChamberZone(ZoneRenderer):
             row_y = y + 2 + i
             if row_y >= y + h:
                 break
-            self.term.move(x, row_y)
-            print(self.color(self.colors.MUTED_BLUE, line))
+            self.term.print_at(x, row_y, self.color(self.colors.MUTED_BLUE, line))
 
 class OperationsBayZone(ZoneRenderer):
     """Zone 4: Bottom-right - RAG lab and chat"""
@@ -567,17 +583,14 @@ class OperationsBayZone(ZoneRenderer):
         start_y = 3 + top_h
 
         # Border line above
-        self.term.move(left_w + 1, start_y - 1)
-        print(f"{self.colors.DEEP_PURPLE}{self.sym.HLINE * (zone_w)}{self.colors.RESET}")
+        self.term.print_at(left_w + 1, start_y - 1, f"{self.colors.DEEP_PURPLE}{self.sym.HLINE * (zone_w)}{self.colors.RESET}")
 
         # Title
-        self.term.move(start_x, start_y)
-        print(f"{self.colors.CYBER_BLUE}OPERATIONS BAY{self.colors.RESET}")
+        self.term.print_at(start_x, start_y, f"{self.colors.CYBER_BLUE}OPERATIONS BAY{self.colors.RESET}")
 
         # Document list (last 3)
         doc_y = start_y + 2
-        self.term.move(start_x, doc_y)
-        print(self.color(self.colors.MUTED_BLUE, "Recent Documents:"))
+        self.term.print_at(start_x, doc_y, self.color(self.colors.MUTED_BLUE, "Recent Documents:"))
 
         for i, doc in enumerate(self.state.documents[-3:]):
             row_y = doc_y + 1 + i
@@ -586,7 +599,7 @@ class OperationsBayZone(ZoneRenderer):
             self.term.move(start_x + 2, row_y)
             status = self.sym.FUSED if doc.get('embedded') else self.sym.DORMANT
             color = self.colors.COMPLEMENT_GOLD if doc.get('embedded') else self.colors.DORMANT_GRAY
-            print(f"{self.color(color, status)} {doc.get('name', 'Unknown')[:30]}")
+            self.term.write(f"{self.color(color, status)} {doc.get('name', 'Unknown')[:30]}")
 
         # Chat area
         chat_y = start_y + zone_h - 5
@@ -596,19 +609,18 @@ class OperationsBayZone(ZoneRenderer):
             chat_y += 1
             if chat_y >= start_y + zone_h - 2:
                 break
-            self.term.move(start_x, chat_y)
-            role = msg.get('role', 'user')
             content = msg.get('content', '')[:zone_w-10]
+            role = msg.get('role', 'assistant')
             if role == 'user':
-                print(f"{self.colors.WHITE_MATTER}> {content}{self.colors.RESET}")
+                self.term.print_at(start_x, chat_y, f"{self.colors.WHITE_MATTER}> {content}{self.colors.RESET}")
             else:
-                print(f"{self.colors.CYAN_ELECTRIC}🐝 {content}{self.colors.RESET}")
+                self.term.print_at(start_x, chat_y, f"{self.colors.CYAN_ELECTRIC}🐝 {content}{self.colors.RESET}")
 
         # Input prompt
         input_y = start_y + zone_h - 1
         self.term.move(start_x, input_y)
         prompt = f">>> {self.state.input_buffer}"
-        print(f"{self.colors.ACTIVE_MAGENTA}{prompt}{self.colors.RESET}")
+        self.term.write(f"{self.colors.ACTIVE_MAGENTA}{prompt}{self.colors.RESET}")
 
 class CommandFooterZone(ZoneRenderer):
     """Bottom command bar"""
@@ -638,7 +650,7 @@ class CommandFooterZone(ZoneRenderer):
         space = w - len(footer.replace(self.colors.COMPLEMENT_GOLD, "").replace(self.colors.MUTED_BLUE, "").replace(self.colors.RESET, "")) - len(mode_str) - 4
 
         line = f"{footer}{' ' * space}{self.colors.SYNAPSE_VIOLET}{mode_str}{self.colors.RESET}"
-        print(line)
+        self.term.print_at(1, h - 1, line)
 
 # ---------------------------------------------------------------------------
 # Input Handler
@@ -647,11 +659,12 @@ class CommandFooterZone(ZoneRenderer):
 class InputHandler:
     """Keyboard input processing"""
 
-    def __init__(self, state: HiveState, term: Terminal):
+    def __init__(self, state: HiveState, term: Terminal, hivemind_getter=None):
         self.state = state
         self.term = term
         self.running = True
-        self.input_mode = False  # True when typing in Operations Bay
+        self.input_mode = False
+        self._get_hivemind = hivemind_getter  # True when typing in Operations Bay
 
     def process(self, key: str) -> bool:
         """Process key press, return False to quit"""
@@ -729,7 +742,24 @@ class InputHandler:
                 })
                 self.state.input_buffer = ""
                 self.input_mode = False
-                # TODO: Trigger HiveMind bee
+                
+                # Non-blocking input handling
+                def _bg_process():
+                    try:
+                        hive = self._get_hivemind()
+                        if hive:
+                            instance_id = hive.deploy_chat(self.state.input_buffer)
+                            self.state.messages.append({
+                                'role': 'assistant',
+                                'content': f'🐝 Bee spawned: {instance_id[:8]}...'
+                            })
+                    except Exception as e:
+                         self.state.messages.append({
+                            'role': 'assistant',
+                            'content': f'❌ Error: {str(e)[:50]}'
+                        })
+                
+                threading.Thread(target=_bg_process, daemon=True).start()
             elif key == '\x7f':  # Backspace
                 self.state.input_buffer = self.state.input_buffer[:-1]
             elif ord(key) >= 32:  # Printable
@@ -787,7 +817,8 @@ class SynapticFortress:
         self.term = Terminal()
         self.state = HiveState()
         self.animator = Animator(self.state)
-        self.input_handler = InputHandler(self.state, self.term)
+        self._hivemind = None
+        self.input_handler = InputHandler(self.state, self.term, self._get_hivemind)
 
         # Zone renderers
         self.perimeter = PerimeterZone(self.term, self.state, self.animator)
@@ -825,6 +856,16 @@ class SynapticFortress:
             self.term.show_cursor()
             self.term.restore()
             print("\nSynaptic Fortress terminated.")
+
+    def _get_hivemind(self):
+        """Lazy initialization of HiveMind"""
+        if self._hivemind is None:
+            try:
+                config = HiveConfig.from_yaml('./hivemind.yaml')
+                self._hivemind = HiveMind(config)
+            except Exception:
+                self._hivemind = HiveMind()
+        return self._hivemind
 
     def _draw(self):
         """Render all zones"""

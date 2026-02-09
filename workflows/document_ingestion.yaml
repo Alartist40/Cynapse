@@ -1,0 +1,26 @@
+name: document_ingestion
+type: training
+trigger: file_upload
+nodes:
+  - id: read_file
+    type: file_reader
+    config: {}
+    inputs: { path: "{{trigger.path}}" }
+  
+  - id: chunk_text
+    type: text_chunker
+    config: { chunk_size: 512, overlap: 50 }
+    inputs: { text: "read_file.content" }
+  
+  - id: generate_embeddings
+    type: embedding_generator
+    config: { model: "local" }
+    inputs: { texts: "chunk_text.chunks" }
+  
+  - id: store_vectors
+    type: vector_store
+    config: { collection: "knowledge" }
+    inputs: { 
+      texts: "chunk_text.chunks",
+      embeddings: "generate_embeddings.embeddings"
+    }

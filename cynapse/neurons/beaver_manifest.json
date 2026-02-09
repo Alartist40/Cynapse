@@ -1,0 +1,16 @@
+{
+  "name": "beaver_miner",
+  "version": "3.0.0",
+  "description": "AI-powered firewall rule generator for iptables, nftables, and Suricata",
+  "author": "Alejandro Eduardo Garcia Romero",
+  "animal": "🦫",
+  "platform": ["linux", "mac", "win"],
+  "entry_point": "beaver.py",
+  "requires_signature": false,
+  "dependencies": [],
+  "commands": {
+    "generate": "Generate rules from natural language",
+    "verify": "Validate generated rules",
+    "deploy": "Deploy rules to system"
+  }
+}

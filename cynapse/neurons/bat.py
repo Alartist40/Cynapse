@@ -210,34 +210,7 @@ class ShamirSecretSharing:
 
 
 # --- Cynapse Integration ---
-class CynapseAudit:
-    """Minimal Cynapse audit bridge"""
-    
-    AUDIT_PATH = Path.home() / ".cynapse" / "logs" / "ghost_audit.ndjson"
-    
-    @classmethod
-    def log(cls, event_type: str, data: Dict, integrity_hash: Optional[str] = None):
-        entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "neuron": "bat_ghost",
-            "event": event_type,
-            "data": data
-        }
-        if integrity_hash:
-            entry["integrity"] = integrity_hash
-        
-        cls.AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(cls.AUDIT_PATH, "a") as f:
-            f.write(json.dumps(entry) + "\n")
-    
-    @classmethod
-    def trigger_canary(cls, stick_id: str, reason: str):
-        """Alert Canary neuron to potential physical tampering"""
-        cls.log("canary_trigger_request", {
-            "stick_id": stick_id,
-            "reason": reason,
-            "severity": "critical"
-        })
+from cynapse.utils.audit import AuditLogger
 
 
 # --- Hardware Attestation ---
@@ -601,7 +574,7 @@ class GhostShell:
         self.detector = UltrasonicDetector()
         self.attestation_key = self._load_attestation_key()
         self.assembly_key = None  # Derived from 2-of-3 shares
-        self.audit = CynapseAudit()
+        self.audit = AuditLogger("bat_ghost")
     
     def _load_attestation_key(self) -> bytes:
         """Load manufacturer root key for stick verification"""

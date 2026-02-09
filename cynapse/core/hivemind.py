@@ -24,20 +24,23 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from enum import Enum
 import threading
+from cynapse.utils.config import ConfigManager
+from cynapse.core.agent.lead import LeadAgent
+from cynapse.core.agent.artifacts import ArtifactStore, Mailbox
+from cynapse.core.agent.base import AgentContextManager, AgentRole
 
-# Lazy imports for heavy dependencies
-_has_numpy = False
+# Lazy module loaders
+np = None
 
-def _ensure_numpy():
-    global _has_numpy
-    if not _has_numpy:
+def _lazy_load_numpy():
+    global np
+    if np is None:
         try:
-            import numpy as np
-            globals()['np'] = np
-            _has_numpy = True
+            import numpy as n
+            np = n
         except ImportError:
-            raise ImportError("numpy is required for HiveMind")
-    return globals()['np']
+            raise ImportError("numpy is required for HiveMind vector operations")
+    return np
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -248,7 +251,7 @@ class Honeycomb:
             return [{'query': r[0], 'response': r[1], 'correction': r[2], 'timestamp': r[3]} for r in cursor.fetchall()]
 
     def store_vectors(self, collection: str, texts: List[str], embeddings: List[List[float]]):
-        np = _ensure_numpy()
+        np = _lazy_load_numpy()
         if collection not in self.vectors:
             self.vectors[collection] = {'texts': [], 'embeddings': np.array([])}
         self.vectors[collection]['texts'].extend(texts)
@@ -259,7 +262,7 @@ class Honeycomb:
             self.vectors[collection]['embeddings'] = np.vstack([self.vectors[collection]['embeddings'], new_emb])
 
     def search_vectors(self, collection: str, query_embedding: List[float], k: int = 5) -> List[Dict]:
-        np = _ensure_numpy()
+        np = _lazy_load_numpy()
         if collection not in self.vectors:
             return []
         query = np.array(query_embedding)
@@ -368,11 +371,34 @@ class OutputNode(NodeHandler):
 # ---------------------------------------------------------------------------
 
 class HiveMind:
+
     def __init__(self, config: Optional[HiveConfig] = None):
-        self.config = config or HiveConfig()
+        if config:
+            self.config = config
+        else:
+            # Load from centralized config if available
+            cm = ConfigManager()
+            self.config = HiveConfig(
+                hive_name=cm.get("general", "hub_name"),
+                db_path=cm.get("hivemind", "db_path"),
+                document_path=cm.get("hivemind", "document_path"),
+                workflow_path=cm.get("hivemind", "workflow_path"),
+                max_concurrent_bees=cm.get_int("hivemind", "max_concurrent_bees"),
+                sandbox_enabled=cm.get_boolean("hivemind", "sandbox_enabled"),
+                auto_approve=cm.get_boolean("hivemind", "auto_approve")
+            )
+            
         self.honeycomb = Honeycomb(self.config.db_path)
         self.handlers: Dict[str, NodeHandler] = {}
         self.running_bees: Dict[str, threading.Thread] = {}
+        self.lock = threading.Lock()  # Thread safety lock
+        
+        # Initialize Agent System (HiveMind 2.0)
+        self.context_manager = AgentContextManager()
+        self.artifact_store = ArtifactStore()
+        self.mailbox = Mailbox()
+        self.lead_agent = LeadAgent("hive_queen", self.context_manager, self.artifact_store, self.mailbox, hivemind_ref=self)
+        
         self._register_default_handlers()
         Path(self.config.document_path).mkdir(parents=True, exist_ok=True)
         Path(self.config.workflow_path).mkdir(parents=True, exist_ok=True)
@@ -409,10 +435,15 @@ class HiveMind:
         instance_id = f"{bee_id}_{int(time.time())}"
         instance = BeeInstance(instance_id=instance_id, bee_id=bee_id, state=BeeState.QUEUED, context=initial_context or {})
         self.honeycomb.create_instance(instance)
+        self.honeycomb.create_instance(instance)
+        
         thread = threading.Thread(target=self._execute_bee, args=(instance, bee))
         thread.daemon = True
         thread.start()
-        self.running_bees[instance_id] = thread
+        
+        with self.lock:
+            self.running_bees[instance_id] = thread
+            
         return instance_id
 
     def _execute_bee(self, instance: BeeInstance, bee: Bee):
@@ -456,8 +487,9 @@ class HiveMind:
                                           end_time=time.time(), logs=instance.logs)
             print(f"[Bee {instance.instance_id}] Failed: {e}")
         finally:
-            if instance.instance_id in self.running_bees:
-                del self.running_bees[instance.instance_id]
+            with self.lock:
+                if instance.instance_id in self.running_bees:
+                    del self.running_bees[instance.instance_id]
 
     def get_instance_status(self, instance_id: str) -> Optional[BeeInstance]:
         return self.honeycomb.get_instance(instance_id)
@@ -489,6 +521,18 @@ class HiveMind:
             ]
         )
         return self.spawn_bee(bee.id)
+
+    def orchestrate_agent(self, request: str) -> str:
+        """Trigger Lead Agent orchestration"""
+        return self.lead_agent.orchestrate(request)
+
+    def spawn_bee_instance(self, bee_id: str, context: Dict):
+        """Helper for Lead Agent to spawn bees directly"""
+        # Create a temporary/virtual bee for the agent if it doesn't exist
+        # For this v1 impl, we'll just log it
+        print(f"🐝 HiveMind: Spawning agent bee {bee_id} with context {context}")
+        # In full version: actually spawn a workflow thread
+        return "agent_bee_started"
 
 # ---------------------------------------------------------------------------
 # CLI Interface

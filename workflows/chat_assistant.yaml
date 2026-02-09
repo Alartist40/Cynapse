@@ -1,0 +1,24 @@
+name: chat_assistant
+type: deployment
+trigger: user_query
+nodes:
+  - id: user_input
+    type: input
+    config: { source: "cli" }
+  
+  - id: context_retrieval
+    type: vector_search
+    config: { collection: "knowledge", k: 3 }
+    inputs: { query: "user_input.text" }
+  
+  - id: llm_generation
+    type: llm
+    config: { model: "elara", temperature: 0.7, max_tokens: 500 }
+    inputs: 
+      prompt: "user_input.text"
+      context: "context_retrieval.documents"
+  
+  - id: output
+    type: output_formatter
+    config: { format: "markdown" }
+    inputs: { content: "llm_generation.text" }

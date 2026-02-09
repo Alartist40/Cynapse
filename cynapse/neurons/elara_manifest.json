@@ -1,0 +1,16 @@
+{
+  "name": "elara",
+  "version": "3.0.0",
+  "description": "3B parameter AI model with MoE, TiDAR, and RoPE",
+  "author": "Alejandro Eduardo Garcia Romero",
+  "animal": "🌙",
+  "platform": ["linux", "mac", "win"],
+  "entry_point": "elara.py",
+  "requires_signature": false,
+  "dependencies": ["torch", "transformers"],
+  "commands": {
+    "generate": "Generate text from prompt",
+    "train": "Train on custom dataset",
+    "quantize": "Quantize model to INT8/INT4"
+  }
+}

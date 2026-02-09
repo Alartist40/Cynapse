@@ -1,20 +1,19 @@
-# Core
-numpy>=1.24.0
-cryptography>=3.4.7
-aiohttp>=3.8.0
-psutil>=5.9.0
-pyyaml>=6.0
-colorama>=0.4.6
-tqdm>=4.65.0
+# Cynapse Core Dependencies (Minimal Runtime)
+# Install with: pip install -r requirements.txt
 
-# Optional / Performance
-blake3>=0.3.3
+# Core - Required for basic functionality
+pyyaml>=6.0              # Configuration file parsing (YAML)
+numpy>=1.24.0            # Vector operations in HiveMind (lazy loaded)
 
-# TUI
-# rich>=13.0.0  # Optional, TUI.py uses raw ANSI by default but recommended
+# Security - Optional but recommended
+cryptography>=3.4.7      # Ed25519 signing in Elephant neuron (optional fallback)
+blake3>=0.3.3           # Fast hashing (optional, falls back to hashlib)
 
-# AI (Lazy Loaded)
-# torch>=2.0.0
-# Build Tools
-pyinstaller>=5.0
+# Networking
+aiohttp>=3.8.0          # Async HTTP for Wolverine neuron
 
+# System
+psutil>=5.9.0           # System monitoring (optional, used if available)
+
+# Build Tools (Development only)
+# pyinstaller>=5.0      # Uncomment to build standalone executable
