@@ -6,51 +6,60 @@ Handles OCR and PII detection operations.
 """
 import sys
 import json
+import asyncio
+from pathlib import Path
+from owl import OwlRedactor
+
+# Global redactor
+redactor = OwlRedactor()
 
 
-def handle_request(req: dict) -> dict:
+async def handle_request(req: dict) -> dict:
+    if req is None:
+        return {"success": False, "error": "Empty request"}
+
     operation = req.get("operation", "")
-    params = req.get("params", {})
+    params = req.get("params") or {}
+    payload = req.get("payload", "")
 
-    if operation == "ocr":
-        image_path = params.get("image_path", "")
-        return {
-            "success": True,
-            "output": f"(Owl Mock) OCR text extracted from: {image_path}",
-            "confidence": 0.92,
-        }
+    if operation == "ocr" or operation == "redact":
+        input_path = params.get("input_path", payload)
+        if not input_path:
+            return {"success": False, "error": "Missing input_path or payload"}
 
-    elif operation == "detect_pii":
-        text = req.get("payload", "")
-        # Simple PII detection mock
-        pii_found = []
-        import re
-        if re.search(r'\b\d{3}[-.]?\d{2}[-.]?\d{4}\b', text):
-            pii_found.append("SSN pattern detected")
-        if re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text):
-            pii_found.append("Email address detected")
-
-        return {
-            "success": True,
-            "output": f"PII scan: {len(pii_found)} findings" if pii_found else "No PII detected",
-            "details": {"findings": pii_found},
-        }
+        try:
+            result = await redactor.redact(Path(input_path))
+            return {
+                "success": True,
+                "output": result.scrubbed_text,
+                "details": {
+                    "redacted_path": str(result.redacted) if result.redacted else None,
+                    "report_path": str(result.report),
+                    "pii_count": len(result.hits)
+                }
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     elif operation == "health":
-        return {"success": True, "output": "Owl OCR: ready (mock mode)"}
+        return {"success": True, "output": "Owl OCR: ready"}
 
     else:
         return {"success": False, "error": f"Unknown operation: {operation}"}
 
 
-def main():
-    for line in sys.stdin:
+async def main():
+    while True:
+        line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
+        if not line:
+            break
+
         line = line.strip()
         if not line:
             continue
         try:
             req = json.loads(line)
-            resp = handle_request(req)
+            resp = await handle_request(req)
         except Exception as e:
             resp = {"success": False, "error": str(e)}
 
@@ -59,4 +68,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

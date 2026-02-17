@@ -91,7 +91,13 @@ func (n *Neuron) loadPatterns() {
 }
 
 func (n *Neuron) auditFile(path string) []Finding {
-	data, err := os.ReadFile(path)
+	// Security: Validate path against safe base
+	safePath, err := core.ValidatePath(".", path)
+	if err != nil {
+		return []Finding{{Severity: "critical", Category: "security", Message: err.Error()}}
+	}
+
+	data, err := os.ReadFile(safePath)
 	if err != nil {
 		return []Finding{{Severity: "info", Category: "error", Message: fmt.Sprintf("Cannot read: %v", err)}}
 	}

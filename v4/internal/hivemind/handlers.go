@@ -45,7 +45,13 @@ func (h *FileReaderHandler) Execute(ctx context.Context, inputs map[string]inter
 		return nil, fmt.Errorf("file_reader: no path provided")
 	}
 
-	data, err := os.ReadFile(path)
+	// Security: Validate path
+	safePath, err := core.ValidatePath("./data/documents", path)
+	if err != nil {
+		return nil, fmt.Errorf("file_reader: security violation: %w", err)
+	}
+
+	data, err := os.ReadFile(safePath)
 	if err != nil {
 		return nil, fmt.Errorf("file_reader: %w", err)
 	}
@@ -156,5 +162,19 @@ func (h *LLMHandler) Execute(ctx context.Context, inputs map[string]interface{},
 	return map[string]interface{}{
 		"text":  fmt.Sprintf("(LLM Mock — %s) Processed: %s", model, prompt),
 		"model": model,
+	}, nil
+}
+
+// AgentHandler manages sub-agents (researcher, coder, etc).
+type AgentHandler struct{}
+
+func (h *AgentHandler) Execute(ctx context.Context, inputs map[string]interface{}, config map[string]interface{}) (map[string]interface{}, error) {
+	role, _ := config["role"].(string)
+	task, _ := inputs["task"].(string)
+
+	// Simulate agent activity
+	return map[string]interface{}{
+		"output": fmt.Sprintf("🤖 Agent (%s) completed task: %s\n(Agent reasoning logic integration pending)", role, task),
+		"role":   role,
 	}, nil
 }

@@ -5,9 +5,18 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/Alartist40/cynapse/internal/bridge"
+	"github.com/Alartist40/cynapse/internal/hivemind"
+	"github.com/Alartist40/cynapse/internal/neurons/bat"
+	"github.com/Alartist40/cynapse/internal/neurons/beaver"
+	"github.com/Alartist40/cynapse/internal/neurons/canary"
+	"github.com/Alartist40/cynapse/internal/neurons/meerkat"
+	"github.com/Alartist40/cynapse/internal/neurons/octopus"
+	"github.com/Alartist40/cynapse/internal/neurons/wolverine"
 	"github.com/Alartist40/cynapse/internal/tui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Version is set at build time via -ldflags.
@@ -28,8 +37,44 @@ func main() {
 		}
 	}
 
+	// Initialize HiveMind Engine
+	cfg := hivemind.DefaultConfig()
+	engine, err := hivemind.New(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing HiveMind: %v\n", err)
+		os.Exit(1)
+	}
+	defer engine.Close()
+
+	// Register Go-native neurons
+	engine.RegisterNeuron(bat.New("./data/shards", 2))
+	engine.RegisterNeuron(beaver.New("iptables"))
+	engine.RegisterNeuron(canary.New())
+	engine.RegisterNeuron(meerkat.New())
+	engine.RegisterNeuron(octopus.New())
+	engine.RegisterNeuron(wolverine.New())
+
+	// Register Python bridged neurons
+	pythonDir, _ := filepath.Abs("./python")
+	elaraBridge := bridge.NewPythonNeuron("elara", "Elara — 3B MoE AI", filepath.Join(pythonDir, "elara/elara_bridge.py"), []string{"generate", "chat"})
+	owlBridge := bridge.NewPythonNeuron("owl", "Owl — OCR Redactor", filepath.Join(pythonDir, "owl/owl_bridge.py"), []string{"ocr", "redact"})
+
+	if err := elaraBridge.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to start Elara bridge: %v\n", err)
+	} else {
+		defer elaraBridge.Stop()
+		engine.RegisterNeuron(elaraBridge)
+	}
+
+	if err := owlBridge.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to start Owl bridge: %v\n", err)
+	} else {
+		defer owlBridge.Stop()
+		engine.RegisterNeuron(owlBridge)
+	}
+
 	// Launch TUI
-	p := tea.NewProgram(tui.New(), tea.WithAltScreen())
+	p := tea.NewProgram(tui.New(engine), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -42,8 +87,18 @@ func runHealthCheck() {
 	fmt.Println("  ✅ Binary:     OK")
 	fmt.Println("  ✅ Validator:  OK (compiled-in)")
 	fmt.Printf("  ✅ Version:    %s\n", Version)
-	// TODO: Check gRPC bridge, neuron availability
-	fmt.Println("\n🎉 All systems operational.")
+
+	cfg := hivemind.DefaultConfig()
+	engine, err := hivemind.New(cfg)
+	if err != nil {
+		fmt.Printf("  ❌ HiveMind:   Error (%v)\n", err)
+	} else {
+		fmt.Println("  ✅ HiveMind:   Active")
+		neurons := engine.ListNeurons()
+		fmt.Printf("  ✅ Neurons:    %d registered\n", len(neurons))
+	}
+
+	fmt.Println("\n🎉 Diagnostics complete.")
 }
 
 func printUsage() {

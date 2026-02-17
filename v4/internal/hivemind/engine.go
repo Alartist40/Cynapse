@@ -15,6 +15,7 @@ import (
 
 	"github.com/Alartist40/cynapse/internal/core"
 	"github.com/Alartist40/cynapse/internal/core/validator"
+	"github.com/Alartist40/cynapse/internal/techsupport"
 )
 
 // Config holds HiveMind runtime settings.
@@ -83,6 +84,7 @@ type Engine struct {
 	db        *sql.DB
 	handlers  map[string]core.NodeHandler
 	neurons   map[string]core.Neuron
+	itMode    *techsupport.Executor
 	validator *validator.Validator
 	bus       *EventBus
 	running   map[string]context.CancelFunc
@@ -96,11 +98,13 @@ func New(cfg Config) (*Engine, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	reg := techsupport.NewRegistry("./data/techsupport")
 	e := &Engine{
 		config:    cfg,
 		db:        db,
 		handlers:  make(map[string]core.NodeHandler),
 		neurons:   make(map[string]core.Neuron),
+		itMode:    techsupport.NewExecutor(reg),
 		validator: validator.New(),
 		bus:       &EventBus{},
 		running:   make(map[string]context.CancelFunc),
@@ -134,6 +138,11 @@ func (e *Engine) RegisterHandler(nodeType string, handler core.NodeHandler) {
 }
 
 // ListNeurons returns the IDs of all registered neurons.
+// ITMode returns the IT Support executor.
+func (e *Engine) ITMode() *techsupport.Executor {
+	return e.itMode
+}
+
 func (e *Engine) ListNeurons() []string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -144,8 +153,21 @@ func (e *Engine) ListNeurons() []string {
 	return ids
 }
 
+// ExecuteTask executes a single task on a registered neuron.
+func (e *Engine) ExecuteTask(ctx context.Context, task core.Task) (core.Result, error) {
+	e.mu.RLock()
+	neuron, ok := e.neurons[task.NeuronID]
+	e.mu.RUnlock()
+
+	if !ok {
+		return core.Result{}, fmt.Errorf("neuron %s not found", task.NeuronID)
+	}
+
+	return neuron.Execute(ctx, task)
+}
+
 // Execute runs a workflow, dispatching nodes concurrently where possible.
-func (e *Engine) Execute(ctx context.Context, wf core.Workflow) (core.Result, error) {
+func (e *Engine) Execute(ctx context.Context, wf core.Workflow, initialInputs map[string]interface{}) (core.Result, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	instanceID := fmt.Sprintf("%s_%d", wf.ID, time.Now().UnixMilli())
 
@@ -163,6 +185,11 @@ func (e *Engine) Execute(ctx context.Context, wf core.Workflow) (core.Result, er
 	e.bus.Publish(Event{Type: "bee_started", BeeID: instanceID})
 
 	results := &sync.Map{}
+	// Load initial inputs
+	for k, v := range initialInputs {
+		results.Store(k, v)
+	}
+
 	var executeErr error
 
 	for _, node := range wf.Nodes {
@@ -307,4 +334,7 @@ func (e *Engine) registerDefaultHandlers() {
 	e.handlers["output"] = &OutputHandler{}
 	e.handlers["file_reader"] = &FileReaderHandler{}
 	e.handlers["text_chunker"] = &TextChunkerHandler{}
+	e.handlers["neuron"] = &NeuronHandler{engine: e}
+	e.handlers["llm"] = &LLMHandler{}
+	e.handlers["agent"] = &AgentHandler{}
 }

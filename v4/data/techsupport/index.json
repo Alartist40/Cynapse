@@ -1,0 +1,11 @@
+[
+  {
+    "id": "network_fix",
+    "name": "Network Repair",
+    "version": "1.0.0",
+    "description": "Checks and repairs local network configuration.",
+    "capabilities": ["check_dns", "reset_interface"],
+    "type": "script",
+    "entry_point": "./network_fix.sh"
+  }
+]
