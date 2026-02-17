@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.0.0] - 2026-02-17 (Ghost Shell)
+### Added
+- **Go Core**: Complete rewrite of the orchestration engine in Go for maximum performance.
+- **Bubble Tea TUI**: Declarative, high-fidelity terminal interface with <10ms latency.
+- **Parallel Neurons**: Go-native implementation of 6 key neurons (Bat, Beaver, Canary, Meerkat, Octopus, Wolverine) using goroutines.
+- **Python Bridge**: High-speed JSON IPC bridge for Elara (AI) and Owl (OCR) neurons.
+- **SQLite Honeycomb**: Robust workflow and state persistence layer.
+- **Compiled safety**: Constitutional validator logic now hardcoded and compiled-in.
+- **Single Binary**: The entire system (minus AI models) now builds into a ~4MB static binary.
+
+### Changed
+- **Migration**: Shifted primary development from Python to Go.
+- **Structure**: Reorganized into `cmd/`, `internal/`, and `python/` subdirectories.
+- **Docs**: Comprehensive update to all documentation (`README`, `architecture`, `TUI_SPEC`, `FEATURES`, `CREDITS`).
+
+### Fixed
+- **Bottlenecks**: Eliminated Python GIL-related performance issues.
+- **Cold Boot**: Reduced startup time from 5s to ~45ms.
+- **Dependencies**: Resolved "dependency hell" by utilizing Go's static linking.
+
+
 ## [3.0.0] - 2026-02-09
 ### Added
 - **IT Mode**: Self-modifying tech support system in `cynapse/core/tech_support/`.

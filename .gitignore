@@ -12,3 +12,13 @@ opencode/
 hivemind.db
 trouble.md
 fix.md
+
+# Go / v4
+v4/.gopath/
+v4/.local/
+v4/dist/
+v4/pkg/
+v4/bin/
+*.exe
+*.so
+*.dylib

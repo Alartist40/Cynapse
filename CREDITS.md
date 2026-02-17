@@ -16,12 +16,13 @@
 
 ### Open Source Libraries
 Cynapse is built on the shoulders of giants:
-*   **Python**: The foundation.
-*   **PyTorch**: For tensor operations.
-*   **Llama.cpp**: For local LLM inference.
-*   **Ollama**: For easy model management.
+*   **Go**: The performance-first core language.
+*   **Charmbracelet (Bubble Tea, Lipgloss)**: The declarative terminal ecosystem.
+*   **SQLite / go-sqlite3**: Efficient workflow and persistence storage.
+*   **Python**: The research and AI foundation.
+*   **Transformers / PyTorch**: For neural operation.
+*   **Llama.cpp / Ollama**: For local LLM orchestration.
 *   **Cryptography**: For robust encryption standards.
-*   **Rich / Textual**: Inspiration for terminal UI components.
 
 ### Community
 Special thanks to the open-source privacy and security community for testing and feedback.

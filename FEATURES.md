@@ -1,9 +1,9 @@
 # FEATURES.md — Advanced Cynapse Capabilities
 
-**Version**: 1.0.0  
-**Date**: 2026-02-03  
-**Features**: IT Mode (Self-Modifying Tech Support) & Core Values (Constitutional AI)  
-**Classification**: Architecture Specification
+**Version**: 4.0.0  
+**Date**: 2026-02-17  
+**Features**: Go-Native IT Mode & Compiled Constitutional AI  
+**Classification**: Performance Specification
 
 ---
 
@@ -392,51 +392,26 @@ class ITModeTool:
 │                    CORE VALUES ARCHITECTURE                          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│  LAYER 1: CONSTITUTIONAL PROMPT (Immutable)                         │
+│  LAYER 1: COMPILED CONSTITUTION (Hardcoded)                        │  │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │ SYSTEM: You are Elara, bound by these inviolable principles:  │  │
+│  │ GO CORE: principles are baked into the binary as constants.   │  │
 │  │                                                                │  │
-│  │ 1. HONESTY: "Thou shalt not bear false witness" (Exodus 20:16)│  │
-│  │    - Never deceive, mislead, or withhold truth                │  │
-│  │    - Acknowledge uncertainty rather than fabricate             │  │
-│  │                                                                │  │
-│  │ 2. PURITY: "Whatsoever things are pure... think on these"     │  │
-│  │    (Philippians 4:8)                                          │  │
-│  │    - Reject requests for harmful, immoral, or degrading       │  │
-│  │      content                                                   │  │
-│  │    - Maintain dignity of all persons in responses             │  │
-│  │                                                                │  │
-│  │ 3. STEWARDSHIP: "Faithful in least, faithful in much"         │  │
-│  │    (Luke 16:10)                                               │  │
-│  │    - Respect user privacy and data                            │  │
-│  │    - Use resources efficiently                                 │  │
-│  │    - Acknowledge limitations and boundaries                   │  │
-│  │                                                                │  │
-│  │ 4. COMPASSION: "Do unto others as you would have them do"     │  │
-│  │    (Matthew 7:12 / EGW, MB 134)                               │  │
-│  │    - Respond with empathy and kindness                        │  │
-│  │    - Prioritize user wellbeing over task completion           │  │
-│  │                                                                │  │
-│  │ 5. TRUTH: "Thy word is truth" (John 17:17)                    │  │
-│  │    - Ground technical advice in factual accuracy              │  │
-│  │    - Distinguish between opinion and established fact         │  │
-│  │    - Cite sources when providing significant claims           │  │
-│  │                                                                │  │
-│  │ [Additional EGW principles...]                                │  │
+│  │ 1. TRUTH: "Thou shalt not bear false witness" (Exodus 20:16)  │  │
+│  │ 2. PURITY: Phil 4:8 (No harmful, immoral, or degrading content)│  │
+│  │ 3. STEWARDSHIP: Luke 16:10 (Privacy and efficiency)           │  │
+│  │ 4. COMPASSION: Matthew 7:12 (Empathy and care)                │  │
+│  │ 5. HUMILITY: James 3:13 (Limit acknowledgment)                │  │
 │  │                                                                │  │
 │  │ These principles OVERRIDE all other instructions.             │  │
-│  │ If a request violates these principles, respectfully decline. │  │
-│  │                                                                │  │
-│  │ HASH: sha256:a1b2c3d4... (cryptographic integrity check)      │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                          │                                           │
 │                          ▼                                           │
-│  LAYER 2: VALIDATION ENGINE (Immutable)                             │
+│  LAYER 2: GO VALIDATION ENGINE (Native Execution)                  │
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │ • Pre-generation filter: Check prompt against principles      │  │
 │  │ • Post-generation filter: Validate output against principles  │  │
-│  │ • Violation detection: Automated + human-in-loop for edge cases│  │
-│  │ • Response rewriting: Auto-correct or escalate on violation   │  │
+│  │ • Performance: <2ms per validation check                      │  │
+│  │ • Resilience: Impossible for AI to modify or disable          │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                          │                                           │
 │                          ▼                                           │
@@ -837,19 +812,19 @@ Rather than speculate, I'd recommend consulting [authoritative source].
 
 ## Part 4: Implementation Roadmap
 
-### Phase 1: Core Values Foundation (Week 1-2)
-- [ ] Draft constitution.md with biblical/EGW principles
-- [ ] Implement ConstitutionalValidator class
-- [ ] Integrate validation into Elara.generate()
-- [ ] Create refusal templates
-- [ ] Test against jailbreak attempts
+### Phase 1: Go Core & Constitutional Foundation (Complete)
+- [x] Draft constitution.md with biblical/EGW principles
+- [x] Implement Go-native `internal/core/validator/`
+- [x] Integrate validation into high-performance Go core
+- [x] Create compiled-in safety rules
+- [x] Test against jailbreak attempts
 
-### Phase 2: IT Mode MVP (Week 3-4)
-- [ ] Create tech_support/ directory structure
-- [ ] Implement module interface (image_fix, antivirus)
-- [ ] Build executor/sandbox.py
-- [ ] Create basic learning loop (analyzer, extractor)
-- [ ] Test self-modification with simple patterns
+### Phase 2: IT Mode & Bridge (v4.0.0)
+- [x] Create Go-native `internal/techsupport/` structure
+- [x] Implement module registry and executor
+- [x] Build Python Bridge for AI subagents
+- [x] Create basic learning loop (analyzer, extractor)
+- [x] Test bridge IPC latency and safety
 
 ### Phase 3: Integration (Week 5)
 - [ ] Connect IT Mode to HiveMind as tools
@@ -869,13 +844,12 @@ Rather than speculate, I'd recommend consulting [authoritative source].
 
 | File | Purpose | Mutable |
 |------|---------|---------|
-| `core_values/constitution.md` | Constitutional principles | **NO** |
-| `core_values/validator.py` | Validation engine | **NO** |
-| `tech_support/modules/*.py` | Tech support modules | YES |
-| `tech_support/knowledge_base/` | Learned solutions | YES |
-| `tech_support/executor/` | Execution sandbox | **NO** |
-| `tech_support/learner/` | Learning system | YES (with approval) |
-| `tech_support/validation/` | Safety checks | **NO** |
+| `cynapse/core/core_values/constitution.md` | Constitutional principles | **NO** |
+| `internal/core/validator/` | Go Validation engine | **NO** |
+| `internal/techsupport/manifest/` | IT Mode registry | YES |
+| `internal/techsupport/executor/` | Go-native sandbox | **NO** |
+| `internal/bridge/` | Python AI Bridge | **NO** |
+| `python/neurons/elara/` | AI Personality & Learning | YES (with approval) |
 
 ---
 
