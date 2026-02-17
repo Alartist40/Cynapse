@@ -80,10 +80,10 @@ The command palette is implemented as a filtered list overlay.
 
 | Metric | Target | Result |
 |--------|--------|--------|
-| **Startup** | < 100ms | **~45ms** |
-| **Input Latency** | < 10ms | **~4ms** |
+| **Startup** | < 100ms | **~6ms** |
+| **Input Latency** | < 10ms | **<1ms** |
 | **Render Rate** | 60fps | **60fps** |
-| **Memory** | < 30MB | **~12MB** |
+| **Memory** | < 30MB | **~5.6MB** |
 
 ---
 

@@ -819,18 +819,18 @@ Rather than speculate, I'd recommend consulting [authoritative source].
 - [x] Create compiled-in safety rules
 - [x] Test against jailbreak attempts
 
-### Phase 2: IT Mode & Bridge (v4.0.0)
+### Phase 2: IT Mode & Bridge (Complete)
 - [x] Create Go-native `internal/techsupport/` structure
 - [x] Implement module registry and executor
 - [x] Build Python Bridge for AI subagents
-- [x] Create basic learning loop (analyzer, extractor)
-- [x] Test bridge IPC latency and safety
+- [x] Create functional learning loop (analyzer, extractor)
+- [x] Test bridge IPC latency and security hardening
 
-### Phase 3: Integration (Week 5)
-- [ ] Connect IT Mode to HiveMind as tools
-- [ ] Implement multi-agent tech support (parallel modules)
-- [ ] Add TUI visualization for IT Mode execution
-- [ ] Create rollback mechanism
+### Phase 3: Integration (Complete)
+- [x] Connect IT Mode to HiveMind as tools
+- [x] Implement multi-agent tech support (parallel modules)
+- [x] Add TUI visualization and command palette for IT Mode execution
+- [x] Create background execution handlers for long-running repairs
 
 ### Phase 4: Safety Hardening (Week 6)
 - [ ] Cryptographic signing of Core Values

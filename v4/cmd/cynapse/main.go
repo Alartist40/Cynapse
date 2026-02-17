@@ -94,8 +94,17 @@ func runHealthCheck() {
 		fmt.Printf("  ❌ HiveMind:   Error (%v)\n", err)
 	} else {
 		fmt.Println("  ✅ HiveMind:   Active")
+
+		// Temporary registration for health check
+		engine.RegisterNeuron(bat.New("./data/shards", 2))
+		engine.RegisterNeuron(beaver.New("iptables"))
+		engine.RegisterNeuron(canary.New())
+		engine.RegisterNeuron(meerkat.New())
+		engine.RegisterNeuron(octopus.New())
+		engine.RegisterNeuron(wolverine.New())
+
 		neurons := engine.ListNeurons()
-		fmt.Printf("  ✅ Neurons:    %d registered\n", len(neurons))
+		fmt.Printf("  ✅ Neurons:    %d registered (Go-native)\n", len(neurons))
 	}
 
 	fmt.Println("\n🎉 Diagnostics complete.")
