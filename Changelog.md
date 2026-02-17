@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.0.1] - 2026-02-25
+### Added
+- **AI Integration**: Functional Elara MoE model and Owl OCR implementation integrated via Python bridge.
+- **IT Mode Execution**: Ability to run IT support modules directly from the TUI command palette.
+- **Path Protection**: Centralized path validation utility in Go core for security.
+
+### Fixed
+- **Security**: Patched critical path traversal vulnerabilities in Wolverine and HiveMind.
+- **Security**: Hardened Beaver neuron against command injection via strict IP validation.
+- **Security**: Replaced dangerous `exec()` calls in Python configurator with safe AST parsing.
+- **Performance**: Verified ~500x faster cold start and ~100x faster neuron execution compared to v3.0.
+
 ## [4.0.0] - 2026-02-17 (Ghost Shell)
 ### Added
 - **Go Core**: Complete rewrite of the orchestration engine in Go for maximum performance.
