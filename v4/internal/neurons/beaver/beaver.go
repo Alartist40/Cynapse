@@ -94,6 +94,11 @@ func (n *Neuron) fromNaturalLanguage(query string) ([]Rule, error) {
 		source = m[1]
 	}
 
+	// Security: Strict validation of extracted parameters
+	if !isValidIP(source) && source != "any" {
+		source = "0.0.0.0/0" // Fallback to safe default
+	}
+
 	rule := Rule{
 		Action:   action,
 		Protocol: protocol,
@@ -119,4 +124,20 @@ func (n *Neuron) fromNaturalLanguage(query string) ([]Rule, error) {
 		source, nftPort, nftAction)
 
 	return []Rule{rule}, nil
+}
+
+// Security: Helper for IP/CIDR validation
+func isValidIP(s string) bool {
+	// Simple check for allowed characters in IP/CIDR
+	match, _ := regexp.MatchString(`^[\d\. /]+$`, s)
+	if !match {
+		return false
+	}
+	// Try parsing it
+	if strings.Contains(s, "/") {
+		// CIDR
+		return regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$`).MatchString(s)
+	}
+	// Single IP
+	return regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`).MatchString(s)
 }

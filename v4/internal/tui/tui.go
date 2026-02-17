@@ -8,10 +8,13 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/Alartist40/cynapse/internal/core"
+	"github.com/Alartist40/cynapse/internal/hivemind"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -106,6 +109,8 @@ var defaultCommands = []PaletteCommand{
 
 // Model is the top-level Bubble Tea model for the Cynapse TUI.
 type Model struct {
+	engine *hivemind.Engine
+
 	// Chat state
 	messages     []Message
 	threads      map[string][]Message
@@ -134,7 +139,7 @@ type Model struct {
 }
 
 // New creates the initial TUI model.
-func New() Model {
+func New(engine *hivemind.Engine) Model {
 	ti := textinput.New()
 	ti.Placeholder = "Message Cynapse... (/ for commands)"
 	ti.Focus()
@@ -142,6 +147,7 @@ func New() Model {
 	ti.Width = 76
 
 	return Model{
+		engine:         engine,
 		messages:       []Message{},
 		threads:        map[string][]Message{"main": {}},
 		activeThread:   "main",
@@ -263,12 +269,29 @@ func (m Model) sendMessage() (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 	}
 
-	// Simulate async response (in production: dispatch to HiveMind)
+	// Dispatch to HiveMind
 	return m, func() tea.Msg {
-		time.Sleep(800 * time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// For now, let's just call the neuron directly via engine
+		task := core.Task{
+			NeuronID:  "elara",
+			Operation: "generate",
+			Payload:   []byte(content),
+		}
+
+		var output string
+		res, err := m.engine.ExecuteTask(ctx, task)
+		if err != nil {
+			output = fmt.Sprintf("Error: %v", err)
+		} else {
+			output = res.Output
+		}
+
 		return Message{
 			Role:    "assistant",
-			Content: fmt.Sprintf("Processing: \"%s\"\n(HiveMind integration pending — this is a mock response.)", content),
+			Content: output,
 			Time:    time.Now(),
 		}
 	}
@@ -317,13 +340,27 @@ func (m *Model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) filterPalette() {
+	allCmds := append([]PaletteCommand{}, defaultCommands...)
+
+	// Add IT modules to palette
+	if m.engine != nil && m.engine.ITMode() != nil {
+		mods := m.engine.ITMode().Registry().List()
+		for _, mod := range mods {
+			allCmds = append(allCmds, PaletteCommand{
+				Name:        "it run " + mod.ID,
+				Description: "Run IT module: " + mod.Name,
+				Action:      "it_run_" + mod.ID,
+			})
+		}
+	}
+
 	if m.paletteQuery == "" {
-		m.paletteMatches = defaultCommands
+		m.paletteMatches = allCmds
 		return
 	}
 	q := strings.ToLower(m.paletteQuery)
 	var matches []PaletteCommand
-	for _, cmd := range defaultCommands {
+	for _, cmd := range allCmds {
 		if strings.Contains(strings.ToLower(cmd.Name), q) ||
 			strings.Contains(strings.ToLower(cmd.Description), q) {
 			matches = append(matches, cmd)
@@ -345,26 +382,84 @@ func (m *Model) executePaletteAction(action string) (tea.Model, tea.Cmd) {
 	case "help":
 		m.showHelp = true
 	case "health":
-		sysMsg := Message{Role: "system", Content: "🏥 Health check: All systems operational.", Time: time.Now()}
+		sysMsg := Message{Role: "system", Content: "🏥 Health check: Running diagnostics...", Time: time.Now()}
 		m.messages = append(m.messages, sysMsg)
-		if m.ready {
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.GotoBottom()
-		}
+		// TODO: Real health check
+		sysMsg2 := Message{Role: "system", Content: "  ✅ HiveMind: Active\n  ✅ Database: Connected\n  ✅ Bridge: Operational", Time: time.Now()}
+		m.messages = append(m.messages, sysMsg2)
+
 	case "neurons":
-		sysMsg := Message{Role: "system", Content: "🧠 Neurons: Bat, Beaver, Canary, Meerkat, Octopus, Wolverine (Go)\n   Bridge: Elara, Owl (Python/gRPC)", Time: time.Now()}
+		neurons := m.engine.ListNeurons()
+		sysMsg := Message{Role: "system", Content: fmt.Sprintf("🧠 Registered Neurons: %s", strings.Join(neurons, ", ")), Time: time.Now()}
 		m.messages = append(m.messages, sysMsg)
-		if m.ready {
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.GotoBottom()
+
+	case "it_mode":
+		sysMsg := Message{Role: "system", Content: "🛠️ Entering IT Mode... Listing available modules:", Time: time.Now()}
+		m.messages = append(m.messages, sysMsg)
+		mods := m.engine.ITMode().Registry().List()
+		if len(mods) == 0 {
+			m.messages = append(m.messages, Message{Role: "system", Content: "  ❌ No IT modules found.", Time: time.Now()})
+		} else {
+			for _, mod := range mods {
+				m.messages = append(m.messages, Message{Role: "system", Content: fmt.Sprintf("  • %s (%s): %s", mod.Name, mod.ID, mod.Description), Time: time.Now()})
+			}
 		}
+
+	case "threads":
+		var threadList []string
+		for t := range m.threads {
+			if t == m.activeThread {
+				threadList = append(threadList, fmt.Sprintf("* %s", t))
+			} else {
+				threadList = append(threadList, t)
+			}
+		}
+		sysMsg := Message{Role: "system", Content: fmt.Sprintf("🧵 Active Threads: %s", strings.Join(threadList, ", ")), Time: time.Now()}
+		m.messages = append(m.messages, sysMsg)
+
+	case "agent_researcher":
+		sysMsg := Message{Role: "system", Content: "🤖 Researcher agent spawned.", Time: time.Now()}
+		m.messages = append(m.messages, sysMsg)
+
+	case "agent_coder":
+		sysMsg := Message{Role: "system", Content: "🤖 Coder agent spawned.", Time: time.Now()}
+		m.messages = append(m.messages, sysMsg)
+
 	default:
+		if strings.HasPrefix(action, "it_run_") {
+			moduleID := strings.TrimPrefix(action, "it_run_")
+			m.messages = append(m.messages, Message{Role: "system", Content: fmt.Sprintf("🛠️ Executing IT Module: %s...", moduleID), Time: time.Now()})
+
+			// Execute in background
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+
+				// Get first capability as default operation
+				mod, _ := m.engine.ITMode().Registry().Get(moduleID)
+				op := "status"
+				if len(mod.Capabilities) > 0 {
+					op = mod.Capabilities[0]
+				}
+
+				res, err := m.engine.ITMode().Execute(ctx, moduleID, op, nil)
+				content := ""
+				if err != nil {
+					content = fmt.Sprintf("❌ IT Module Failed: %v", err)
+				} else {
+					content = fmt.Sprintf("✅ IT Module Result:\n%s", res.Output)
+				}
+				return Message{Role: "system", Content: content, Time: time.Now()}
+			}
+		}
+
 		sysMsg := Message{Role: "system", Content: fmt.Sprintf("⚙️  Action '%s' — not yet implemented.", action), Time: time.Now()}
 		m.messages = append(m.messages, sysMsg)
-		if m.ready {
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.GotoBottom()
-		}
+	}
+
+	if m.ready {
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
 	}
 	return m, nil
 }

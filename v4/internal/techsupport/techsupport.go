@@ -100,6 +100,11 @@ func NewExecutor(registry *Registry) *Executor {
 	}
 }
 
+// Registry returns the module registry.
+func (e *Executor) Registry() *Registry {
+	return e.registry
+}
+
 // Execute runs a module operation.
 func (e *Executor) Execute(ctx context.Context, moduleID, operation string, params map[string]string) (core.Result, error) {
 	mod, ok := e.registry.Get(moduleID)

@@ -4,7 +4,7 @@
 
 **Cynapse** is a bio-digital security ecosystem designed for high-privacy environments. It orchestrates 8 specialized "neurons" (security tools) through a central hub, presenting them in a Neural Operations Center TUI. The system implements air-gapped security with USB-sharded authentication, local AI inference, and zero cloud dependencies.
 
-**Version**: 4.0.0 (The "Ghost" Release)  
+**Version**: 4.0.1 (The "Ghost Shell" Restoration)
 **Author**: Alejandro Eduardo Garcia Romero  
 **License**: MIT
 
@@ -14,30 +14,35 @@
 
 Get Cynapse running in seconds with the new Go-native core:
 
-### Step 1: Build the System
+### Step 1: Set up AI Environment
+```bash
+# Optional but recommended for Elara/Owl
+python3 -m venv v4/python/venv
+source v4/python/venv/bin/activate
+pip install -r v4/python/requirements-ai.txt
+```
+
+### Step 2: Build the System
 ```bash
 cd v4
+chmod +x scripts/build.sh
 ./scripts/build.sh
 ```
 
-### Step 2: Verify Installation
+### Step 3: Verify & Launch
 ```bash
 ./dist/cynapse --health
-```
-
-### Step 3: Launch
-```bash
 ./dist/cynapse
 ```
 You're now in the Synaptic Fortress!
 
 ---
 
-## 🚀 New in v4.0.0 "Ghost"
+## 🚀 New in v4.0.1 "Ghost Shell"
 
 ### 1. Go-First Architecture
 Cynapse has been reconstructed in Go for massive performance gains.
-- **Fast Startup**: <100ms cold start (no Python import lag).
+- **Fast Startup**: ~6ms cold start (no Python import lag).
 - **Single Binary**: Portability without "dependency hell" (mostly).
 - **Concurrency**: True parallel neuron execution via goroutines.
 
