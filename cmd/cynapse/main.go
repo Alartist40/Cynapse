@@ -1,209 +1,299 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/yourusername/cynapse/internal/agent"
 	"github.com/yourusername/cynapse/internal/config"
 	"github.com/yourusername/cynapse/internal/llm"
 	"github.com/yourusername/cynapse/internal/mcp"
 	"github.com/yourusername/cynapse/internal/memory"
 	"github.com/yourusername/cynapse/internal/session"
+	"github.com/yourusername/cynapse/internal/synapse"
 	"github.com/yourusername/cynapse/internal/tui"
 )
 
-var (
-	purple = lipgloss.Color("#9b59b6")
-	orange = lipgloss.Color("#e67e22")
-	dim    = lipgloss.Color("#4a5568")
-	bright = lipgloss.Color("#e4e7eb")
-
-	heroStyle = lipgloss.NewStyle().
-			Foreground(purple).
-			Bold(true)
-
-	okStyle   = lipgloss.NewStyle().Foreground(purple)
-	failStyle = lipgloss.NewStyle().Foreground(orange)
-	dimStyle  = lipgloss.NewStyle().Foreground(dim)
-)
+const version = "1.0.0"
 
 func main() {
-	// Clear screen
-	fmt.Print("\033[H\033[2J")
+	// Ensure home directory exists
+	homeDir := getHomeDir()
+	ensureDir(homeDir)
+	ensureDir(filepath.Join(homeDir, "synapses"))
+	ensureDir(filepath.Join(homeDir, "data"))
+	ensureDir(filepath.Join(homeDir, "logs"))
 
-	// Show hero
-	logo := `
-  ██████╗██╗   ██╗███╗   ██╗ █████╗ ██████╗ ███████╗███████╗
- ██╔════╝╚██╗ ██╔╝████╗  ██║██╔══██╗██╔══██╗██╔════╝██╔════╝
- ██║      ╚████╔╝ ██╔██╗ ██║███████║██████╔╝███████╗█████╗  
- ██║       ╚██╔╝  ██║╚██╗██║██╔══██║██╔═══╝ ╚════██║██╔══╝  
- ╚██████╗   ██║   ██║ ╚████║██║  ██║██║     ███████║███████╗
-  ╚═════╝   ╚═╝   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚══════╝╚══════╝
-`
-	fmt.Println(heroStyle.Render(logo))
-	fmt.Println(dimStyle.Render("                      v1.0.0 GHOST SHELL\n"))
-
-	// Boot checks
-	checks := []struct {
-		name string
-		fn   func() error
-	}{
-		{"Loading configuration", checkConfig},
-		{"Verifying SQLite database", checkDatabase},
-		{"Connecting to Ollama", checkOllama},
-		{"Initializing memory system", checkMemory},
-		{"Testing LLM connection", checkLLM},
-		{"Starting agent core", checkAgent},
+	// Parse command
+	if len(os.Args) < 2 {
+		// No args = run interactive chat
+		runChat()
+		return
 	}
 
-	var cfg *config.Config
-	var llmCli llm.Client
-	var store *memory.Store
-	var sessions *session.Manager
-	var mcpMgr *mcp.Manager
-	var persona *memory.Persona
-	var ag *agent.Agent
+	command := os.Args[1]
+	args := os.Args[2:]
 
-	for _, check := range checks {
-		fmt.Printf("  %s ", dimStyle.Render("●"))
-		fmt.Print(check.name + "...")
-		time.Sleep(200 * time.Millisecond)
+	switch command {
+	case "synapse":
+		handleSynapseCommand(args)
+	case "config":
+		handleConfigCommand(args)
+	case "version":
+		fmt.Printf("CYNAPSE v%s\n", version)
+	case "help":
+		printHelp()
+	default:
+		// Unknown command, default to chat
+		runChat()
+	}
+}
 
-		err := check.fn()
-		if err != nil {
-			fmt.Print("\r  " + failStyle.Render("✗") + " " + check.name + " ")
-			fmt.Println(failStyle.Render(fmt.Sprintf("FAILED: %v", err)))
-			os.Exit(1)
-		}
-
-		// Store initialized components
-		switch check.name {
-		case "Loading configuration":
-			cfg, _ = config.Load("config.yaml")
-		case "Verifying SQLite database":
-			store, _ = memory.NewStore(cfg.Memory.DBPath)
-		case "Initializing memory system":
-			sessions = session.NewManager(cfg.Memory.SessionsPath)
-			mcpMgr = mcp.NewManager(cfg.MCP)
-			persona, _ = memory.NewPersona("cynapse_tui_01", cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
-		case "Testing LLM connection":
-			llmCli, _ = llm.New(&cfg.LLM)
-		case "Starting agent core":
-			ag = agent.New("cynapse_tui_01", llmCli, persona, store, sessions, mcpMgr, cfg)
-		}
-
-		fmt.Print("\r  " + okStyle.Render("✓") + " " + check.name + "\n")
+func runChat() {
+	// Load configuration
+	cfg, err := config.Load(getConfigPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Run 'cynapse config init' to create default config\n")
+		os.Exit(1)
 	}
 
-	fmt.Println()
-	fmt.Println(okStyle.Render("  System ready. Launching interface..."))
-	time.Sleep(800 * time.Millisecond)
+	// Initialize LLM client
+	llmClient, err := llm.New(&llm.Config{
+		Provider:       cfg.LLM.Provider,
+		Model:          cfg.LLM.Model,
+		OllamaBaseURL:  cfg.LLM.OllamaBaseURL,
+		AnthropicKey:   cfg.LLM.AnthropicKey,
+		OpenAIKey:      cfg.LLM.OpenAIKey,
+		GeminiKey:      cfg.LLM.GeminiKey,
+		MaxTokens:      cfg.LLM.MaxTokens,
+		Temperature:    cfg.LLM.Temperature,
+		MaxRetries:     cfg.LLM.MaxRetries,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing LLM: %v\n", err)
+		os.Exit(1)
+	}
 
-	// Start curator
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-		<-sig
-		cancel()
-	}()
-
-	ag.StartCurator(ctx)
-
-	// Cleanup on exit
+	// Initialize memory store
+	store, err := memory.OpenStore(cfg.Memory.DBPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening memory store: %v\n", err)
+		os.Exit(1)
+	}
 	defer store.Close()
-	defer mcpMgr.Close()
 
-	// Clear and launch TUI
-	fmt.Print("\033[H\033[2J")
+	// Load persona
+	persona, err := memory.LoadPersona(cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading persona: %v\n", err)
+		os.Exit(1)
+	}
 
-	m := tui.NewModel(ag, cfg, llmCli)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	// Initialize session manager
+	sessions := session.NewManager(cfg.Memory.SessionsPath)
+
+	// Initialize MCP manager
+	var mcpMgr *mcp.Manager
+	if cfg.MCP.Enabled {
+		mcpMgr, err = mcp.New(cfg.MCP.Servers)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: MCP initialization failed: %v\n", err)
+		}
+		defer func() {
+			if mcpMgr != nil {
+				mcpMgr.Shutdown()
+			}
+		}()
+	}
+
+	// Load synapses
+	registry := synapse.NewRegistry()
+	synapseDir := filepath.Join(getHomeDir(), "synapses")
+	if err := registry.Discover(synapseDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to discover synapses: %v\n", err)
+	}
+
+	// Add discovered synapses to MCP servers
+	if mcpMgr != nil {
+		for _, syn := range registry.GetAll() {
+			// Convert synapse to MCP server config and add
+			mcpMgr.AddServer(syn.ToMCPConfig())
+		}
+	}
+
+	// Initialize agent
+	deviceID := "cynapse_tui_01"
+	agentInstance := agent.New(
+		deviceID,
+		llmClient,
+		persona,
+		store,
+		sessions,
+		mcpMgr,
+		cfg,
+	)
+
+	// Create and run TUI
+	model := tui.NewModel(agentInstance, cfg, llmClient)
+	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func checkConfig() error {
-	cfgPath := "config.yaml"
-	if len(os.Args) > 1 {
-		cfgPath = os.Args[1]
-	}
-	_, err := config.Load(cfgPath)
-	return err
-}
-
-func checkDatabase() error {
-	cfg, _ := config.Load("config.yaml")
-	store, err := memory.NewStore(cfg.Memory.DBPath)
-	if err != nil {
-		return err
-	}
-	store.Close()
-	return nil
-}
-
-func checkOllama() error {
-	cfg, _ := config.Load("config.yaml")
-	if cfg.LLM.Provider != "ollama" {
-		return nil // Skip check for non-Ollama providers
+func handleSynapseCommand(args []string) {
+	if len(args) == 0 {
+		printSynapseHelp()
+		return
 	}
 
-	baseURL := cfg.LLM.OllamaBaseURL
-	if baseURL == "" {
-		baseURL = "http://localhost:11434"
-	}
+	cmd := args[0]
+	subargs := args[1:]
 
-	resp, err := http.Get(baseURL + "/api/tags")
-	if err != nil {
-		return fmt.Errorf("Ollama not running at %s", baseURL)
-	}
-	defer resp.Body.Close()
+	registry := synapse.NewRegistry()
+	synapseDir := filepath.Join(getHomeDir(), "synapses")
 
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("Ollama returned HTTP %d", resp.StatusCode)
-	}
-	return nil
-}
-
-func checkMemory() error {
-	cfg, _ := config.Load("config.yaml")
-	_, err := memory.NewPersona("cynapse_tui_01", cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
-	return err
-}
-
-func checkLLM() error {
-	cfg, _ := config.Load("config.yaml")
-	client, err := llm.New(&cfg.LLM)
-	if err != nil {
-		return err
-	}
-
-	// Quick test: list models (Ollama only)
-	if cfg.LLM.Provider == "ollama" {
-		_, err := llm.ListOllamaModels(cfg.LLM.OllamaBaseURL)
-		if err != nil {
-			return fmt.Errorf("model %q not found", cfg.LLM.Model)
+	switch cmd {
+	case "list":
+		if err := registry.Discover(synapseDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
-	}
+		registry.List()
 
-	_ = client
-	return nil
+	case "add", "install":
+		if len(subargs) == 0 {
+			fmt.Println("Usage: cynapse synapse add <name>")
+			os.Exit(1)
+		}
+		if err := registry.Install(subargs[0], synapseDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "remove", "uninstall":
+		if len(subargs) == 0 {
+			fmt.Println("Usage: cynapse synapse remove <name>")
+			os.Exit(1)
+		}
+		if err := registry.Uninstall(subargs[0], synapseDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "search":
+		if len(subargs) == 0 {
+			registry.SearchAll()
+		} else {
+			registry.Search(subargs[0])
+		}
+
+	default:
+		fmt.Printf("Unknown synapse command: %s\n", cmd)
+		printSynapseHelp()
+		os.Exit(1)
+	}
 }
 
-func checkAgent() error {
-	// Already constructed in loop, just validate
-	return nil
+func handleConfigCommand(args []string) {
+	if len(args) == 0 {
+		// Show current config location
+		fmt.Printf("Config location: %s\n", getConfigPath())
+		return
+	}
+
+	cmd := args[0]
+
+	switch cmd {
+	case "init":
+		// Create default config
+		if err := config.CreateDefault(getConfigPath()); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating config: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Created default config at: %s\n", getConfigPath())
+
+	case "edit":
+		// Open config in editor
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "nano"
+		}
+		// TODO: exec editor with config file
+
+	default:
+		fmt.Printf("Unknown config command: %s\n", cmd)
+		fmt.Println("Available commands: init, edit")
+		os.Exit(1)
+	}
+}
+
+func printHelp() {
+	fmt.Print(`
+🧠 CYNAPSE - Modular AI Agent
+
+USAGE:
+  cynapse                 Start interactive chat
+  cynapse synapse <cmd>   Manage synapses
+  cynapse config <cmd>    Manage configuration
+  cynapse version         Show version
+  cynapse help            Show this help
+
+SYNAPSE COMMANDS:
+  list                    List installed synapses
+  add <name>              Install a synapse
+  remove <name>           Remove a synapse
+  search [query]          Search available synapses
+
+CONFIG COMMANDS:
+  init                    Create default config
+  edit                    Edit configuration file
+
+EXAMPLES:
+  cynapse                          # Run interactive chat
+  cynapse synapse add leafcutter   # Install LeafcutterLLM synapse
+  cynapse synapse list             # See installed synapses
+  cynapse config init              # Create default config
+
+For more information, visit: https://github.com/Alartist40/cynapse
+`)
+}
+
+func printSynapseHelp() {
+	fmt.Println(`
+Synapse commands:
+  list                 List installed synapses
+  add <name>           Install a synapse from registry
+  remove <name>        Remove an installed synapse
+  search [query]       Search available synapses
+
+Examples:
+  cynapse synapse list
+  cynapse synapse add leafcutter
+  cynapse synapse remove git-tools
+  cynapse synapse search inference
+`)
+}
+
+func getHomeDir() string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = os.Getenv("USERPROFILE") // Windows
+	}
+	return filepath.Join(home, ".cynapse")
+}
+
+func getConfigPath() string {
+	return filepath.Join(getHomeDir(), "config.yaml")
+}
+
+func ensureDir(path string) {
+	if err := os.MkdirAll(path, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to create directory %s: %v\n", path, err)
+	}
 }
