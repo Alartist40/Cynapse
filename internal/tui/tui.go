@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yourusername/cynapse/internal/agent"
-	"github.com/yourusername/cynapse/internal/config"
-	"github.com/yourusername/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/agent"
+	"github.com/Alartist40/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/llm"
 )
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -241,6 +241,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.menuCursor < len(m.menuItems) {
 				item := m.menuItems[m.menuCursor]
+				
+				// Close menu before executing action
+				m.showMenu = false
+				m.menuCursor = 0
+				m.input = ""
+				m.restoreMainMenu()
+				
 				return m, item.action(&m)
 			}
 			return m, nil
@@ -681,9 +688,6 @@ func (m *Model) addAssistantMsg(content string) {
 	m.messages = append(m.messages, message{role: "assistant", content: content, time: time.Now()})
 }
 
-func (m *Model) addSystemMsg(content string) {
-	m.messages = append(m.messages, message{role: "system", content: content, time: time.Now()})
-}
 func (m *Model) addSystemMsg(content string) {
 	m.messages = append(m.messages, message{role: "system", content: content, time: time.Now()})
 }
