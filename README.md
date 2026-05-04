@@ -1,102 +1,259 @@
-# CYNAPSE — Ghost Shell (Native Terminal Edition)
+# 🧠 CYNAPSE - Ghost Shell AI Agent
+**Modular AI Agent System for the Terminal**
 
-Pure Go terminal TUI. No browser, no HTTP server — just a single binary that runs directly in your terminal.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org)
 
-## Features
+CYNAPSE is a modular AI agent that runs entirely in your terminal. Built with Go and Bubble Tea, it combines the power of multiple LLM providers with a beautiful TUI interface and extensible synapse (plugin) system.
 
-- ✅ **Native Terminal UI** — Runs in any terminal emulator
-- ✅ **Real Boot Checks** — Verifies Ollama, config, memory, LLM before launch
-- ✅ **Idle & Active States** — Large hero when idle, shrinks when active
-- ✅ **Purple + Orange Theme** — Minimalist, high-contrast design
-- ✅ **Live Stats** — Response time, token count in status bar
-- ✅ **Multi-Provider LLM** — Ollama (local), Anthropic, OpenAI, Gemini
-- ✅ **Hermes-Style Memory** — Markdown persona files, SQLite store, heartbeat curator
-- ✅ **Tools** — bash, file ops, web fetch, memory tools
-- ✅ **MCP Integration** — Connect external tool servers
-- ✅ **Single Binary** — `./cynapse` and go
-
-## Quick Start
-
-```bash
-# Make sure Ollama is running
-ollama serve  # in another terminal
-
-# Build & run
-go mod tidy
-go build -o cynapse ./cmd/cynapse
-./cynapse
-```
-
-## Usage
-
-**Boot sequence:**
-- Shows CYNAPSE hero logo
-- Runs 6 real system checks
-- Only proceeds if all pass
-
-**Idle state:**
-- Large centered CYNAPSE logo
-- Type to chat
-
-**Active state (after first message):**
-- Logo shrinks to top-left
-- Full conversation area
-- Status bar shows: Model | Response time | Token count
-
-**Menu:**
-- Press `/` → Opens menu
-- Navigate: ↑↓ or j/k
-- Select: Enter
-- Commands: Status, Models, Memory, Heartbeat, Clear, Help, Quit
-
-## Config
-
-Edit `config.yaml` to switch providers:
-
-```yaml
-llm:
-  provider: "ollama"         # or anthropic | openai | gemini
-  model: "qwen3.5:9b"        # model name
-  ollama_base_url: "http://localhost:11434"
-```
-
-## Memory System
-
-Like Hermes Agent:
-- **Persona files**: `./data/persona/<device>/SOUL.md`, `MEMORY.md`, `USER.md`, etc.
-- **Daily logs**: `./data/persona/<device>/logs/daily/YYYY-MM-DD.md`
-- **SQLite store**: `./data/memory.db` (full-text searchable)
-- **Heartbeat curator**: Runs every 6 hours, updates MEMORY.md
-
-## Cross-Compile for Pi
-
-```bash
-make build-pi        # Pi 5 (arm64)
-make build-pi-zero   # Pi Zero 2W (armv7)
-```
-
-## Architecture
-
-```
-Terminal TUI (Bubble Tea)
-        ↓
-  Agent Core
-        ↓
-  LLM Client → Ollama / Anthropic / OpenAI / Gemini
-        ↓
- Tools + MCP Servers
- Memory (Persona + SQLite)
- Session (JSONL logs)
-```
-
-## Colors
-
-- **Purple** `#9b59b6` — Primary (hero, accents)
-- **Orange** `#e67e22` — Secondary (warnings, system messages)
-- **Background** `#0a0e14` — Deep dark
-- **Dim** `#4a5568` — Secondary text
-- **Bright** `#e4e7eb` — Primary text
+**Philosophy:** Like Arch Linux for AI - install only what you need, control everything, no bloat.
 
 ---
 
-v1.0.0 Ghost Shell — Built for small hardware, runs everywhere.
+## ⚡ Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/install.sh | bash
+```
+
+That's it! The installer will:
+- Auto-detect your OS and architecture
+- Install Go and dependencies if needed
+- Build CYNAPSE
+- Set up ~/.cynapse/ directory
+- Add `cynapse` to your PATH
+
+---
+
+## 🚀 Usage
+
+### Run Interactive Chat
+
+```bash
+cynapse
+```
+
+### Manage Synapses (Extensions)
+
+```bash
+# List installed synapses
+cynapse synapse list
+
+# Install a synapse
+cynapse synapse add leafcutter
+
+# Remove a synapse
+cynapse synapse remove git-tools
+
+# Search available synapses
+cynapse synapse search inference
+```
+
+### Configuration
+
+```bash
+# Show config location
+cynapse config
+
+# Create default config
+cynapse config init
+
+# Edit config
+nano ~/.cynapse/config.yaml
+```
+
+---
+
+## 📦 Synapses (Optional Extensions)
+
+CYNAPSE uses a modular synapse system - install only what you need:
+
+| Synapse | Description | Install |
+|---------|-------------|---------|
+| **leafcutter** | CPU-optimized LLM inference engine | `cynapse synapse add leafcutter` |
+| **git-tools** | Repository management and analysis | `cynapse synapse add git-tools` |
+| **web-automation** | Browser control and scraping | `cynapse synapse add web-automation` |
+| **speedtest** | LLM benchmarking and metrics | `cynapse synapse add speedtest` |
+
+> **Like biological synapses:** Each extension creates new neural connections, expanding capabilities without bloating the core.
+
+---
+
+## 🎨 Features
+
+- ✅ **Beautiful TUI** - Purple & orange themed terminal interface
+- ✅ **Streaming Responses** - See text appear word-by-word
+- ✅ **Multi-LLM Support** - Ollama, Anthropic, OpenAI, Gemini
+- ✅ **Model Switching** - Change models on the fly with `/` menu
+- ✅ **Memory System** - Persona-driven memory with SQLite storage
+- ✅ **MCP Integration** - Model Context Protocol for tool calling
+- ✅ **Modular Synapses** - Extend functionality with plugins
+- ✅ **Request Cancellation** - Cancel long-running requests
+- ✅ **Session Management** - JSONL conversation logs
+- ✅ **Cross-platform** - Linux, macOS, Windows
+
+---
+
+## 🏗️ Architecture
+
+```
+CYNAPSE Core (Your Brain)
+├─ TUI Interface
+├─ Agent System
+├─ Memory & Persona
+└─ MCP Manager
+    └─ Synapses (Load on demand)
+        ├─ LeafcutterLLM
+        ├─ GitTools  
+        ├─ WebAutomation
+        └─ Your custom extensions...
+```
+
+---
+
+## 💻 Manual Installation (Advanced)
+
+If you prefer to build manually:
+
+```bash
+# Clone repository
+git clone https://github.com/Alartist40/cynapse.git
+cd cynapse
+
+# Install dependencies (Linux/Debian)
+sudo apt-get install build-essential pkg-config libopenblas-dev libsqlite3-dev
+
+# Build
+go build -o cynapse ./cmd/cynapse
+
+# Install
+sudo mv cynapse /usr/local/bin/
+
+# Setup home directory
+mkdir -p ~/.cynapse/{synapses,data,logs}
+cp config.yaml ~/.cynapse/
+
+# Run
+cynapse
+```
+
+---
+
+## 🔧 Configuration
+
+CYNAPSE uses `~/.cynapse/config.yaml`:
+
+```yaml
+# LLM Provider
+llm:
+  provider: "ollama"              # ollama | anthropic | openai | gemini
+  model: "qwen3.5:9b"
+  ollama_base_url: "http://localhost:11434"
+  max_tokens: 4096
+  temperature: 0.7
+
+# Memory System
+memory:
+  persona_path: "~/.cynapse/data/persona"
+  sessions_path: "~/.cynapse/data/sessions"
+  db_path: "~/.cynapse/data/memory.db"
+
+# MCP Servers (auto-loaded from synapses)
+mcp:
+  enabled: true
+  servers: []
+
+# Tools
+tools:
+  profile: "standard"             # minimal | standard | full
+  work_dir: "./workspace"
+```
+
+---
+
+## 🎯 Building Your Own Synapse
+
+Want to build custom extensions? Use the synapse template:
+
+```bash
+# Clone template
+git clone https://github.com/Alartist40/cynapse-synapse-template my-synapse
+cd my-synapse
+
+# Implement your tools in internal/tools.go
+# Update synapse.yaml with metadata
+
+# Build
+go build -o my-synapse ./cmd/synapse
+
+# Test
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | ./my-synapse
+
+# Users can install with:
+# cynapse synapse add my-synapse
+```
+
+See [Synapse Development Guide](docs/SYNAPSE_DEVELOPMENT.md) for details.
+
+---
+
+## 📊 System Requirements
+
+**Minimum:**
+- Go 1.22+ (auto-installed by installer)
+- 2GB RAM
+- 500MB disk space
+
+**Recommended:**
+- 4GB+ RAM (for larger models)
+- 8GB+ RAM (for LeafcutterLLM with 7B models)
+
+**Supported Platforms:**
+- Linux (x86_64, arm64, armv7)
+- macOS (x86_64, arm64)
+- Windows (x86_64)
+
+**Tested On:**
+- Raspberry Pi 5 (8GB)
+- Raspberry Pi Zero 2W
+- Ubuntu 22.04+
+- macOS Ventura+
+- Windows 10/11
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md).
+
+**Areas to contribute:**
+- New synapse development
+- LLM provider integrations
+- Documentation improvements
+- Bug fixes and performance optimizations
+
+---
+
+## 📜 License
+
+MIT License - see [LICENSE](LICENSE) file.
+
+---
+
+## 🙏 Acknowledgments
+
+- Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI framework
+- Inspired by biological neural networks
+- MCP protocol by Anthropic
+
+---
+
+## 📬 Contact
+
+**Author:** Alartist40  
+**Repository:** [github.com/Alartist40/cynapse](https://github.com/Alartist40/cynapse)  
+**Website:** [alartist40.github.io](https://alartist40.github.io)
+
+---
+
+**Built with 💜 for the terminal**

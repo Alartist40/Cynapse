@@ -1,209 +1,363 @@
 package main
 
 import (
-	"context"
+	"bufio"
 	"fmt"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"path/filepath"
+	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/yourusername/cynapse/internal/agent"
-	"github.com/yourusername/cynapse/internal/config"
-	"github.com/yourusername/cynapse/internal/llm"
-	"github.com/yourusername/cynapse/internal/mcp"
-	"github.com/yourusername/cynapse/internal/memory"
-	"github.com/yourusername/cynapse/internal/session"
-	"github.com/yourusername/cynapse/internal/tui"
+	"github.com/Alartist40/cynapse-mini/internal/agent"
+	"github.com/Alartist40/cynapse-mini/internal/config"
+	"github.com/Alartist40/cynapse-mini/internal/llm"
+	"github.com/Alartist40/cynapse-mini/internal/memory"
+	"github.com/Alartist40/cynapse-mini/internal/synapse"
 )
 
-var (
-	purple = lipgloss.Color("#9b59b6")
-	orange = lipgloss.Color("#e67e22")
-	dim    = lipgloss.Color("#4a5568")
-	bright = lipgloss.Color("#e4e7eb")
-
-	heroStyle = lipgloss.NewStyle().
-			Foreground(purple).
-			Bold(true)
-
-	okStyle   = lipgloss.NewStyle().Foreground(purple)
-	failStyle = lipgloss.NewStyle().Foreground(orange)
-	dimStyle  = lipgloss.NewStyle().Foreground(dim)
-)
+const version = "1.0.0"
 
 func main() {
-	// Clear screen
-	fmt.Print("\033[H\033[2J")
+	// Ensure home directory exists
+	homeDir := getHomeDir()
+	ensureDir(homeDir)
+	ensureDir(filepath.Join(homeDir, "synapses"))
+	ensureDir(filepath.Join(homeDir, "data"))
 
-	// Show hero
-	logo := `
-  ██████╗██╗   ██╗███╗   ██╗ █████╗ ██████╗ ███████╗███████╗
- ██╔════╝╚██╗ ██╔╝████╗  ██║██╔══██╗██╔══██╗██╔════╝██╔════╝
- ██║      ╚████╔╝ ██╔██╗ ██║███████║██████╔╝███████╗█████╗  
- ██║       ╚██╔╝  ██║╚██╗██║██╔══██║██╔═══╝ ╚════██║██╔══╝  
- ╚██████╗   ██║   ██║ ╚████║██║  ██║██║     ███████║███████╗
-  ╚═════╝   ╚═╝   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚══════╝╚══════╝
-`
-	fmt.Println(heroStyle.Render(logo))
-	fmt.Println(dimStyle.Render("                      v1.0.0 GHOST SHELL\n"))
-
-	// Boot checks
-	checks := []struct {
-		name string
-		fn   func() error
-	}{
-		{"Loading configuration", checkConfig},
-		{"Verifying SQLite database", checkDatabase},
-		{"Connecting to Ollama", checkOllama},
-		{"Initializing memory system", checkMemory},
-		{"Testing LLM connection", checkLLM},
-		{"Starting agent core", checkAgent},
+	// Parse command
+	if len(os.Args) < 2 {
+		// No args = run interactive chat
+		runChat()
+		return
 	}
 
-	var cfg *config.Config
-	var llmCli llm.Client
-	var store *memory.Store
-	var sessions *session.Manager
-	var mcpMgr *mcp.Manager
-	var persona *memory.Persona
-	var ag *agent.Agent
+	command := os.Args[1]
+	args := os.Args[2:]
 
-	for _, check := range checks {
-		fmt.Printf("  %s ", dimStyle.Render("●"))
-		fmt.Print(check.name + "...")
-		time.Sleep(200 * time.Millisecond)
+	switch command {
+	case "synapse":
+		handleSynapseCommand(args)
+	case "config":
+		handleConfigCommand(args)
+	case "version":
+		fmt.Printf("CYNAPSE Mini v%s\n", version)
+	case "help":
+		printHelp()
+	default:
+		runChat()
+	}
+}
 
-		err := check.fn()
+func runChat() {
+	// Load configuration
+	cfg, err := config.Load(getConfigPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Run 'cynapse-mini config init' to create default config\n")
+		os.Exit(1)
+	}
+
+	// Initialize lightweight memory store
+	store, err := memory.NewLightweightStore(filepath.Join(getHomeDir(), "data"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing memory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Initialize LLM client
+	llmClient, err := llm.New(&llm.Config{
+		Provider:       cfg.LLM.Provider,
+		Model:          cfg.LLM.Model,
+		OllamaBaseURL:  cfg.LLM.OllamaBaseURL,
+		AnthropicKey:   cfg.LLM.AnthropicKey,
+		OpenAIKey:      cfg.LLM.OpenAIKey,
+		GeminiKey:      cfg.LLM.GeminiKey,
+		MaxTokens:      cfg.LLM.MaxTokens,
+		Temperature:    cfg.LLM.Temperature,
+		MaxRetries:     cfg.LLM.MaxRetries,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing LLM: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Initialize agent
+	agentInstance := agent.New(
+		"cynapse_mini_01",
+		llmClient,
+		store,
+		cfg,
+	)
+
+	// Load synapses (optional, for future extension)
+	registry := synapse.NewRegistry()
+	synapseDir := filepath.Join(getHomeDir(), "synapses")
+	if err := registry.Discover(synapseDir); err != nil {
+		// Synapses are optional, so we don't fail if they don't load
+	}
+
+	// Run CLI
+	runCLI(agentInstance, store)
+}
+
+func runCLI(ag *agent.Agent, store *memory.LightweightStore) {
+	reader := bufio.NewReader(os.Stdin)
+
+	printWelcome()
+
+	for {
+		fmt.Print("\n> ")
+		input, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Print("\r  " + failStyle.Render("✗") + " " + check.name + " ")
-			fmt.Println(failStyle.Render(fmt.Sprintf("FAILED: %v", err)))
+			return
+		}
+
+		input = strings.TrimSpace(input)
+		if input == "" {
+			continue
+		}
+
+		// Handle commands
+		if strings.HasPrefix(input, "/") {
+			handleCommand(input, ag, store)
+			continue
+		}
+
+		// Process normal input through agent
+		fmt.Print("\n🧠 ")
+		err = ag.ProcessStreaming(input, func(chunk string) {
+			fmt.Print(chunk)
+		})
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
+		}
+	}
+}
+
+func handleCommand(cmd string, ag *agent.Agent, store *memory.LightweightStore) {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return
+	}
+
+	command := strings.ToLower(parts[0])
+
+	switch command {
+	case "/help":
+		printCommandHelp()
+
+	case "/models":
+		fmt.Println("Available LLM providers:")
+		fmt.Println("  ollama    - Local inference (Ollama)")
+		fmt.Println("  anthropic - Claude API")
+		fmt.Println("  openai    - GPT API")
+		fmt.Println("  gemini    - Google Gemini API")
+
+	case "/clear":
+		store.Clear()
+		fmt.Println("✓ Conversation history cleared")
+
+	case "/memory":
+		msgs := store.GetRecent(5)
+		fmt.Printf("\nLast %d messages:\n", len(msgs))
+		for _, msg := range msgs {
+			content := msg.Content
+			if len(content) > 50 {
+				content = content[:50] + "..."
+			}
+			fmt.Printf("[%s] %s\n", msg.Role, content)
+		}
+
+	case "/info":
+		fmt.Println("\n🧠 CYNAPSE Mini v1.0.0")
+		fmt.Println("Lightweight AI Agent for Raspberry Pi")
+		fmt.Println("\nMinimalist CLI Interface")
+		fmt.Println("Disk-based Memory System")
+		fmt.Println("Streaming Response Output")
+
+	case "/quit", "/exit":
+		fmt.Println("\nGoodbye! 👋")
+		os.Exit(0)
+
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		fmt.Println("Type /help for available commands")
+	}
+}
+
+func handleSynapseCommand(args []string) {
+	if len(args) == 0 {
+		printSynapseHelp()
+		return
+	}
+
+	cmd := args[0]
+	subargs := args[1:]
+
+	registry := synapse.NewRegistry()
+	synapseDir := filepath.Join(getHomeDir(), "synapses")
+
+	switch cmd {
+	case "list":
+		if err := registry.Discover(synapseDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		registry.List()
+
+	case "add", "install":
+		if len(subargs) == 0 {
+			fmt.Println("Usage: cynapse-mini synapse add <name>")
+			os.Exit(1)
+		}
+		if err := registry.Install(subargs[0], synapseDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
-		// Store initialized components
-		switch check.name {
-		case "Loading configuration":
-			cfg, _ = config.Load("config.yaml")
-		case "Verifying SQLite database":
-			store, _ = memory.NewStore(cfg.Memory.DBPath)
-		case "Initializing memory system":
-			sessions = session.NewManager(cfg.Memory.SessionsPath)
-			mcpMgr = mcp.NewManager(cfg.MCP)
-			persona, _ = memory.NewPersona("cynapse_tui_01", cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
-		case "Testing LLM connection":
-			llmCli, _ = llm.New(&cfg.LLM)
-		case "Starting agent core":
-			ag = agent.New("cynapse_tui_01", llmCli, persona, store, sessions, mcpMgr, cfg)
+	case "remove", "uninstall":
+		if len(subargs) == 0 {
+			fmt.Println("Usage: cynapse-mini synapse remove <name>")
+			os.Exit(1)
+		}
+		if err := registry.Uninstall(subargs[0], synapseDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
 
-		fmt.Print("\r  " + okStyle.Render("✓") + " " + check.name + "\n")
-	}
+	case "search":
+		if len(subargs) == 0 {
+			registry.SearchAll()
+		} else {
+			registry.Search(subargs[0])
+		}
 
-	fmt.Println()
-	fmt.Println(okStyle.Render("  System ready. Launching interface..."))
-	time.Sleep(800 * time.Millisecond)
-
-	// Start curator
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-		<-sig
-		cancel()
-	}()
-
-	ag.StartCurator(ctx)
-
-	// Cleanup on exit
-	defer store.Close()
-	defer mcpMgr.Close()
-
-	// Clear and launch TUI
-	fmt.Print("\033[H\033[2J")
-
-	m := tui.NewModel(ag, cfg, llmCli)
-	p := tea.NewProgram(m, tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+	default:
+		fmt.Printf("Unknown synapse command: %s\n", cmd)
+		printSynapseHelp()
 		os.Exit(1)
 	}
 }
 
-func checkConfig() error {
-	cfgPath := "config.yaml"
-	if len(os.Args) > 1 {
-		cfgPath = os.Args[1]
-	}
-	_, err := config.Load(cfgPath)
-	return err
-}
-
-func checkDatabase() error {
-	cfg, _ := config.Load("config.yaml")
-	store, err := memory.NewStore(cfg.Memory.DBPath)
-	if err != nil {
-		return err
-	}
-	store.Close()
-	return nil
-}
-
-func checkOllama() error {
-	cfg, _ := config.Load("config.yaml")
-	if cfg.LLM.Provider != "ollama" {
-		return nil // Skip check for non-Ollama providers
+func handleConfigCommand(args []string) {
+	if len(args) == 0 {
+		fmt.Printf("Config location: %s\n", getConfigPath())
+		return
 	}
 
-	baseURL := cfg.LLM.OllamaBaseURL
-	if baseURL == "" {
-		baseURL = "http://localhost:11434"
-	}
+	cmd := args[0]
 
-	resp, err := http.Get(baseURL + "/api/tags")
-	if err != nil {
-		return fmt.Errorf("Ollama not running at %s", baseURL)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("Ollama returned HTTP %d", resp.StatusCode)
-	}
-	return nil
-}
-
-func checkMemory() error {
-	cfg, _ := config.Load("config.yaml")
-	_, err := memory.NewPersona("cynapse_tui_01", cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
-	return err
-}
-
-func checkLLM() error {
-	cfg, _ := config.Load("config.yaml")
-	client, err := llm.New(&cfg.LLM)
-	if err != nil {
-		return err
-	}
-
-	// Quick test: list models (Ollama only)
-	if cfg.LLM.Provider == "ollama" {
-		_, err := llm.ListOllamaModels(cfg.LLM.OllamaBaseURL)
-		if err != nil {
-			return fmt.Errorf("model %q not found", cfg.LLM.Model)
+	switch cmd {
+	case "init":
+		if err := config.CreateDefault(getConfigPath()); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating config: %v\n", err)
+			os.Exit(1)
 		}
-	}
+		fmt.Printf("✓ Created default config at: %s\n", getConfigPath())
 
-	_ = client
-	return nil
+	default:
+		fmt.Printf("Unknown config command: %s\n", cmd)
+		fmt.Println("Available commands: init")
+		os.Exit(1)
+	}
 }
 
-func checkAgent() error {
-	// Already constructed in loop, just validate
-	return nil
+func printWelcome() {
+	fmt.Println(`
+╔════════════════════════════════════════╗
+║  🧠 CYNAPSE Mini v1.0.0                ║
+║  Lightweight AI Agent                  ║
+║  For Raspberry Pi & Embedded Systems   ║
+╚════════════════════════════════════════╝
+
+Type /help for commands
+Type your message to chat
+`)
+}
+
+func printHelp() {
+	fmt.Print(`
+🧠 CYNAPSE Mini - Lightweight AI Agent
+
+USAGE:
+  cynapse-mini              Start interactive chat
+  cynapse-mini synapse      Manage synapses
+  cynapse-mini config       Manage configuration
+  cynapse-mini version      Show version
+  cynapse-mini help         Show this help
+
+CHAT COMMANDS (type in chat):
+  /help                     Show command help
+  /models                   List available LLM providers
+  /clear                    Clear conversation history
+  /memory                   Show recent messages
+  /info                     Show system info
+  /quit                     Exit application
+
+SYNAPSE COMMANDS:
+  list                      List installed synapses
+  add <name>                Install a synapse
+  remove <name>             Remove a synapse
+  search [query]            Search available synapses
+
+CONFIG COMMANDS:
+  init                      Create default config
+
+EXAMPLES:
+  cynapse-mini                       # Run interactive chat
+  cynapse-mini synapse add leafcutter # Install LeafcutterLLM synapse
+  cynapse-mini synapse list          # See installed synapses
+  cynapse-mini config init           # Create default config
+
+For more information, visit: https://github.com/Alartist40/cynapse-mini
+`)
+}
+
+func printSynapseHelp() {
+	fmt.Println(`
+Synapse commands:
+  list                 List installed synapses
+  add <name>           Install a synapse from registry
+  remove <name>        Remove an installed synapse
+  search [query]       Search available synapses
+
+Examples:
+  cynapse-mini synapse list
+  cynapse-mini synapse add leafcutter
+  cynapse-mini synapse remove git-tools
+  cynapse-mini synapse search inference
+`)
+}
+
+func printCommandHelp() {
+	fmt.Println(`
+Chat Commands:
+  /help                 Show this help
+  /models               List available LLM providers
+  /clear                Clear conversation history
+  /memory               Show recent messages in memory
+  /info                 Show CYNAPSE Mini info
+  /quit, /exit          Exit application
+
+Normal chat:
+  Just type your message and press Enter
+`)
+}
+
+func getHomeDir() string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = os.Getenv("USERPROFILE") // Windows
+	}
+	return filepath.Join(home, ".cynapse-mini")
+}
+
+func getConfigPath() string {
+	return filepath.Join(getHomeDir(), "config.yaml")
+}
+
+func ensureDir(path string) {
+	if err := os.MkdirAll(path, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to create directory %s: %v\n", path, err)
+	}
 }

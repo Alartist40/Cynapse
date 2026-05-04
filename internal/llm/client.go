@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -224,15 +223,6 @@ type anthropicClient struct {
 
 func (c *anthropicClient) Provider() string { return "anthropic" }
 
-func (c *anthropicClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
-	chunks := make(chan string)
-	errs := make(chan error, 1)
-	errs <- fmt.Errorf("ChatStream not implemented for anthropic")
-	close(chunks)
-	close(errs)
-	return chunks, errs
-}
-
 func (c *anthropicClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type aContent struct {
 		Type  string `json:"type"`
@@ -321,16 +311,15 @@ type openaiClient struct {
 	model  string
 }
 
-func (c *openaiClient) Provider() string { return "openai" }
-
-func (c *openaiClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
+func (c *anthropicClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
 	chunks := make(chan string)
-	errs := make(chan error, 1)
-	errs <- fmt.Errorf("ChatStream not implemented for openai")
+	errors := make(chan error, 1)
 	close(chunks)
-	close(errs)
-	return chunks, errs
+	errors <- fmt.Errorf("streaming not implemented for anthropic")
+	return chunks, errors
 }
+
+func (c *openaiClient) Provider() string { return "openai" }
 
 func (c *openaiClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type oMsg struct {
@@ -420,15 +409,6 @@ type geminiClient struct {
 
 func (c *geminiClient) Provider() string { return "gemini" }
 
-func (c *geminiClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
-	chunks := make(chan string)
-	errs := make(chan error, 1)
-	errs <- fmt.Errorf("ChatStream not implemented for gemini")
-	close(chunks)
-	close(errs)
-	return chunks, errs
-}
-
 func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type gPart struct {
 		Text string `json:"text"`
@@ -480,6 +460,22 @@ func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error
 		}
 	}
 	return result, nil
+}
+
+func (c *openaiClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
+	chunks := make(chan string)
+	errors := make(chan error, 1)
+	close(chunks)
+	errors <- fmt.Errorf("streaming not implemented for openai")
+	return chunks, errors
+}
+
+func (c *geminiClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
+	chunks := make(chan string)
+	errors := make(chan error, 1)
+	close(chunks)
+	errors <- fmt.Errorf("streaming not implemented for gemini")
+	return chunks, errors
 }
 
 // ─── Ollama ──────────────────────────────────────────────────────────────────
@@ -582,9 +578,9 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 			Content string `json:"content"`
 		}
 		type oReq struct {
-			Model    string `json:"model"`
-			Messages []oMsg `json:"messages"`
-			Stream   bool   `json:"stream"`
+			Model    string  `json:"model"`
+			Messages []oMsg  `json:"messages"`
+			Stream   bool    `json:"stream"`
 			Options  struct {
 				NumPredict  int     `json:"num_predict,omitempty"`
 				Temperature float64 `json:"temperature,omitempty"`
@@ -602,61 +598,64 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 			apiReq.Messages = append(apiReq.Messages, oMsg{Role: string(m.Role), Content: m.Content})
 		}
 
-		var bodyReader io.Reader
-		data, err := json.Marshal(apiReq)
+		body, err := json.Marshal(apiReq)
 		if err != nil {
-			errors <- err
+			errors <- fmt.Errorf("marshaling request: %w", err)
 			return
 		}
-		bodyReader = bytes.NewReader(data)
 
-		url := strings.TrimRight(c.baseURL, "/") + "/api/chat"
-		httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bodyReader)
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/chat", bytes.NewReader(body))
 		if err != nil {
-			errors <- err
+			errors <- fmt.Errorf("creating request: %w", err)
 			return
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		resp, err := c.http.Do(httpReq)
 		if err != nil {
-			errors <- err
+			errors <- fmt.Errorf("ollama request failed: %w", err)
 			return
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode >= 400 {
+		if resp.StatusCode != http.StatusOK {
 			bodyBytes, _ := io.ReadAll(resp.Body)
-			errors <- fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(bodyBytes), 300))
+			errors <- fmt.Errorf("ollama HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 			return
 		}
 
+		// Read streaming response line by line (NDJSON)
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
-			line := scanner.Text()
+			line := scanner.Bytes()
 
-			var chunk struct {
+			var streamResp struct {
 				Message struct {
 					Content string `json:"content"`
 				} `json:"message"`
 				Done bool `json:"done"`
 			}
 
-			if err := json.Unmarshal([]byte(line), &chunk); err != nil {
-				continue
+			if err := json.Unmarshal(line, &streamResp); err != nil {
+				continue // Skip malformed lines
 			}
 
-			if chunk.Message.Content != "" {
-				chunks <- chunk.Message.Content
+			if streamResp.Message.Content != "" {
+				select {
+				case chunks <- streamResp.Message.Content:
+				case <-ctx.Done():
+					errors <- ctx.Err()
+					return
+				}
 			}
 
-			if chunk.Done {
-				break
+			if streamResp.Done {
+				return
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			errors <- err
+			errors <- fmt.Errorf("reading stream: %w", err)
 		}
 	}()
 
@@ -670,4 +669,5 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
 }
