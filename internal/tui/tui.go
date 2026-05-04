@@ -106,6 +106,10 @@ type Model struct {
 	lastElapsed time.Duration
 	lastTokens  int
 	active      bool
+	
+	// Request cancellation
+	cancelFunc  context.CancelFunc
+	currentModel string
 }
 
 type message struct {
@@ -220,6 +224,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.input == "" {
 			return m, nil
 		}
+		
+		// Prevent sending while already waiting
+		if m.waitingResp {
+			m.addSystemMsg("⏳ Please wait for current response to complete")
+			return m, nil
+		}
 
 		// Send to agent
 		userInput := m.input
@@ -257,6 +267,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Regular character input
 		if len(msg.String()) == 1 {
+			// Bounds check before slicing
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			if m.cursor > len(m.input) {
+				m.cursor = len(m.input)
+			}
 			m.input = m.input[:m.cursor] + msg.String() + m.input[m.cursor:]
 			m.cursor++
 			
@@ -420,13 +437,20 @@ func (m Model) renderDropdownMenu() string {
 	return menuStyle.Render(strings.Join(items, "\n"))
 }
 
-func (m Model) showModelsMenu() {
+func (m *Model) showModelsMenu() {
 	var modelItems []menuItem
 	for _, modelName := range m.models {
 		name := modelName
 		modelItems = append(modelItems, menuItem{
 			label: name,
 			action: func(m *Model) tea.Cmd {
+				// Cancel in-flight request if switching models
+				if m.waitingResp && m.cancelFunc != nil {
+					m.cancelFunc()
+					m.waitingResp = false
+					m.addSystemMsg("⚠ Cancelled previous request")
+				}
+				
 				m.cfg.LLM.Model = name
 				m.showMenu = false
 				m.input = ""
@@ -454,11 +478,18 @@ func (m *Model) restoreMainMenu() {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 func (m *Model) sendToAgent(input string) tea.Cmd {
+	// Cancel any in-flight request
+	if m.cancelFunc != nil {
+		m.cancelFunc()
+	}
+	
+	// Create new cancellable context
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	m.cancelFunc = cancel
+	m.currentModel = m.cfg.LLM.Model
+	
 	return func() tea.Msg {
 		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-		defer cancel()
-
 		response, err := m.agent.ProcessMessage(ctx, input)
 		elapsed := time.Since(start)
 		tokens := (len(input) + len(response)) / 4

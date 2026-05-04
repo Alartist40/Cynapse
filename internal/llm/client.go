@@ -77,8 +77,11 @@ func ListOllamaModels(baseURL string) ([]string, error) {
 		baseURL = "http://localhost:11434"
 	}
 
+	// Create HTTP client with timeout
+	client := &http.Client{Timeout: 30 * time.Second}
+	
 	url := strings.TrimRight(baseURL, "/") + "/api/tags"
-	resp, err := http.Get(url)
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to ollama: %w", err)
 	}
