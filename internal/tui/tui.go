@@ -310,10 +310,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	var content string
 	if m.active {
-		return m.renderActive()
+		content = m.renderActive()
+	} else {
+		content = m.renderIdle()
 	}
-	return m.renderIdle()
+	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, content)
 }
 
 func (m Model) renderIdle() string {
@@ -527,6 +530,13 @@ func (m *Model) sendToAgent(input string) tea.Cmd {
 
 func (m Model) listenForChunks() tea.Cmd {
 	return func() tea.Msg {
+		// Priority check for errors
+		select {
+		case err := <-m.streamErrors:
+			return agentResponseMsg{err: err}
+		default:
+		}
+
 		select {
 		case chunk, ok := <-m.streamChunks:
 			if !ok {
