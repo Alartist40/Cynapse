@@ -263,7 +263,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.input == "" {
 			return m, nil
 		}
-		
+
 		// Prevent sending while already waiting
 		if m.waitingResp {
 			m.addSystemMsg("⏳ Please wait for current response to complete")
@@ -277,13 +277,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		m.waitingResp = true
 		m.spinnerIndex = 0
-		
+
 		var cmds []tea.Cmd
 		if !m.active {
 			m.active = true
 			cmds = append(cmds, tea.ClearScreen)
 		}
-		
+
 		cmds = append(cmds, m.sendToAgent(userInput), tick())
 		return m, tea.Batch(cmds...)
 
@@ -323,7 +323,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.input = m.input[:m.cursor] + msg.String() + m.input[m.cursor:]
 			m.cursor++
-			
+
 			// Show menu when / is typed
 			if m.input == "/" {
 				m.showMenu = true
@@ -508,7 +508,7 @@ func (m *Model) showModelsMenu() {
 					m.waitingResp = false
 					m.addSystemMsg("⚠ Cancelled previous request")
 				}
-				
+
 				m.cfg.LLM.Model = name
 				m.showMenu = false
 				m.input = ""
@@ -540,13 +540,13 @@ func (m *Model) sendToAgent(input string) tea.Cmd {
 	if m.cancelFunc != nil {
 		m.cancelFunc()
 	}
-	
+
 	// Create new cancellable context
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	m.cancelFunc = cancel
 	m.currentModel = m.cfg.LLM.Model
 	m.streamStartTime = time.Now()
-	
+
 	chunks, errs := m.agent.ProcessMessageStream(ctx, input)
 	m.streamChunks = chunks
 	m.streamErrors = errs
@@ -584,11 +584,11 @@ func (m Model) listenForChunks() tea.Cmd {
 						tokens:  tokens,
 					}
 				}
-				
-				// Artificial tiny delay to prevent Bubbletea from batching renders 
+
+				// Artificial tiny delay to prevent Bubbletea from batching renders
 				// and skipping intermediate frames when generation is extremely fast.
-				time.Sleep(30 * time.Millisecond)
-				
+				time.Sleep(15 * time.Millisecond)
+
 				return agentStreamChunkMsg{chunk: chunk}
 			}
 		}
@@ -685,6 +685,9 @@ func (m *Model) addAssistantMsg(content string) {
 	m.messages = append(m.messages, message{role: "assistant", content: content, time: time.Now()})
 }
 
+func (m *Model) addSystemMsg(content string) {
+	m.messages = append(m.messages, message{role: "system", content: content, time: time.Now()})
+}
 func (m *Model) addSystemMsg(content string) {
 	m.messages = append(m.messages, message{role: "system", content: content, time: time.Now()})
 }
