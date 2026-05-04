@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -631,10 +630,8 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 			return
 		}
 
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-
+		decoder := json.NewDecoder(resp.Body)
+		for {
 			var chunk struct {
 				Message struct {
 					Content string `json:"content"`
@@ -642,7 +639,10 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 				Done bool `json:"done"`
 			}
 
-			if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			if err := decoder.Decode(&chunk); err != nil {
+				if err == io.EOF {
+					break
+				}
 				continue
 			}
 
@@ -655,9 +655,6 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 			}
 		}
 
-		if err := scanner.Err(); err != nil {
-			errors <- err
-		}
 	}()
 
 	return chunks, errors
