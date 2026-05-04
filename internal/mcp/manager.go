@@ -270,6 +270,32 @@ func NewManager(cfg config.MCPConfig) *Manager {
 	return m
 }
 
+// New creates a new MCP manager from server configs (backward compatibility)
+func New(servers []config.MCPServer) (*Manager, error) {
+	cfg := config.MCPConfig{
+		Enabled: true,
+		Servers: servers,
+	}
+	return NewManager(cfg), nil
+}
+
+// AddServer dynamically adds a new MCP server to the manager
+func (m *Manager) AddServer(cfg config.MCPServer) error {
+	srv, err := startServer(cfg)
+	if err != nil {
+		return fmt.Errorf("starting MCP server %s: %w", cfg.Name, err)
+	}
+	
+	m.servers = append(m.servers, srv)
+	log.Printf("[MCP] Dynamically added server: %s", cfg.Name)
+	return nil
+}
+
+// Shutdown closes all MCP servers (alias for Close for compatibility)
+func (m *Manager) Shutdown() {
+	m.Close()
+}
+
 // AllTools collects tool schemas from all connected MCP servers.
 func (m *Manager) AllTools() []llm.ToolSchema {
 	var all []llm.ToolSchema
