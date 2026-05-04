@@ -66,6 +66,7 @@ type Usage struct {
 
 type Client interface {
 	Chat(ctx context.Context, req *Request) (*Response, error)
+	ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error)
 	Provider() string
 }
 
@@ -310,6 +311,14 @@ type openaiClient struct {
 	model  string
 }
 
+func (c *anthropicClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
+	chunks := make(chan string)
+	errors := make(chan error, 1)
+	close(chunks)
+	errors <- fmt.Errorf("streaming not implemented for anthropic")
+	return chunks, errors
+}
+
 func (c *openaiClient) Provider() string { return "openai" }
 
 func (c *openaiClient) Chat(ctx context.Context, req *Request) (*Response, error) {
@@ -453,6 +462,22 @@ func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error
 	return result, nil
 }
 
+func (c *openaiClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
+	chunks := make(chan string)
+	errors := make(chan error, 1)
+	close(chunks)
+	errors <- fmt.Errorf("streaming not implemented for openai")
+	return chunks, errors
+}
+
+func (c *geminiClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
+	chunks := make(chan string)
+	errors := make(chan error, 1)
+	close(chunks)
+	errors <- fmt.Errorf("streaming not implemented for gemini")
+	return chunks, errors
+}
+
 // ─── Ollama ──────────────────────────────────────────────────────────────────
 
 type ollamaClient struct {
@@ -538,6 +563,103 @@ func (c *ollamaClient) Chat(ctx context.Context, req *Request) (*Response, error
 		})
 	}
 	return result, nil
+}
+
+func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
+	chunks := make(chan string, 10)
+	errors := make(chan error, 1)
+
+	go func() {
+		defer close(chunks)
+		defer close(errors)
+
+		type oMsg struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}
+		type oReq struct {
+			Model    string  `json:"model"`
+			Messages []oMsg  `json:"messages"`
+			Stream   bool    `json:"stream"`
+			Options  struct {
+				NumPredict  int     `json:"num_predict,omitempty"`
+				Temperature float64 `json:"temperature,omitempty"`
+			} `json:"options"`
+		}
+
+		apiReq := oReq{Model: c.model, Stream: true}
+		apiReq.Options.NumPredict = req.MaxTokens
+		apiReq.Options.Temperature = req.Temperature
+
+		if req.SystemPrompt != "" {
+			apiReq.Messages = append(apiReq.Messages, oMsg{Role: "system", Content: req.SystemPrompt})
+		}
+		for _, m := range req.Messages {
+			apiReq.Messages = append(apiReq.Messages, oMsg{Role: string(m.Role), Content: m.Content})
+		}
+
+		body, err := json.Marshal(apiReq)
+		if err != nil {
+			errors <- fmt.Errorf("marshaling request: %w", err)
+			return
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/chat", bytes.NewReader(body))
+		if err != nil {
+			errors <- fmt.Errorf("creating request: %w", err)
+			return
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.http.Do(httpReq)
+		if err != nil {
+			errors <- fmt.Errorf("ollama request failed: %w", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			errors <- fmt.Errorf("ollama HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+			return
+		}
+
+		// Read streaming response line by line (NDJSON)
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Bytes()
+
+			var streamResp struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+				Done bool `json:"done"`
+			}
+
+			if err := json.Unmarshal(line, &streamResp); err != nil {
+				continue // Skip malformed lines
+			}
+
+			if streamResp.Message.Content != "" {
+				select {
+				case chunks <- streamResp.Message.Content:
+				case <-ctx.Done():
+					errors <- ctx.Err()
+					return
+				}
+			}
+
+			if streamResp.Done {
+				return
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			errors <- fmt.Errorf("reading stream: %w", err)
+		}
+	}()
+
+	return chunks, errors
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

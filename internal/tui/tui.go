@@ -554,44 +554,27 @@ func (m *Model) sendToAgent(input string) tea.Cmd {
 	return m.listenForChunks()
 }
 
-func (m Model) listenForChunks() tea.Cmd {
+func (m *Model) listenForChunks() tea.Cmd {
 	return func() tea.Msg {
-		for {
-			select {
-			case err, ok := <-m.streamErrors:
-				if ok && err != nil {
-					return agentResponseMsg{err: err}
-				}
-				// If streamErrors is closed, just set it to nil so this case is ignored
-				m.streamErrors = nil
-			case chunk, ok := <-m.streamChunks:
-				if !ok {
-					// Chunks closed. Check if there's a pending error before declaring done.
-					if m.streamErrors != nil {
-						select {
-						case err, errOk := <-m.streamErrors:
-							if errOk && err != nil {
-								return agentResponseMsg{err: err}
-							}
-						default:
-						}
-					}
-
-					elapsed := time.Since(m.streamStartTime)
-					tokens := len(m.streamingContent) / 4
-					return agentStreamDoneMsg{
-						elapsed: elapsed,
-						tokens:  tokens,
-					}
-				}
-
-				// Artificial tiny delay to prevent Bubbletea from batching renders
-				// and skipping intermediate frames when generation is extremely fast.
-				time.Sleep(15 * time.Millisecond)
-
-				return agentStreamChunkMsg{chunk: chunk}
+		select {
+		case err, ok := <-m.streamErrors:
+			if ok && err != nil {
+				return agentResponseMsg{err: err}
 			}
+		case chunk, ok := <-m.streamChunks:
+			if !ok {
+				// Stream complete
+				elapsed := time.Since(m.streamStartTime)
+				tokens := len(m.streamingContent) / 4
+				return agentStreamDoneMsg{elapsed: elapsed, tokens: tokens}
+			}
+			// Return chunk and continue listening
+			return agentStreamChunkMsg{chunk: chunk}
 		}
+		// Channels closed
+		elapsed := time.Since(m.streamStartTime)
+		tokens := len(m.streamingContent) / 4
+		return agentStreamDoneMsg{elapsed: elapsed, tokens: tokens}
 	}
 }
 
