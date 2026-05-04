@@ -202,6 +202,48 @@ func (a *Agent) selfImproveFork(userMsg, agentResponse string) {
 	}
 }
 
+func (a *Agent) ProcessMessageStream(ctx context.Context, userInput string) (<-chan string, <-chan error) {
+	chunks := make(chan string, 10)
+	errors := make(chan error, 1)
+
+	go func() {
+		defer close(chunks)
+		defer close(errors)
+
+		// Build messages
+		messages := []llm.Message{
+			{Role: llm.RoleUser, Content: userInput},
+		}
+
+		// Call LLM with streaming
+		llmChunks, llmErrors := a.llm.ChatStream(ctx, &llm.Request{
+			Messages:     messages,
+			SystemPrompt: a.persona.CompileSystemPrompt(),
+			MaxTokens:    4096,
+			Temperature:  0.7,
+		})
+
+		// Forward chunks
+		for {
+			select {
+			case chunk, ok := <-llmChunks:
+				if !ok {
+					return
+				}
+				chunks <- chunk
+			case err := <-llmErrors:
+				errors <- err
+				return
+			case <-ctx.Done():
+				errors <- ctx.Err()
+				return
+			}
+		}
+	}()
+
+	return chunks, errors
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

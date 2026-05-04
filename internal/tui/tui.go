@@ -81,6 +81,15 @@ type agentResponseMsg struct {
 	tokens  int
 }
 
+type agentStreamChunkMsg struct {
+	chunk string
+}
+
+type agentStreamDoneMsg struct {
+	elapsed time.Duration
+	tokens  int
+}
+
 type modelListMsg struct {
 	models []string
 	err    error
@@ -110,6 +119,12 @@ type Model struct {
 	// Request cancellation
 	cancelFunc  context.CancelFunc
 	currentModel string
+
+	// Streaming
+	streamStartTime  time.Time
+	streamingContent string
+	streamChunks     <-chan string
+	streamErrors     <-chan error
 }
 
 type message struct {
@@ -161,13 +176,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentResponseMsg:
 		m.waitingResp = false
-		m.lastElapsed = msg.elapsed
-		m.lastTokens = msg.tokens
 		if msg.err != nil {
 			m.addSystemMsg(fmt.Sprintf("Error: %v", msg.err))
-		} else {
-			m.addAssistantMsg(msg.content)
 		}
+		return m, nil
+
+	case agentStreamChunkMsg:
+		m.streamingContent += msg.chunk
+		return m, m.listenForChunks()
+
+	case agentStreamDoneMsg:
+		m.waitingResp = false
+		m.lastElapsed = msg.elapsed
+		m.lastTokens = msg.tokens
+		m.addAssistantMsg(m.streamingContent)
+		m.streamingContent = ""
 		return m, nil
 
 	case modelListMsg:
@@ -380,8 +403,14 @@ func (m Model) renderActive() string {
 	}
 
 	if m.waitingResp {
-		b.WriteString(lipgloss.NewStyle().Foreground(orange).Render("  ● thinking..."))
-		b.WriteString("\n\n")
+		if m.streamingContent != "" {
+			b.WriteString(assistantMsgStyle.Render("CYNAPSE: "))
+			b.WriteString(m.streamingContent)
+			b.WriteString("\n\n")
+		} else {
+			b.WriteString(lipgloss.NewStyle().Foreground(orange).Render("  ● thinking..."))
+			b.WriteString("\n\n")
+		}
 	}
 
 	currentLines := strings.Count(b.String(), "\n")
@@ -487,18 +516,31 @@ func (m *Model) sendToAgent(input string) tea.Cmd {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	m.cancelFunc = cancel
 	m.currentModel = m.cfg.LLM.Model
+	m.streamStartTime = time.Now()
 	
-	return func() tea.Msg {
-		start := time.Now()
-		response, err := m.agent.ProcessMessage(ctx, input)
-		elapsed := time.Since(start)
-		tokens := (len(input) + len(response)) / 4
+	chunks, errs := m.agent.ProcessMessageStream(ctx, input)
+	m.streamChunks = chunks
+	m.streamErrors = errs
 
-		return agentResponseMsg{
-			content: response,
-			err:     err,
-			elapsed: elapsed,
-			tokens:  tokens,
+	return m.listenForChunks()
+}
+
+func (m Model) listenForChunks() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case chunk, ok := <-m.streamChunks:
+			if !ok {
+				elapsed := time.Since(m.streamStartTime)
+				tokens := len(m.streamingContent) / 4
+				return agentStreamDoneMsg{
+					elapsed: elapsed,
+					tokens:  tokens,
+				}
+			}
+			return agentStreamChunkMsg{chunk: chunk}
+			
+		case err := <-m.streamErrors:
+			return agentResponseMsg{err: err}
 		}
 	}
 }
