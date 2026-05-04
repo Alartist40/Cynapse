@@ -115,14 +115,15 @@ type Model struct {
 	lastElapsed time.Duration
 	lastTokens  int
 	active      bool
-	
+
 	// Request cancellation
-	cancelFunc  context.CancelFunc
+	cancelFunc   context.CancelFunc
 	currentModel string
 
 	// Streaming
-	streamStartTime  time.Time
+	spinnerIndex     int
 	streamingContent string
+	streamStartTime  time.Time
 	streamChunks     <-chan string
 	streamErrors     <-chan error
 }
@@ -131,6 +132,14 @@ type message struct {
 	role    string
 	content string
 	time    time.Time
+}
+
+type tickMsg time.Time
+
+func tick() tea.Cmd {
+	return tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
 }
 
 type menuItem struct {
@@ -173,6 +182,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case tickMsg:
+		if m.waitingResp && m.streamingContent == "" {
+			m.spinnerIndex++
+			return m, tick()
+		}
+		return m, nil
 
 	case agentResponseMsg:
 		m.waitingResp = false
@@ -260,6 +276,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input = ""
 		m.cursor = 0
 		m.waitingResp = true
+		m.spinnerIndex = 0
 		
 		var cmds []tea.Cmd
 		if !m.active {
@@ -267,7 +284,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, tea.ClearScreen)
 		}
 		
-		cmds = append(cmds, m.sendToAgent(userInput))
+		cmds = append(cmds, m.sendToAgent(userInput), tick())
 		return m, tea.Batch(cmds...)
 
 	case "backspace":
@@ -418,7 +435,9 @@ func (m Model) renderActive() string {
 			b.WriteString(m.streamingContent)
 			b.WriteString("\n\n")
 		} else {
-			b.WriteString(lipgloss.NewStyle().Foreground(orange).Render("  ● thinking..."))
+			frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+			frame := frames[m.spinnerIndex%len(frames)]
+			b.WriteString(lipgloss.NewStyle().Foreground(orange).Render(fmt.Sprintf("  %s thinking...", frame)))
 			b.WriteString("\n\n")
 		}
 	}
