@@ -584,6 +584,11 @@ func (m Model) listenForChunks() tea.Cmd {
 						tokens:  tokens,
 					}
 				}
+				
+				// Artificial tiny delay to prevent Bubbletea from batching renders 
+				// and skipping intermediate frames when generation is extremely fast.
+				time.Sleep(15 * time.Millisecond)
+				
 				return agentStreamChunkMsg{chunk: chunk}
 			}
 		}
