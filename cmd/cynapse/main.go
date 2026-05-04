@@ -6,14 +6,14 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/yourusername/cynapse/internal/agent"
-	"github.com/yourusername/cynapse/internal/config"
-	"github.com/yourusername/cynapse/internal/llm"
-	"github.com/yourusername/cynapse/internal/mcp"
-	"github.com/yourusername/cynapse/internal/memory"
-	"github.com/yourusername/cynapse/internal/session"
-	"github.com/yourusername/cynapse/internal/synapse"
-	"github.com/yourusername/cynapse/internal/tui"
+	"github.com/Alartist40/cynapse/internal/agent"
+	"github.com/Alartist40/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/mcp"
+	"github.com/Alartist40/cynapse/internal/memory"
+	"github.com/Alartist40/cynapse/internal/session"
+	"github.com/Alartist40/cynapse/internal/synapse"
+	"github.com/Alartist40/cynapse/internal/tui"
 )
 
 const version = "1.0.0"

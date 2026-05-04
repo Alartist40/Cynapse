@@ -1,4 +1,4 @@
-module github.com/yourusername/cynapse
+module github.com/Alartist40/cynapse
 
 go 1.22
 
