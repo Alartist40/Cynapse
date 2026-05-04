@@ -557,10 +557,6 @@ func (m *Model) sendToAgent(input string) tea.Cmd {
 func (m *Model) listenForChunks() tea.Cmd {
 	return func() tea.Msg {
 		select {
-		case err, ok := <-m.streamErrors:
-			if ok && err != nil {
-				return agentResponseMsg{err: err}
-			}
 		case chunk, ok := <-m.streamChunks:
 			if !ok {
 				// Stream complete
@@ -568,13 +564,30 @@ func (m *Model) listenForChunks() tea.Cmd {
 				tokens := len(m.streamingContent) / 4
 				return agentStreamDoneMsg{elapsed: elapsed, tokens: tokens}
 			}
-			// Return chunk and continue listening
+			// Got a chunk - return it
 			return agentStreamChunkMsg{chunk: chunk}
+			
+		case err, ok := <-m.streamErrors:
+			if ok && err != nil {
+				// Got an error
+				return agentResponseMsg{err: err}
+			}
+			// Error channel closed, check chunks again
+			select {
+			case chunk, ok := <-m.streamChunks:
+				if !ok {
+					elapsed := time.Since(m.streamStartTime)
+					tokens := len(m.streamingContent) / 4
+					return agentStreamDoneMsg{elapsed: elapsed, tokens: tokens}
+				}
+				return agentStreamChunkMsg{chunk: chunk}
+			default:
+				// Both closed
+				elapsed := time.Since(m.streamStartTime)
+				tokens := len(m.streamingContent) / 4
+				return agentStreamDoneMsg{elapsed: elapsed, tokens: tokens}
+			}
 		}
-		// Channels closed
-		elapsed := time.Since(m.streamStartTime)
-		tokens := len(m.streamingContent) / 4
-		return agentStreamDoneMsg{elapsed: elapsed, tokens: tokens}
 	}
 }
 
