@@ -1,0 +1,1 @@
+CPU Profile: Hotspots in JSON marshalling and Bubble Tea update loop.

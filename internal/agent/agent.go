@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourusername/cynapse/internal/config"
-	"github.com/yourusername/cynapse/internal/llm"
-	"github.com/yourusername/cynapse/internal/mcp"
-	"github.com/yourusername/cynapse/internal/memory"
-	"github.com/yourusername/cynapse/internal/session"
-	"github.com/yourusername/cynapse/internal/tools"
+	"github.com/Alartist40/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/mcp"
+	"github.com/Alartist40/cynapse/internal/memory"
+	"github.com/Alartist40/cynapse/internal/session"
+	"github.com/Alartist40/cynapse/internal/tools"
 )
 
 const maxToolIterations = 10

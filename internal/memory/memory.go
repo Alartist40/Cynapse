@@ -12,7 +12,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/yourusername/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/llm"
 )
 
 // ─── Persona Manager ─────────────────────────────────────────────────────────

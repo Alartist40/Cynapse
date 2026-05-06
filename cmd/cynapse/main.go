@@ -61,7 +61,7 @@ func runChat() {
 	}
 
 	// Initialize LLM client
-	llmClient, err := llm.New(&llm.Config{
+	llmClient, err := llm.New(&config.LLMConfig{
 		Provider:       cfg.LLM.Provider,
 		Model:          cfg.LLM.Model,
 		OllamaBaseURL:  cfg.LLM.OllamaBaseURL,
@@ -78,7 +78,7 @@ func runChat() {
 	}
 
 	// Initialize memory store
-	store, err := memory.OpenStore(cfg.Memory.DBPath)
+	store, err := memory.NewStore(cfg.Memory.DBPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening memory store: %v\n", err)
 		os.Exit(1)
@@ -86,7 +86,7 @@ func runChat() {
 	defer store.Close()
 
 	// Load persona
-	persona, err := memory.LoadPersona(cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
+	persona, err := memory.NewPersona("default_device", cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading persona: %v\n", err)
 		os.Exit(1)
@@ -265,7 +265,7 @@ For more information, visit: https://github.com/Alartist40/cynapse
 }
 
 func printSynapseHelp() {
-	fmt.Println(`
+	fmt.Print(`
 Synapse commands:
   list                 List installed synapses
   add <name>           Install a synapse from registry

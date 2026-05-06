@@ -11,8 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/yourusername/cynapse/internal/config"
-	"github.com/yourusername/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/llm"
 )
 
 // ─── JSON-RPC 2.0 types ───────────────────────────────────────────────────────

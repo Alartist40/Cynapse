@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourusername/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/llm"
 )
 
 // ─── Message ─────────────────────────────────────────────────────────────────

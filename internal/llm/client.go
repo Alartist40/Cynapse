@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourusername/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/config"
 )
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -669,5 +670,4 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
-}
 }

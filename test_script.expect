@@ -1,0 +1,9 @@
+#!/usr/bin/expect -f
+
+set timeout 5
+spawn ./cynapse
+expect "Type / to open menu"
+send "/"
+sleep 1
+send "\r"
+expect eof

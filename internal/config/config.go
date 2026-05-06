@@ -190,3 +190,21 @@ func applyEnv(cfg *Config) {
 		cfg.Gateway.AuthToken = v
 	}
 }
+
+// CreateDefault creates a default configuration file at the given path.
+func CreateDefault(path string) error {
+	cfg := defaults()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshalling default config: %w", err)
+	}
+
+	if err := os.MkdirAll(strings.TrimSuffix(path, "/config.yaml"), 0755); err != nil {
+		// Just try to write if MkdirAll fails or path is just "config.yaml"
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("writing default config: %w", err)
+	}
+	return nil
+}

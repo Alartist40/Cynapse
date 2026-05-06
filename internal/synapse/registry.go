@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/yourusername/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/config"
 )
 
 // Registry manages synapse discovery and installation
