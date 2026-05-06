@@ -1,6 +1,8 @@
 # 🧠 CYNAPSE - Ghost Shell AI Agent
 **Modular AI Agent System for the Terminal**
 
+![image alt](++++++++)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org)
 
