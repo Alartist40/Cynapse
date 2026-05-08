@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourusername/cynapse/internal/config"
-	"github.com/yourusername/cynapse/internal/llm"
-	"github.com/yourusername/cynapse/internal/mcp"
-	"github.com/yourusername/cynapse/internal/memory"
-	"github.com/yourusername/cynapse/internal/session"
-	"github.com/yourusername/cynapse/internal/tools"
+	"github.com/Alartist40/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/mcp"
+	"github.com/Alartist40/cynapse/internal/memory"
+	"github.com/Alartist40/cynapse/internal/session"
+	"github.com/Alartist40/cynapse/internal/tools"
 )
 
 const maxToolIterations = 10
@@ -210,35 +210,86 @@ func (a *Agent) ProcessMessageStream(ctx context.Context, userInput string) (<-c
 		defer close(chunks)
 		defer close(errors)
 
-		// Build messages
-		messages := []llm.Message{
-			{Role: llm.RoleUser, Content: userInput},
+		sess, err := a.sessions.Get(a.deviceID)
+		if err != nil {
+			errors <- fmt.Errorf("getting session: %w", err)
+			return
 		}
 
-		// Call LLM with streaming
-		llmChunks, llmErrors := a.llm.ChatStream(ctx, &llm.Request{
-			Messages:     messages,
-			SystemPrompt: a.persona.CompileSystemPrompt(),
-			MaxTokens:    4096,
-			Temperature:  0.7,
-		})
+		sess.Append(session.Entry{Role: llm.RoleUser, Content: userInput})
 
-		// Forward chunks
-		for {
-			select {
-			case chunk, ok := <-llmChunks:
-				if !ok {
+		if sess.Len() > a.cfg.Memory.MaxSessionMessages {
+			sess.Compact(a.cfg.Memory.MaxSessionMessages / 2)
+		}
+
+		allTools := a.tools.Schemas()
+		allTools = append(allTools, a.mcp.AllTools()...)
+
+		for iter := 0; iter < maxToolIterations; iter++ {
+			// Call LLM with streaming
+			llmChunks, llmErrors := a.llm.ChatStream(ctx, &llm.Request{
+				SystemPrompt: a.persona.CompileSystemPrompt(),
+				Messages:     sess.Recent(60),
+				Tools:        allTools,
+				MaxTokens:    a.cfg.LLM.MaxTokens,
+				Temperature:  a.cfg.LLM.Temperature,
+			})
+
+			fullResponse := ""
+			// Forward chunks
+			for {
+				select {
+				case chunk, ok := <-llmChunks:
+					if !ok {
+						llmChunks = nil
+					} else {
+						fullResponse += chunk
+						chunks <- chunk
+					}
+				case err := <-llmErrors:
+					if err != nil {
+						errors <- err
+						return
+					}
+					llmErrors = nil
+				case <-ctx.Done():
+					errors <- ctx.Err()
 					return
 				}
-				chunks <- chunk
-			case err := <-llmErrors:
-				errors <- err
-				return
-			case <-ctx.Done():
-				errors <- ctx.Err()
-				return
+				if llmChunks == nil && llmErrors == nil {
+					break
+				}
 			}
+
+			// Check if fullResponse contains tool calls
+			var toolCalls []llm.ToolCall
+			if err := json.Unmarshal([]byte(fullResponse), &toolCalls); err == nil && len(toolCalls) > 0 {
+				// It's a tool call!
+				sess.Append(session.Entry{Role: llm.RoleAssistant, ToolCalls: toolCalls})
+
+				for _, tc := range toolCalls {
+					chunks <- fmt.Sprintf("\n🔧 Executing: %s...\n", tc.Name)
+					result, execErr := a.executeTool(ctx, tc)
+					content := result
+					if execErr != nil {
+						content = "Error: " + execErr.Error()
+					}
+					sess.Append(session.Entry{Role: llm.RoleTool, ToolCallID: tc.ID, Content: content})
+					chunks <- fmt.Sprintf("✅ Result from %s received.\n", tc.Name)
+				}
+				// Loop back for next turn
+				continue
+			}
+
+			// No tool calls, finish
+			if fullResponse != "" {
+				sess.Append(session.Entry{Role: llm.RoleAssistant, Content: fullResponse})
+				go a.selfImproveFork(userInput, fullResponse)
+			}
+			return
 		}
+
+		chunks <- "\n⚠️ (agent reached tool iteration limit)\n"
 	}()
 
 	return chunks, errors

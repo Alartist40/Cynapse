@@ -9,16 +9,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourusername/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/llm"
 )
 
 // ─── Message ─────────────────────────────────────────────────────────────────
 
 type Entry struct {
-	Role      llm.Role   `json:"role"`
-	Content   string     `json:"content"`
-	ToolCalls []llm.ToolCall `json:"tool_calls,omitempty"`
-	Timestamp int64      `json:"ts"`
+	Role       llm.Role       `json:"role"`
+	Content    string         `json:"content"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolCalls  []llm.ToolCall `json:"tool_calls,omitempty"`
+	Timestamp  int64          `json:"ts"`
 }
 
 // ─── Session ─────────────────────────────────────────────────────────────────
@@ -86,9 +87,10 @@ func (s *Session) Recent(n int) []llm.Message {
 	result := make([]llm.Message, 0, n)
 	for _, e := range s.entries[start:] {
 		result = append(result, llm.Message{
-			Role:      e.Role,
-			Content:   e.Content,
-			ToolCalls: e.ToolCalls,
+			Role:       e.Role,
+			Content:    e.Content,
+			ToolCallID: e.ToolCallID,
+			ToolCalls:  e.ToolCalls,
 		})
 	}
 	return result

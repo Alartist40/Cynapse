@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourusername/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/config"
 )
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -225,11 +226,13 @@ func (c *anthropicClient) Provider() string { return "anthropic" }
 
 func (c *anthropicClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type aContent struct {
-		Type  string `json:"type"`
-		Text  string `json:"text,omitempty"`
-		ID    string `json:"id,omitempty"`
-		Name  string `json:"name,omitempty"`
-		Input any    `json:"input,omitempty"`
+		Type      string `json:"type"`
+		Text      string `json:"text,omitempty"`
+		ID        string `json:"id,omitempty"`
+		Name      string `json:"name,omitempty"`
+		Input     any    `json:"input,omitempty"`
+		ToolUseID string `json:"tool_use_id,omitempty"`
+		Content   string `json:"content,omitempty"`
 	}
 	type aMsg struct {
 		Role    string     `json:"role"`
@@ -255,9 +258,35 @@ func (c *anthropicClient) Chat(ctx context.Context, req *Request) (*Response, er
 	}
 
 	for _, m := range req.Messages {
+		role := string(m.Role)
+		var contents []aContent
+
+		if m.Role == RoleTool {
+			role = "user"
+			contents = append(contents, aContent{
+				Type:      "tool_result",
+				ToolUseID: m.ToolCallID,
+				Content:   m.Content,
+			})
+		} else if len(m.ToolCalls) > 0 {
+			for _, tc := range m.ToolCalls {
+				contents = append(contents, aContent{
+					Type:  "tool_use",
+					ID:    tc.ID,
+					Name:  tc.Name,
+					Input: tc.Arguments,
+				})
+			}
+			if m.Content != "" {
+				contents = append(contents, aContent{Type: "text", Text: m.Content})
+			}
+		} else {
+			contents = append(contents, aContent{Type: "text", Text: m.Content})
+		}
+
 		apiReq.Messages = append(apiReq.Messages, aMsg{
-			Role:    string(m.Role),
-			Content: []aContent{{Type: "text", Text: m.Content}},
+			Role:    role,
+			Content: contents,
 		})
 	}
 	for _, t := range req.Tools {
@@ -323,8 +352,9 @@ func (c *openaiClient) Provider() string { return "openai" }
 
 func (c *openaiClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type oMsg struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       string `json:"role"`
+		Content    string `json:"content,omitempty"`
+		ToolCallID string `json:"tool_call_id,omitempty"`
 	}
 	type oTool struct {
 		Type     string `json:"type"`
@@ -348,7 +378,11 @@ func (c *openaiClient) Chat(ctx context.Context, req *Request) (*Response, error
 		apiReq.Messages = append(apiReq.Messages, oMsg{Role: "system", Content: req.SystemPrompt})
 	}
 	for _, m := range req.Messages {
-		apiReq.Messages = append(apiReq.Messages, oMsg{Role: string(m.Role), Content: m.Content})
+		om := oMsg{Role: string(m.Role), Content: m.Content}
+		if m.Role == RoleTool {
+			om.ToolCallID = m.ToolCallID
+		}
+		apiReq.Messages = append(apiReq.Messages, om)
 	}
 	for _, t := range req.Tools {
 		ot := oTool{Type: "function"}
@@ -411,15 +445,31 @@ func (c *geminiClient) Provider() string { return "gemini" }
 
 func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type gPart struct {
-		Text string `json:"text"`
+		Text     string `json:"text,omitempty"`
+		ToolCall *struct {
+			Name string          `json:"name"`
+			Args json.RawMessage `json:"args"`
+		} `json:"functionCall,omitempty"`
+		ToolResponse *struct {
+			Name     string `json:"name"`
+			Response any    `json:"response"`
+		} `json:"functionResponse,omitempty"`
 	}
 	type gContent struct {
 		Role  string  `json:"role"`
 		Parts []gPart `json:"parts"`
 	}
+	type gTool struct {
+		FunctionDeclarations []struct {
+			Name        string         `json:"name"`
+			Description string         `json:"description"`
+			Parameters  map[string]any `json:"parameters"`
+		} `json:"function_declarations"`
+	}
 	type gReq struct {
 		SystemInstruction *gContent  `json:"systemInstruction,omitempty"`
 		Contents          []gContent `json:"contents"`
+		Tools             []gTool    `json:"tools,omitempty"`
 	}
 
 	apiReq := gReq{}
@@ -431,7 +481,36 @@ func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error
 		if role == "assistant" {
 			role = "model"
 		}
-		apiReq.Contents = append(apiReq.Contents, gContent{Role: role, Parts: []gPart{{Text: m.Content}}})
+		parts := []gPart{}
+		if m.Role == RoleTool {
+			role = "function"
+			parts = append(parts, gPart{ToolResponse: &struct {
+				Name     string `json:"name"`
+				Response any    `json:"response"`
+			}{Name: m.ToolCallID, Response: map[string]any{"result": m.Content}}})
+		} else if len(m.ToolCalls) > 0 {
+			for _, tc := range m.ToolCalls {
+				parts = append(parts, gPart{ToolCall: &struct {
+					Name string          `json:"name"`
+					Args json.RawMessage `json:"args"`
+				}{Name: tc.Name, Args: tc.Arguments}})
+			}
+		} else {
+			parts = append(parts, gPart{Text: m.Content})
+		}
+		apiReq.Contents = append(apiReq.Contents, gContent{Role: role, Parts: parts})
+	}
+
+	if len(req.Tools) > 0 {
+		tool := gTool{}
+		for _, t := range req.Tools {
+			tool.FunctionDeclarations = append(tool.FunctionDeclarations, struct {
+				Name        string         `json:"name"`
+				Description string         `json:"description"`
+				Parameters  map[string]any `json:"parameters"`
+			}{Name: t.Name, Description: t.Description, Parameters: t.Parameters})
+		}
+		apiReq.Tools = append(apiReq.Tools, tool)
 	}
 
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", c.model, c.apiKey)
@@ -444,7 +523,11 @@ func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
-					Text string `json:"text"`
+					Text         string `json:"text"`
+					FunctionCall *struct {
+						Name string          `json:"name"`
+						Args json.RawMessage `json:"args"`
+					} `json:"functionCall"`
 				} `json:"parts"`
 			} `json:"content"`
 		} `json:"candidates"`
@@ -456,7 +539,13 @@ func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error
 	result := &Response{}
 	if len(gResp.Candidates) > 0 {
 		for _, p := range gResp.Candidates[0].Content.Parts {
-			result.Content += p.Text
+			if p.FunctionCall != nil {
+				result.ToolCalls = append(result.ToolCalls, ToolCall{
+					Name: p.FunctionCall.Name, Arguments: p.FunctionCall.Args,
+				})
+			} else {
+				result.Content += p.Text
+			}
 		}
 	}
 	return result, nil
@@ -577,9 +666,18 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 			Role    string `json:"role"`
 			Content string `json:"content"`
 		}
+		type oTool struct {
+			Type     string `json:"type"`
+			Function struct {
+				Name        string         `json:"name"`
+				Description string         `json:"description"`
+				Parameters  map[string]any `json:"parameters"`
+			} `json:"function"`
+		}
 		type oReq struct {
 			Model    string  `json:"model"`
 			Messages []oMsg  `json:"messages"`
+			Tools    []oTool `json:"tools,omitempty"`
 			Stream   bool    `json:"stream"`
 			Options  struct {
 				NumPredict  int     `json:"num_predict,omitempty"`
@@ -596,6 +694,13 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 		}
 		for _, m := range req.Messages {
 			apiReq.Messages = append(apiReq.Messages, oMsg{Role: string(m.Role), Content: m.Content})
+		}
+		for _, t := range req.Tools {
+			ot := oTool{Type: "function"}
+			ot.Function.Name = t.Name
+			ot.Function.Description = t.Description
+			ot.Function.Parameters = t.Parameters
+			apiReq.Tools = append(apiReq.Tools, ot)
 		}
 
 		body, err := json.Marshal(apiReq)
@@ -626,18 +731,34 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 
 		// Read streaming response line by line (NDJSON)
 		scanner := bufio.NewScanner(resp.Body)
+		var toolCalls []ToolCall
+
 		for scanner.Scan() {
 			line := scanner.Bytes()
 
 			var streamResp struct {
 				Message struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Function struct {
+							Name      string          `json:"name"`
+							Arguments json.RawMessage `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"message"`
 				Done bool `json:"done"`
 			}
 
 			if err := json.Unmarshal(line, &streamResp); err != nil {
 				continue // Skip malformed lines
+			}
+
+			if len(streamResp.Message.ToolCalls) > 0 {
+				for _, tc := range streamResp.Message.ToolCalls {
+					toolCalls = append(toolCalls, ToolCall{
+						Name: tc.Function.Name, Arguments: tc.Function.Arguments,
+					})
+				}
 			}
 
 			if streamResp.Message.Content != "" {
@@ -650,6 +771,10 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 			}
 
 			if streamResp.Done {
+				if len(toolCalls) > 0 {
+					data, _ := json.Marshal(toolCalls)
+					chunks <- string(data)
+				}
 				return
 			}
 		}
@@ -669,5 +794,4 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
-}
 }
