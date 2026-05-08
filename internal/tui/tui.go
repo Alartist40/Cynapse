@@ -401,7 +401,10 @@ func (m Model) renderIdle() string {
 
 	prompt := promptStyle.Render("> ")
 	inputContent := m.input
-	if m.cursor < len(m.input) {
+	if m.input == "" {
+		placeholderStyle := lipgloss.NewStyle().Foreground(dim)
+		inputContent = "█" + placeholderStyle.Render(" Ask CYNAPSE anything...")
+	} else if m.cursor < len(m.input) {
 		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
 	} else {
 		inputContent += "█"
@@ -421,6 +424,9 @@ func (m Model) renderActive() string {
 	b.WriteString("\n\n")
 
 	maxMessages := m.height - 10
+	if maxMessages < 0 {
+		maxMessages = 0
+	}
 	start := 0
 	if len(m.messages) > maxMessages {
 		start = len(m.messages) - maxMessages
@@ -488,7 +494,10 @@ func (m Model) renderActive() string {
 
 	prompt := promptStyle.Render("> ")
 	inputContent := m.input
-	if m.cursor < len(m.input) {
+	if m.input == "" {
+		placeholderStyle := lipgloss.NewStyle().Foreground(dim)
+		inputContent = "█" + placeholderStyle.Render(" Ask CYNAPSE anything...")
+	} else if m.cursor < len(m.input) {
 		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
 	} else {
 		inputContent += "█"
