@@ -264,6 +264,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Input handling
 	switch msg.String() {
 	case "ctrl+c":
+		if m.cancelFunc != nil {
+			m.cancelFunc()
+		}
 		return m, tea.Quit
 
 	case "enter":
@@ -318,6 +321,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "ctrl+k":
+		m.showMenu = !m.showMenu
+		if m.showMenu {
+			m.restoreMainMenu()
+		}
+		return m, nil
+
 	default:
 		// Regular character input
 		if len(msg.String()) == 1 {
@@ -330,11 +340,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.input = m.input[:m.cursor] + msg.String() + m.input[m.cursor:]
 			m.cursor++
-
-			// Show menu when / is typed
-			if m.input == "/" {
-				m.showMenu = true
-			}
 		}
 		return m, nil
 	}
@@ -374,7 +379,7 @@ func (m Model) renderIdle() string {
 	b.WriteString(heroLargeStyle.Width(m.width).Render(hero))
 	b.WriteString("\n")
 
-	hint := "Type / to open menu"
+	hint := "Type Ctrl+K to open menu"
 	hintStyle := lipgloss.NewStyle().Foreground(dim).Align(lipgloss.Center)
 	b.WriteString(hintStyle.Width(m.width).Render(hint))
 	b.WriteString("\n")
@@ -429,6 +434,9 @@ func (m Model) renderActive() string {
 		case "assistant":
 			b.WriteString(assistantMsgStyle.Render("CYNAPSE: "))
 			b.WriteString(msg.content)
+		case "tool":
+			b.WriteString(lipgloss.NewStyle().Foreground(orange).Render("🔧 Tool: "))
+			b.WriteString(lipgloss.NewStyle().Foreground(dim).Render(msg.content))
 		case "system":
 			b.WriteString(systemMsgStyle.Render("● "))
 			b.WriteString(systemMsgStyle.Render(msg.content))
@@ -663,7 +671,7 @@ func cmdHelp(m *Model) tea.Cmd {
 	m.showMenu = false
 	m.input = ""
 	help := `CYNAPSE Commands:
-  /           Open command menu
+  Ctrl+K      Open command menu
   Status      System status
   Models      Switch Ollama models
   Memory      View memory info
@@ -677,6 +685,9 @@ Type naturally to chat with the agent.`
 }
 
 func cmdQuit(m *Model) tea.Cmd {
+	if m.cancelFunc != nil {
+		m.cancelFunc()
+	}
 	return tea.Quit
 }
 

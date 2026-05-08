@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -61,24 +63,14 @@ func runChat() {
 	}
 
 	// Initialize LLM client
-	llmClient, err := llm.New(&llm.Config{
-		Provider:       cfg.LLM.Provider,
-		Model:          cfg.LLM.Model,
-		OllamaBaseURL:  cfg.LLM.OllamaBaseURL,
-		AnthropicKey:   cfg.LLM.AnthropicKey,
-		OpenAIKey:      cfg.LLM.OpenAIKey,
-		GeminiKey:      cfg.LLM.GeminiKey,
-		MaxTokens:      cfg.LLM.MaxTokens,
-		Temperature:    cfg.LLM.Temperature,
-		MaxRetries:     cfg.LLM.MaxRetries,
-	})
+	llmClient, err := llm.New(&cfg.LLM)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing LLM: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Initialize memory store
-	store, err := memory.OpenStore(cfg.Memory.DBPath)
+	store, err := memory.NewStore(cfg.Memory.DBPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening memory store: %v\n", err)
 		os.Exit(1)
@@ -86,7 +78,8 @@ func runChat() {
 	defer store.Close()
 
 	// Load persona
-	persona, err := memory.LoadPersona(cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
+	deviceID := "cynapse_tui_01"
+	persona, err := memory.NewPersona(deviceID, cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading persona: %v\n", err)
 		os.Exit(1)
@@ -125,7 +118,6 @@ func runChat() {
 	}
 
 	// Initialize agent
-	deviceID := "cynapse_tui_01"
 	agentInstance := agent.New(
 		deviceID,
 		llmClient,
@@ -135,6 +127,11 @@ func runChat() {
 		mcpMgr,
 		cfg,
 	)
+
+	// Start background curator (heartbeat mechanism)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go agentInstance.StartCurator(ctx)
 
 	// Create and run TUI
 	model := tui.NewModel(agentInstance, cfg, llmClient)
@@ -220,18 +217,26 @@ func handleConfigCommand(args []string) {
 
 	case "edit":
 		// Open config in editor
+		configPath := getConfigPath()
 		editor := os.Getenv("EDITOR")
 		if editor == "" {
-			editor = "nano"
+			editor = "vi"
 		}
-		// TODO: exec editor with config file
+		cmd := exec.Command(editor, configPath)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error running editor: %v\n", err)
+			os.Exit(1)
+		}
 
 	default:
 		fmt.Printf("Unknown config command: %s\n", cmd)
 		fmt.Println("Available commands: init, edit")
 		os.Exit(1)
 	}
-}
+	}
 
 func printHelp() {
 	fmt.Print(`
@@ -265,7 +270,7 @@ For more information, visit: https://github.com/Alartist40/cynapse
 }
 
 func printSynapseHelp() {
-	fmt.Println(`
+	fmt.Print(`
 Synapse commands:
   list                 List installed synapses
   add <name>           Install a synapse from registry
