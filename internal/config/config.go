@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -108,6 +109,29 @@ type MCPServer struct {
 }
 
 // ─── Load ─────────────────────────────────────────────────────────────────────
+
+// CreateDefault creates a default configuration file at the given path
+func CreateDefault(path string) error {
+	cfg := defaults()
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
+	return nil
+}
 
 func Load(path string) (*Config, error) {
 	cfg := defaults()

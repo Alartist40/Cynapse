@@ -1,14 +1,15 @@
 package synapse
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 
-	"github.com/yourusername/cynapse/internal/config"
+	"github.com/Alartist40/cynapse/internal/config"
 )
 
 // Registry manages synapse discovery and installation
@@ -104,44 +105,29 @@ func (r *Registry) List() {
 
 // Install downloads and installs a synapse
 func (r *Registry) Install(name, dir string) error {
-	fmt.Printf("Installing synapse: %s\n", name)
+	// TODO: Implement proper synapse registry lookup
+	// For now, prevent installation without verification
+	return fmt.Errorf("synapse installation requires SHA-256 verification (not yet implemented)")
+}
 
-	// Ensure directory exists
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("creating synapse directory: %w", err)
-	}
-
-	// Build download URL
-	osType := runtime.GOOS
-	arch := runtime.GOARCH
-	filename := fmt.Sprintf("%s-%s-%s", name, osType, arch)
-	url := fmt.Sprintf("https://github.com/Alartist40/%s/releases/latest/download/%s", name, filename)
-
-	outputPath := filepath.Join(dir, name)
-
-	// Download using curl
-	fmt.Printf("Downloading from: %s\n", url)
-	cmd := exec.Command("curl", "-fsSL", "-o", outputPath, url)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("download failed: %w\nMake sure the synapse exists and has releases", err)
-	}
-
-	// Make executable
-	if err := os.Chmod(outputPath, 0755); err != nil {
-		return fmt.Errorf("setting permissions: %w", err)
-	}
-
-	// Verify it's a valid synapse
-	meta, err := loadSynapseMetadata(outputPath)
+// VerifyBinary verifies SHA-256 checksum of a binary file
+func VerifyBinary(filePath, expectedHash string) error {
+	file, err := os.Open(filePath)
 	if err != nil {
-		os.Remove(outputPath)
-		return fmt.Errorf("invalid synapse: %w", err)
+		return fmt.Errorf("opening binary: %w", err)
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return fmt.Errorf("hashing binary: %w", err)
 	}
 
-	fmt.Printf("✓ Installed %s v%s\n", meta.Name, meta.Version)
-	fmt.Printf("  Location: %s\n", outputPath)
+	computed := fmt.Sprintf("%x", hash.Sum(nil))
+	if computed != expectedHash {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedHash, computed)
+	}
 
-	r.synapses[meta.Name] = meta
 	return nil
 }
 

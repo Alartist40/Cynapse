@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourusername/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/llm"
 )
 
 // ─── Tool definition ─────────────────────────────────────────────────────────
@@ -132,7 +132,10 @@ func ReadFileTool(workDir string) *Tool {
 		},
 		Handler: func(ctx context.Context, args map[string]any) (string, error) {
 			path, _ := args["path"].(string)
-			full := resolvePath(workDir, path)
+			full, err := resolvePath(workDir, path)
+			if err != nil {
+				return "", err
+			}
 			data, err := os.ReadFile(full)
 			if err != nil {
 				return "", fmt.Errorf("reading file: %w", err)
@@ -160,7 +163,10 @@ func WriteFileTool(workDir string) *Tool {
 		Handler: func(ctx context.Context, args map[string]any) (string, error) {
 			path, _ := args["path"].(string)
 			content, _ := args["content"].(string)
-			full := resolvePath(workDir, path)
+			full, err := resolvePath(workDir, path)
+			if err != nil {
+				return "", err
+			}
 			os.MkdirAll(filepath.Dir(full), 0755)
 			if err := os.WriteFile(full, []byte(content), 0644); err != nil {
 				return "", err
@@ -189,7 +195,10 @@ func ListFilesTool(workDir string) *Tool {
 			if path == "" {
 				path = "."
 			}
-			full := resolvePath(workDir, path)
+			full, err := resolvePath(workDir, path)
+			if err != nil {
+				return "", err
+			}
 			entries, err := os.ReadDir(full)
 			if err != nil {
 				return "", err
@@ -423,10 +432,26 @@ func BuildProfile(profile, workDir string, timeoutSec int,
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-func resolvePath(workDir, rel string) string {
-	if filepath.IsAbs(rel) {
-		// Security: don't allow absolute paths outside workspace
-		rel = strings.TrimPrefix(rel, "/")
+// resolvePath safely resolves a relative path within the workspace
+func resolvePath(workDir, rel string) (string, error) {
+	// Get absolute paths
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("getting absolute workspace: %w", err)
 	}
-	return filepath.Join(workDir, filepath.Clean(rel))
+
+	// Join and clean the path
+	joined := filepath.Join(workDir, rel)
+	absResolved, err := filepath.Abs(joined)
+	if err != nil {
+		return "", fmt.Errorf("getting absolute path: %w", err)
+	}
+
+	// CRITICAL: Verify resolved path is still within workspace
+	// This prevents directory traversal attacks like "../../etc/passwd"
+	if !strings.HasPrefix(absResolved, absWorkDir+string(filepath.Separator)) && absResolved != absWorkDir {
+		return "", fmt.Errorf("path escapes workspace: %s not within %s", absResolved, absWorkDir)
+	}
+
+	return absResolved, nil
 }
