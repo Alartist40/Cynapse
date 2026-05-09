@@ -1,0 +1,3 @@
+## 2024-05-10 - TUI Input Placeholders & Keyboard Accessibility
+**Learning:** Terminal user interfaces (TUI) with prominent blank inputs can cause confusion if users are unsure whether it is waiting for a command or a generic text message. In addition, when using full-screen states, global keyboard shortcuts (like Ctrl+K for menu) are often forgotten if only shown on the home/idle screen.
+**Action:** Consistently render a dim-colored placeholder text inside the input when empty, updating it conditionally based on state (e.g. "Message..." vs "Waiting..."). Append global keyboard hints to the global status bar so they persist across all views.

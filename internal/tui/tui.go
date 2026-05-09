@@ -395,13 +395,15 @@ func (m Model) renderIdle() string {
 		b.WriteString("\n")
 	}
 
-	statusLeft := fmt.Sprintf("Model: %s", m.cfg.LLM.Model)
+	statusLeft := fmt.Sprintf("Model: %s | Ctrl+K: Menu", m.cfg.LLM.Model)
 	b.WriteString(statusBarStyle.Render(statusLeft))
 	b.WriteString("\n")
 
 	prompt := promptStyle.Render("> ")
 	inputContent := m.input
-	if m.cursor < len(m.input) {
+	if inputContent == "" {
+		inputContent = "█" + lipgloss.NewStyle().Foreground(dim).Render(" Message CYNAPSE...")
+	} else if m.cursor < len(m.input) {
 		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
 	} else {
 		inputContent += "█"
@@ -468,7 +470,7 @@ func (m Model) renderActive() string {
 		b.WriteString("\n")
 	}
 
-	statusLeft := fmt.Sprintf("Model: %s", m.cfg.LLM.Model)
+	statusLeft := fmt.Sprintf("Model: %s | Ctrl+K: Menu", m.cfg.LLM.Model)
 	statusRight := ""
 	if m.lastElapsed > 0 {
 		statusRight = fmt.Sprintf("⏱ %dms", m.lastElapsed.Milliseconds())
@@ -478,7 +480,7 @@ func (m Model) renderActive() string {
 	}
 	statusBar := statusLeft
 	if statusRight != "" {
-		padding := m.width - len(statusLeft) - len(statusRight) - 2
+		padding := m.width - lipgloss.Width(statusLeft) - len(statusRight) - 2
 		if padding > 0 {
 			statusBar += strings.Repeat(" ", padding) + statusRight
 		}
@@ -488,7 +490,13 @@ func (m Model) renderActive() string {
 
 	prompt := promptStyle.Render("> ")
 	inputContent := m.input
-	if m.cursor < len(m.input) {
+	if inputContent == "" {
+		if m.waitingResp {
+			inputContent = "█" + lipgloss.NewStyle().Foreground(dim).Render(" Waiting for response...")
+		} else {
+			inputContent = "█" + lipgloss.NewStyle().Foreground(dim).Render(" Message CYNAPSE...")
+		}
+	} else if m.cursor < len(m.input) {
 		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
 	} else {
 		inputContent += "█"
