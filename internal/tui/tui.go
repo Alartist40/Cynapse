@@ -57,6 +57,10 @@ var (
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(dim)
 
+	placeholderStyle = lipgloss.NewStyle().
+			Foreground(dim).
+			Italic(true)
+
 	menuStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(purple).
@@ -399,13 +403,19 @@ func (m Model) renderIdle() string {
 	b.WriteString(statusBarStyle.Render(statusLeft))
 	b.WriteString("\n")
 
-	prompt := promptStyle.Render("> ")
-	inputContent := m.input
-	if m.cursor < len(m.input) {
-		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
+	prompt := promptStyle.Render("❯ ")
+
+	var inputContent string
+	if m.input == "" {
+		inputContent = "█" + placeholderStyle.Render(" Type a message or / for commands...")
 	} else {
-		inputContent += "█"
+		if m.cursor < len(m.input) {
+			inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
+		} else {
+			inputContent = m.input + "█"
+		}
 	}
+
 	b.WriteString(inputBoxStyle.Width(m.width - 4).Render(prompt + inputContent))
 
 	return b.String()
@@ -486,13 +496,19 @@ func (m Model) renderActive() string {
 	b.WriteString(statusBarStyle.Render(statusBar))
 	b.WriteString("\n")
 
-	prompt := promptStyle.Render("> ")
-	inputContent := m.input
-	if m.cursor < len(m.input) {
-		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
+	prompt := promptStyle.Render("❯ ")
+
+	var inputContent string
+	if m.input == "" {
+		inputContent = "█" + placeholderStyle.Render(" Type a message or / for commands...")
 	} else {
-		inputContent += "█"
+		if m.cursor < len(m.input) {
+			inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
+		} else {
+			inputContent = m.input + "█"
+		}
 	}
+
 	b.WriteString(inputBoxStyle.Width(m.width - 4).Render(prompt + inputContent))
 
 	return b.String()
