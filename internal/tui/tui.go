@@ -70,6 +70,10 @@ var (
 				Foreground(purple).
 				Bold(true).
 				PaddingLeft(0)
+
+	cursorStyle = lipgloss.NewStyle().
+			Background(bright).
+			Foreground(bg)
 )
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
@@ -254,7 +258,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.showMenu = false
 			m.menuCursor = 0
-			m.input = ""
 			m.restoreMainMenu()
 			return m, nil
 		}
@@ -264,6 +267,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Input handling
 	switch msg.String() {
 	case "ctrl+c":
+		if m.waitingResp {
+			if m.cancelFunc != nil {
+				m.cancelFunc()
+			}
+			m.waitingResp = false
+			m.addSystemMsg("⚠ Request cancelled")
+			return m, nil
+		}
 		if m.cancelFunc != nil {
 			m.cancelFunc()
 		}
@@ -325,6 +336,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showMenu = !m.showMenu
 		if m.showMenu {
 			m.restoreMainMenu()
+		}
+		return m, nil
+
+	case "home", "ctrl+a":
+		m.cursor = 0
+		return m, nil
+
+	case "end", "ctrl+e":
+		m.cursor = len(m.input)
+		return m, nil
+
+	case "delete":
+		if m.cursor < len(m.input) {
+			m.input = m.input[:m.cursor] + m.input[m.cursor+1:]
 		}
 		return m, nil
 
@@ -400,11 +425,12 @@ func (m Model) renderIdle() string {
 	b.WriteString("\n")
 
 	prompt := promptStyle.Render("> ")
-	inputContent := m.input
+
+	var inputContent string
 	if m.cursor < len(m.input) {
-		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
+		inputContent = m.input[:m.cursor] + cursorStyle.Render(string(m.input[m.cursor])) + m.input[m.cursor+1:]
 	} else {
-		inputContent += "█"
+		inputContent = m.input + cursorStyle.Render(" ")
 	}
 	b.WriteString(inputBoxStyle.Width(m.width - 4).Render(prompt + inputContent))
 
@@ -487,11 +513,12 @@ func (m Model) renderActive() string {
 	b.WriteString("\n")
 
 	prompt := promptStyle.Render("> ")
-	inputContent := m.input
+
+	var inputContent string
 	if m.cursor < len(m.input) {
-		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
+		inputContent = m.input[:m.cursor] + cursorStyle.Render(string(m.input[m.cursor])) + m.input[m.cursor+1:]
 	} else {
-		inputContent += "█"
+		inputContent = m.input + cursorStyle.Render(" ")
 	}
 	b.WriteString(inputBoxStyle.Width(m.width - 4).Render(prompt + inputContent))
 
