@@ -361,6 +361,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.input = m.input[:m.cursor] + msg.String() + m.input[m.cursor:]
 			m.cursor++
+
+			if m.input == "/" {
+				m.showMenu = true
+				m.restoreMainMenu()
+			}
 		}
 		return m, nil
 	}
@@ -400,7 +405,7 @@ func (m Model) renderIdle() string {
 	b.WriteString(heroLargeStyle.Width(m.width).Render(hero))
 	b.WriteString("\n")
 
-	hint := "Type Ctrl+K to open menu"
+	hint := "Type / or Ctrl+K to open menu"
 	hintStyle := lipgloss.NewStyle().Foreground(dim).Align(lipgloss.Center)
 	b.WriteString(hintStyle.Width(m.width).Render(hint))
 	b.WriteString("\n")
@@ -715,7 +720,7 @@ func cmdHelp(m *Model) tea.Cmd {
 	m.showMenu = false
 	m.input = ""
 	help := `CYNAPSE Commands:
-  Ctrl+K      Open command menu
+  / or Ctrl+K Open command menu
   Status      System status
   Models      Switch Ollama models
   DENDRITE       Launch graph explorer
