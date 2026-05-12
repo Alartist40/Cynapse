@@ -216,7 +216,7 @@ func getKnownSynapses() []Synapse {
 	return []Synapse{
 		{
 			Name:        "leafcutter",
-			Version:     "1.0.0",
+			Version:     "2.0.0-beta",
 			Description: "CPU-optimized LLM inference engine for resource-constrained hardware",
 			Author:      "Alartist40",
 			Capabilities: []string{
@@ -228,7 +228,7 @@ func getKnownSynapses() []Synapse {
 		},
 		{
 			Name:        "git-tools",
-			Version:     "1.0.0",
+			Version:     "2.0.0-beta",
 			Description: "Git repository management and analysis tools",
 			Author:      "Alartist40",
 			Capabilities: []string{
@@ -239,7 +239,7 @@ func getKnownSynapses() []Synapse {
 		},
 		{
 			Name:        "web-automation",
-			Version:     "1.0.0",
+			Version:     "2.0.0-beta",
 			Description: "Browser automation and web scraping capabilities",
 			Author:      "Alartist40",
 			Capabilities: []string{
@@ -250,7 +250,7 @@ func getKnownSynapses() []Synapse {
 		},
 		{
 			Name:        "speedtest",
-			Version:     "1.0.0",
+			Version:     "2.0.0-beta",
 			Description: "LLM performance benchmarking and speed testing",
 			Author:      "Alartist40",
 			Capabilities: []string{

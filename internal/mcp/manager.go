@@ -94,7 +94,7 @@ func startServer(cfg config.MCPServer) (*Server, error) {
 func (s *Server) initialize() error {
 	params := map[string]any{
 		"protocolVersion": "2024-11-05",
-		"clientInfo":      map[string]any{"name": "cynapse", "version": "1.0.0"},
+		"clientInfo":      map[string]any{"name": "cynapse", "version": "2.0.0-beta"},
 		"capabilities":    map[string]any{"tools": map[string]any{}},
 	}
 	_, err := s.call("initialize", params)

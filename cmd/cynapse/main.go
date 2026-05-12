@@ -18,7 +18,7 @@ import (
 	"github.com/Alartist40/cynapse/internal/tui"
 )
 
-const version = "1.0.0"
+const version = "2.0.0-beta"
 
 func main() {
 	// Ensure home directory exists

@@ -1,0 +1,25 @@
+# Build artifacts
+bin/
+dist/
+cynapse
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+
+# User data
+data/sessions/
+data/persona/
+data/dendrite.db
+data/memory.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
