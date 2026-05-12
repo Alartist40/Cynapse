@@ -69,17 +69,9 @@ func runChat() {
 		os.Exit(1)
 	}
 
-	// Initialize memory store
-	store, err := memory.NewStore(cfg.Memory.DBPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening memory store: %v\n", err)
-		os.Exit(1)
-	}
-	defer store.Close()
-
 	// Load persona
 	deviceID := "cynapse_tui_01"
-	persona, err := memory.NewPersona(deviceID, cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath)
+	persona, err := memory.NewPersona(deviceID, cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath, cfg.Memory.GraphDBPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading persona: %v\n", err)
 		os.Exit(1)
@@ -122,7 +114,6 @@ func runChat() {
 		deviceID,
 		llmClient,
 		persona,
-		store,
 		sessions,
 		mcpMgr,
 		cfg,

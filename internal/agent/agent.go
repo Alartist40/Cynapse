@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Alartist40/cynapse/internal/api"
 	"github.com/Alartist40/cynapse/internal/config"
 	"github.com/Alartist40/cynapse/internal/llm"
 	"github.com/Alartist40/cynapse/internal/mcp"
@@ -18,11 +19,12 @@ import (
 
 const maxToolIterations = 10
 
+var graphAPIServer *api.Server
+
 type Agent struct {
 	deviceID string
 	llm      llm.Client
 	persona  *memory.Persona
-	memStore *memory.Store
 	sessions *session.Manager
 	tools    *tools.Registry
 	mcp      *mcp.Manager
@@ -34,7 +36,6 @@ func New(
 	deviceID string,
 	llmClient llm.Client,
 	persona *memory.Persona,
-	store *memory.Store,
 	sessions *session.Manager,
 	mcpMgr *mcp.Manager,
 	cfg *config.Config,
@@ -45,27 +46,13 @@ func New(
 		cfg.Tools.TimeoutSeconds,
 		persona.WriteFile,
 		persona.AppendDailyLog,
-		func(query string, limit int) (string, error) {
-			entries, err := store.Search(deviceID, query, limit)
-			if err != nil {
-				return "", err
-			}
-			if len(entries) == 0 {
-				return "(no memories found)", nil
-			}
-			var lines []string
-			for _, e := range entries {
-				lines = append(lines, fmt.Sprintf("[%s] %s", e.Time.Format("2006-01-02"), e.Fact))
-			}
-			return strings.Join(lines, "\n"), nil
-		},
+		persona.Search,
 	)
 
 	return &Agent{
 		deviceID: deviceID,
 		llm:      llmClient,
 		persona:  persona,
-		memStore: store,
 		sessions: sessions,
 		tools:    reg,
 		mcp:      mcpMgr,
@@ -80,6 +67,16 @@ func (a *Agent) StartCurator(ctx context.Context) {
 
 func (a *Agent) TriggerHeartbeat(ctx context.Context) error {
 	return a.curator.RunMaintenance(ctx)
+}
+
+// StartGraphServer starts the knowledge graph web UI server.
+// Safe to call multiple times — reuses the existing server.
+func (a *Agent) StartGraphServer(ctx context.Context) (string, error) {
+	if graphAPIServer != nil {
+		return graphAPIServer.URL(), nil
+	}
+	graphAPIServer = api.NewServer(a.persona.Graph(), a.persona.Store())
+	return graphAPIServer.Start(ctx)
 }
 
 // ProcessMessage handles one user turn. Returns the final text response.
@@ -99,7 +96,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, userMsg string) (string, err
 	allTools = append(allTools, a.mcp.AllTools()...)
 
 	req := &llm.Request{
-		SystemPrompt: a.persona.CompileSystemPrompt(),
+		SystemPrompt: a.persona.CompileSystemPrompt(userMsg),
 		Messages:     sess.Recent(60),
 		Tools:        allTools,
 		MaxTokens:    a.cfg.LLM.MaxTokens,
@@ -193,7 +190,7 @@ func (a *Agent) selfImproveFork(userMsg, agentResponse string) {
 	}
 
 	if strings.TrimSpace(decision.SaveFact) != "" {
-		a.memStore.Save(a.deviceID, decision.SaveFact, userMsg, decision.SaveFactTags)
+		a.persona.SaveFact(decision.SaveFact, decision.SaveFactTags)
 		log.Printf("[AGENT:%s] saved memory: %s", a.deviceID, truncate(decision.SaveFact, 80))
 	}
 
@@ -228,7 +225,7 @@ func (a *Agent) ProcessMessageStream(ctx context.Context, userInput string) (<-c
 		for iter := 0; iter < maxToolIterations; iter++ {
 			// Call LLM with streaming
 			llmChunks, llmErrors := a.llm.ChatStream(ctx, &llm.Request{
-				SystemPrompt: a.persona.CompileSystemPrompt(),
+				SystemPrompt: a.persona.CompileSystemPrompt(userInput),
 				Messages:     sess.Recent(60),
 				Tools:        allTools,
 				MaxTokens:    a.cfg.LLM.MaxTokens,

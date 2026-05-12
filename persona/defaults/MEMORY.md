@@ -1,16 +1,14 @@
-# MEMORY.md — Long-Term Memory
+# Memory
 
-_This file is automatically maintained by the heartbeat curator._
-_Last updated: never (first run)_
+This node stores long-term episodic memory and facts. It is maintained by the [[heartbeat]] curator.
 
-## Facts About the User
-
-_None yet._
+## Facts About the [[user]]
+- No data yet.
 
 ## Ongoing Projects
-
-_None yet._
+- CYNAPSE v2.0 Graph Memory implementation.
 
 ## Preferences & Patterns
+- Not yet identified.
 
-_None yet._
+#memory #knowledge

@@ -24,9 +24,14 @@ type Persona struct {
 	basePath     string
 	defaultsPath string
 	mu           sync.RWMutex
+
+	// NEW: graph-based memory
+	graph          *KnowledgeGraph
+	store          *GraphStore
+	contextBuilder *ContextBuilder
 }
 
-func NewPersona(deviceID, basePath, defaultsPath string) (*Persona, error) {
+func NewPersona(deviceID, basePath, defaultsPath, dbPath string) (*Persona, error) {
 	path := filepath.Join(basePath, deviceID)
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, err
@@ -35,47 +40,83 @@ func NewPersona(deviceID, basePath, defaultsPath string) (*Persona, error) {
 	os.MkdirAll(filepath.Join(path, "logs", "heartbeat"), 0755)
 	os.MkdirAll(filepath.Join(path, "skills"), 0755)
 
-	p := &Persona{deviceID: deviceID, basePath: path, defaultsPath: defaultsPath}
-	p.initDefaults()
+	graph := NewKnowledgeGraph()
+
+	store, err := NewGraphStore(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("graph store: %w", err)
+	}
+
+	// Load persisted nodes into graph
+	if err := store.LoadAll(graph); err != nil {
+		log.Printf("WARNING: could not load graph nodes: %v", err)
+	}
+
+	p := &Persona{
+		deviceID:       deviceID,
+		basePath:       path,
+		defaultsPath:   defaultsPath,
+		graph:          graph,
+		store:          store,
+		contextBuilder: NewContextBuilder(graph, store),
+	}
+
+	// If graph is empty, seed from default markdown files
+	if graph.Len() == 0 {
+		p.seedFromMarkdownFiles()
+	}
+
 	return p, nil
 }
 
-// initDefaults copies default markdown files if they don't exist yet.
-func (p *Persona) initDefaults() {
-	files := []string{"AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md", "MEMORY.md", "HEARTBEAT.md"}
-	for _, f := range files {
-		dest := filepath.Join(p.basePath, f)
-		if _, err := os.Stat(dest); os.IsNotExist(err) {
-			src := filepath.Join(p.defaultsPath, f)
-			data, err := os.ReadFile(src)
-			if err != nil {
-				// Fallback: write a placeholder
-				data = []byte(fmt.Sprintf("# %s\n\n_No content yet. The agent will update this file over time._\n", strings.TrimSuffix(f, ".md")))
-			}
-			os.WriteFile(dest, data, 0644)
-		}
+// seedFromMarkdownFiles converts the old flat .md files into initial graph nodes.
+// This runs ONCE on first boot, then never again (graph is persisted).
+func (p *Persona) seedFromMarkdownFiles() {
+	seed := []struct {
+		file     string
+		id       string
+		title    string
+		nodeType NodeType
+	}{
+		{"IDENTITY.md", "identity", "Identity", NodeTypeIdentity},
+		{"SOUL.md", "soul", "Soul", NodeTypeIdentity},
+		{"AGENTS.md", "agents", "Agent Rules", NodeTypeConcept},
+		{"USER.md", "user", "User Profile", NodeTypePerson},
+		{"TOOLS.md", "tools", "Tools", NodeTypeConcept},
+		{"MEMORY.md", "memory_notes", "Memory", NodeTypeMemory},
+		{"HEARTBEAT.md", "heartbeat", "Heartbeat", NodeTypeConcept},
 	}
-}
 
-// CompileSystemPrompt assembles all markdown files into a single system prompt.
-func (p *Persona) CompileSystemPrompt() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	order := []string{"AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md", "MEMORY.md"}
-	var parts []string
-
-	for _, f := range order {
-		content, err := os.ReadFile(filepath.Join(p.basePath, f))
+	for _, s := range seed {
+		path := filepath.Join(p.defaultsPath, s.file)
+		data, err := os.ReadFile(path)
 		if err != nil {
+			log.Printf("WARNING: seed file %s not found: %v", s.file, err)
 			continue
 		}
-		if strings.TrimSpace(string(content)) != "" {
-			parts = append(parts, string(content))
+		p.graph.Upsert(s.id, s.title, string(data), s.nodeType, nil)
+	}
+
+	// Second pass: save all nodes to ensure auto-wired backlinks are persisted
+	for _, n := range p.graph.All() {
+		if err := p.store.Save(n); err != nil {
+			log.Printf("WARNING: could not save seeded node %s: %v", n.ID, err)
 		}
 	}
 
-	return strings.Join(parts, "\n\n---\n\n")
+	log.Printf("[PERSONA] seeded %d nodes from markdown defaults", len(seed))
+}
+
+// Graph exposes the knowledge graph (used by API server).
+func (p *Persona) Graph() *KnowledgeGraph { return p.graph }
+
+// Store exposes the graph store (used by API server).
+func (p *Persona) Store() *GraphStore { return p.store }
+
+// CompileSystemPrompt replaces the old flat-file version.
+// Pass userMessage to get relevant context; pass "" for the general cached prompt.
+func (p *Persona) CompileSystemPrompt(userMessage string) string {
+	return p.contextBuilder.BuildPrompt(userMessage, 6000)
 }
 
 // ReadFile reads any file in the persona directory.
@@ -89,10 +130,33 @@ func (p *Persona) ReadFile(name string) (string, error) {
 	return string(data), nil
 }
 
-// WriteFile writes to any file in the persona directory (called by tool handlers).
+// WriteFile writes to a file in the persona directory and syncs to the graph if it's a core node.
 func (p *Persona) WriteFile(name, content string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Mapping of filenames to graph node IDs and metadata
+	nodeMap := map[string]struct {
+		id       string
+		title    string
+		nodeType NodeType
+	}{
+		"IDENTITY.md":  {"identity", "Identity", NodeTypeIdentity},
+		"SOUL.md":      {"soul", "Soul", NodeTypeIdentity},
+		"AGENTS.md":    {"agents", "Agent Rules", NodeTypeConcept},
+		"USER.md":      {"user", "User Profile", NodeTypePerson},
+		"TOOLS.md":     {"tools", "Tools", NodeTypeConcept},
+		"MEMORY.md":    {"memory_notes", "Memory", NodeTypeMemory},
+		"HEARTBEAT.md": {"heartbeat", "Heartbeat", NodeTypeConcept},
+	}
+
+	if meta, ok := nodeMap[name]; ok {
+		node := p.graph.Upsert(meta.id, meta.title, content, meta.nodeType, nil)
+		if err := p.store.Save(node); err != nil {
+			log.Printf("WARNING: could not sync %s to graph: %v", name, err)
+		}
+	}
+
 	return os.WriteFile(filepath.Join(p.basePath, name), []byte(content), 0644)
 }
 
@@ -115,112 +179,49 @@ func (p *Persona) AppendDailyLog(entry string) error {
 	return err
 }
 
-// ReadRecentLogs reads the daily log files from the last N days.
-func (p *Persona) ReadRecentLogs(days int) string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+// Search performs a full-text search on the graph and returns a formatted string.
+func (p *Persona) Search(query string, limit int) (string, error) {
+	ids, err := p.store.FTSSearch(query, limit)
+	if err != nil {
+		return "", err
+	}
 
-	var parts []string
-	for i := 0; i < days; i++ {
-		date := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
-		path := filepath.Join(p.basePath, "logs", "daily", date+".md")
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
+	if len(ids) == 0 {
+		return "(no memories found)", nil
+	}
+
+	var lines []string
+	for _, id := range ids {
+		if node, ok := p.graph.Get(id); ok {
+			lines = append(lines, fmt.Sprintf("## %s\n%s", node.Title, node.Content))
 		}
-		parts = append(parts, fmt.Sprintf("## %s\n%s", date, string(data)))
 	}
-	return strings.Join(parts, "\n\n")
+	return strings.Join(lines, "\n\n"), nil
 }
 
-// ─── SQLite Memory Store ──────────────────────────────────────────────────────
-
-type Store struct {
-	db *sql.DB
-}
-
-func NewStore(dbPath string) (*Store, error) {
-	os.MkdirAll(filepath.Dir(dbPath), 0755)
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL")
-	if err != nil {
-		return nil, err
-	}
-
-	schema := `
-	CREATE TABLE IF NOT EXISTS memories (
-		id        INTEGER PRIMARY KEY AUTOINCREMENT,
-		device_id TEXT    NOT NULL,
-		fact      TEXT    NOT NULL,
-		context   TEXT    DEFAULT '',
-		tags      TEXT    DEFAULT '',
-		ts        INTEGER NOT NULL
-	);
-	CREATE INDEX IF NOT EXISTS idx_device_ts ON memories(device_id, ts DESC);
-	CREATE INDEX IF NOT EXISTS idx_device_fact ON memories(device_id, fact);`
-
-	if _, err := db.Exec(schema); err != nil {
-		return nil, err
-	}
-	return &Store{db: db}, nil
-}
-
-type MemoryEntry struct {
-	ID       int64
-	DeviceID string
-	Fact     string
-	Context  string
-	Tags     string
-	Time     time.Time
-}
-
-func (s *Store) Save(deviceID, fact, context, tags string) error {
-	_, err := s.db.Exec(
-		`INSERT INTO memories(device_id,fact,context,tags,ts) VALUES(?,?,?,?,?)`,
-		deviceID, fact, context, tags, time.Now().Unix(),
-	)
-	return err
-}
-
-func (s *Store) Search(deviceID, query string, limit int) ([]MemoryEntry, error) {
-	rows, err := s.db.Query(`
-		SELECT id,device_id,fact,context,tags,ts FROM memories
-		WHERE device_id=? AND (fact LIKE ? OR context LIKE ? OR tags LIKE ?)
-		ORDER BY ts DESC LIMIT ?`,
-		deviceID, "%"+query+"%", "%"+query+"%", "%"+query+"%", limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMemories(rows)
-}
-
-func (s *Store) Recent(deviceID string, limit int) ([]MemoryEntry, error) {
-	rows, err := s.db.Query(`
-		SELECT id,device_id,fact,context,tags,ts FROM memories
-		WHERE device_id=? ORDER BY ts DESC LIMIT ?`,
-		deviceID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMemories(rows)
-}
-
-func scanMemories(rows *sql.Rows) ([]MemoryEntry, error) {
-	var result []MemoryEntry
-	for rows.Next() {
-		var m MemoryEntry
-		var ts int64
-		if err := rows.Scan(&m.ID, &m.DeviceID, &m.Fact, &m.Context, &m.Tags, &ts); err != nil {
-			return nil, err
+// SaveFact creates a new memory node in the graph for a discovered fact.
+func (p *Persona) SaveFact(fact, tags string) error {
+	id := fmt.Sprintf("fact_%d", time.Now().UnixNano())
+	title := "Fact: " + truncate(fact, 40)
+	
+	var tagList []string
+	if tags != "" {
+		tagList = strings.Split(tags, ",")
+		for i, t := range tagList {
+			tagList[i] = strings.TrimSpace(t)
 		}
-		m.Time = time.Unix(ts, 0)
-		result = append(result, m)
 	}
-	return result, rows.Err()
+
+	node := p.graph.Upsert(id, title, fact, NodeTypeMemory, tagList)
+	return p.store.Save(node)
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
 
 // ─── Heartbeat Curator ────────────────────────────────────────────────────────
 // Runs periodically, reads recent daily logs, and asks the LLM to update MEMORY.md.

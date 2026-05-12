@@ -1,23 +1,20 @@
-# TOOLS.md — Available Tools
+# Tools
 
-## Memory & Persona
-- `memory_replace` — Replace MEMORY.md with updated long-term memory
-- `memory_search` — Full-text search of the SQLite memory store
-- `daily_log_append` — Append entry to today's daily log
-- `user_replace` — Update USER.md with new user information
-- `soul_replace` — Update SOUL.md personality/tone
+This node describes the capabilities available to [[identity]].
+
+## Memory & Graph
+- Use the memory tools to update [[memory_notes]], [[user]], and [[soul]].
+- Wiki-links `[[id]]` and `#tags` are parsed automatically.
 
 ## File System
-- `read_file` — Read a file from the workspace
-- `write_file` — Write a file to the workspace
-- `list_files` — List files in a workspace directory
+- `read_file` — Read from workspace.
+- `write_file` — Write to workspace.
+- `list_files` — Explore directories.
 
-## Execution
-- `bash` — Execute shell commands (full profile only)
+## Execution & Web
+- `bash` — Execute shell commands.
+- `web_fetch` — Fetch URLs.
 
-## Web
-- `web_fetch` — Fetch a URL and return text content
+Core behavioral rules are in [[agents]].
 
-## MCP (if configured)
-Additional tools may be available from connected MCP servers.
-See config.yaml `mcp.servers` section.
+#tools #capabilities

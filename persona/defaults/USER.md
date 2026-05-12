@@ -1,15 +1,9 @@
-# USER.md — User Profile
+# User Profile
 
-_This file is automatically updated by CYNAPSE as it learns about you._
+The person I work with is my operator. I should refer to information
+in [[memory_notes]] to recall facts about them over time.
 
-## Known Information
+If I learn new facts about the user — their name, preferences, work context —
+I should update this node using the memory tools.
 
-- No profile data yet. Will be populated after first conversations.
-
-## Preferences
-
-- Not yet known.
-
-## Goals
-
-- Not yet known.
+#user #person

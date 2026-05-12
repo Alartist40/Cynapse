@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -95,6 +97,11 @@ type modelListMsg struct {
 	err    error
 }
 
+type graphServerMsg struct {
+	url string
+	err error
+}
+
 // ─── Model ────────────────────────────────────────────────────────────────────
 
 type Model struct {
@@ -126,6 +133,9 @@ type Model struct {
 	streamStartTime  time.Time
 	streamChunks     <-chan string
 	streamErrors     <-chan error
+
+	graphServerURL string
+	graphStarting  bool
 }
 
 type message struct {
@@ -218,6 +228,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.models = msg.models
 			m.showModelsMenu()
 		}
+		return m, nil
+
+	case graphServerMsg:
+		m.graphStarting = false
+		if msg.err != nil {
+			m.addSystemMsg("✗ Memory graph failed: " + msg.err.Error())
+			return m, nil
+		}
+		m.graphServerURL = msg.url
+		m.addSystemMsg("◆ Memory graph → " + msg.url)
+		openBrowser(msg.url)
 		return m, nil
 	}
 
@@ -396,6 +417,9 @@ func (m Model) renderIdle() string {
 	}
 
 	statusLeft := fmt.Sprintf("Model: %s", m.cfg.LLM.Model)
+	if m.graphServerURL != "" {
+		statusLeft += "  ◆ " + m.graphServerURL
+	}
 	b.WriteString(statusBarStyle.Render(statusLeft))
 	b.WriteString("\n")
 
@@ -469,6 +493,9 @@ func (m Model) renderActive() string {
 	}
 
 	statusLeft := fmt.Sprintf("Model: %s", m.cfg.LLM.Model)
+	if m.graphServerURL != "" {
+		statusLeft += "  ◆ " + m.graphServerURL
+	}
 	statusRight := ""
 	if m.lastElapsed > 0 {
 		statusRight = fmt.Sprintf("⏱ %dms", m.lastElapsed.Milliseconds())
@@ -637,8 +664,25 @@ func cmdModels(m *Model) tea.Cmd {
 func cmdMemory(m *Model) tea.Cmd {
 	m.showMenu = false
 	m.input = ""
-	m.addSystemMsg("Memory: Persona files in ./data/persona/ | SQLite store active | Heartbeat curator running")
-	return nil
+
+	if m.graphServerURL != "" {
+		m.addSystemMsg("◆ Memory graph → " + m.graphServerURL)
+		openBrowser(m.graphServerURL)
+		return nil
+	}
+
+	if m.graphStarting {
+		m.addSystemMsg("● Memory graph is already starting...")
+		return nil
+	}
+
+	m.graphStarting = true
+	m.addSystemMsg("● Starting memory graph server...")
+
+	return func() tea.Msg {
+		url, err := m.agent.StartGraphServer(context.Background())
+		return graphServerMsg{url: url, err: err}
+	}
 }
 
 func cmdHeartbeat(m *Model) tea.Cmd {
@@ -701,4 +745,19 @@ func (m *Model) addAssistantMsg(content string) {
 
 func (m *Model) addSystemMsg(content string) {
 	m.messages = append(m.messages, message{role: "system", content: content, time: time.Now()})
+}
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		return
+	}
+	cmd.Start() //nolint:errcheck
 }
