@@ -1,8 +1,8 @@
-# CYNAPSE — Graph Memory System
+# CYNAPSE — DENDRITE Memory System
 ## Engineering Implementation Brief
 
 **Project:** CYNAPSE  
-**Feature:** Obsidian-Style Knowledge Graph Memory  
+**Feature:** Obsidian-Style DENDRITE Memory DENDRITE Memory  
 **Version Target:** v2.0  
 **Language:** Go (pure — no Rust, no Python)  
 **Author:** Engineering Lead  
@@ -39,7 +39,7 @@ User is chatting in CYNAPSE terminal:
 
   CYNAPSE > /memory
 
-  ● Starting memory graph server...
+  ● Starting memory DENDRITE server...
   ◆ Memory graph → http://localhost:54231
   ● Browser opened. Return here to keep chatting.
 
@@ -56,19 +56,19 @@ User closes browser → continues chatting in terminal.
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    CYNAPSE TUI (existing)                     │
-│  /memory command → spawns graph server → shows URL           │
+│  /memory command → spawns DENDRITE server → shows URL           │
 └──────────────────┬───────────────────────────────────────────┘
                    │
                    ▼
 ┌──────────────────────────────────────────────────────────────┐
-│              KnowledgeGraph (in-memory, thread-safe)          │
+│              Dendrite (in-memory, thread-safe)          │
 │  Nodes + wiki-link edges + backlinks + tag index              │
 │  Invalidates prompt cache on every mutation                   │
 └──────────┬───────────────────────┬───────────────────────────┘
            │                       │
            ▼                       ▼
 ┌──────────────────┐   ┌──────────────────────────────────────┐
-│  GraphStore       │   │  ContextBuilder                       │
+│  DendriteStore       │   │  DendriteContext                       │
 │  SQLite + FTS5    │   │  Assembles system prompt from graph   │
 │  Persistence      │   │  Caches. Invalidates on graph change  │
 └──────────────────┘   └──────────────────────────────────────┘
@@ -99,9 +99,9 @@ cynapse/
 ├── internal/
 │   ├── memory/
 │   │   ├── memory.go          ← MODIFY: wire in graph, replace CompileSystemPrompt
-│   │   ├── graph.go           ← CREATE: in-memory knowledge graph
-│   │   ├── graph_store.go     ← CREATE: SQLite persistence
-│   │   └── context.go         ← CREATE: smart context assembly + caching
+│   │   ├── dendrite.go           ← CREATE: in-memory knowledge graph
+│   │   ├── dendrite_store.go     ← CREATE: SQLite persistence
+│   │   └── dendrite_context.go         ← CREATE: smart context assembly + caching
 │   ├── api/
 │   │   ├── server.go          ← CREATE: REST API server (new package)
 │   │   └── web_ui.go          ← CREATE: embedded HTML/JS graph UI
@@ -122,7 +122,7 @@ cynapse/
 
 ---
 
-## Part 1: `internal/memory/graph.go` — CREATE THIS FILE
+## Part 1: `internal/memory/dendrite.go` — CREATE THIS FILE
 
 This is the core in-memory graph. Thread-safe. No external dependencies.
 
@@ -163,8 +163,8 @@ type Node struct {
     UpdatedAt int64    `json:"updated_at"`
 }
 
-// KnowledgeGraph is the in-memory graph. All operations are thread-safe.
-type KnowledgeGraph struct {
+// Dendrite is the in-memory graph. All operations are thread-safe.
+type Dendrite struct {
     nodes       map[string]*Node
     mu          sync.RWMutex
     linkPattern *regexp.Regexp
@@ -172,8 +172,8 @@ type KnowledgeGraph struct {
     onChange    []func()
 }
 
-func NewKnowledgeGraph() *KnowledgeGraph {
-    return &KnowledgeGraph{
+func NewDendrite() *Dendrite {
+    return &Dendrite{
         nodes:       make(map[string]*Node),
         linkPattern: regexp.MustCompile(`\[\[([^\]|]+)(?:\|[^\]]+)?\]\]`),
         tagPattern:  regexp.MustCompile(`#([A-Za-z0-9_-]+)`),
@@ -181,21 +181,21 @@ func NewKnowledgeGraph() *KnowledgeGraph {
 }
 
 // OnChange registers a callback invoked on every mutation.
-// Used by ContextBuilder to invalidate the prompt cache.
-func (kg *KnowledgeGraph) OnChange(fn func()) {
+// Used by DendriteContext to invalidate the prompt cache.
+func (kg *Dendrite) OnChange(fn func()) {
     kg.mu.Lock()
     defer kg.mu.Unlock()
     kg.onChange = append(kg.onChange, fn)
 }
 
-func (kg *KnowledgeGraph) notify() {
+func (kg *Dendrite) notify() {
     for _, fn := range kg.onChange {
         go fn()
     }
 }
 
 // Upsert creates or fully replaces a node and re-wires all backlinks.
-func (kg *KnowledgeGraph) Upsert(id, title, content string, nodeType NodeType, tags []string) *Node {
+func (kg *Dendrite) Upsert(id, title, content string, nodeType NodeType, tags []string) *Node {
     kg.mu.Lock()
     defer kg.mu.Unlock()
 
@@ -241,7 +241,7 @@ func (kg *KnowledgeGraph) Upsert(id, title, content string, nodeType NodeType, t
 }
 
 // Delete removes a node and cleans up all references in the graph.
-func (kg *KnowledgeGraph) Delete(id string) bool {
+func (kg *Dendrite) Delete(id string) bool {
     kg.mu.Lock()
     defer kg.mu.Unlock()
 
@@ -266,7 +266,7 @@ func (kg *KnowledgeGraph) Delete(id string) bool {
 }
 
 // Get returns a node by ID. Returns nil, false if not found.
-func (kg *KnowledgeGraph) Get(id string) (*Node, bool) {
+func (kg *Dendrite) Get(id string) (*Node, bool) {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
     n, ok := kg.nodes[id]
@@ -274,7 +274,7 @@ func (kg *KnowledgeGraph) Get(id string) (*Node, bool) {
 }
 
 // All returns every node sorted by UpdatedAt descending.
-func (kg *KnowledgeGraph) All() []*Node {
+func (kg *Dendrite) All() []*Node {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
 
@@ -289,7 +289,7 @@ func (kg *KnowledgeGraph) All() []*Node {
 }
 
 // Neighbors returns the 1-hop neighborhood of a node (links + backlinks combined).
-func (kg *KnowledgeGraph) Neighbors(id string) []*Node {
+func (kg *Dendrite) Neighbors(id string) []*Node {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
 
@@ -321,7 +321,7 @@ func (kg *KnowledgeGraph) Neighbors(id string) []*Node {
 }
 
 // Search returns nodes whose title, content, or tags contain the query string.
-func (kg *KnowledgeGraph) Search(query string) []*Node {
+func (kg *Dendrite) Search(query string) []*Node {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
 
@@ -342,7 +342,7 @@ func (kg *KnowledgeGraph) Search(query string) []*Node {
 }
 
 // ByTag returns all nodes that carry a specific tag.
-func (kg *KnowledgeGraph) ByTag(tag string) []*Node {
+func (kg *Dendrite) ByTag(tag string) []*Node {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
 
@@ -356,7 +356,7 @@ func (kg *KnowledgeGraph) ByTag(tag string) []*Node {
 }
 
 // Len returns the total number of nodes.
-func (kg *KnowledgeGraph) Len() int {
+func (kg *Dendrite) Len() int {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
     return len(kg.nodes)
@@ -364,7 +364,7 @@ func (kg *KnowledgeGraph) Len() int {
 
 // ── Internal parsing helpers ──────────────────────────────────────────────────
 
-func (kg *KnowledgeGraph) parseLinks(content string) []string {
+func (kg *Dendrite) parseLinks(content string) []string {
     matches := kg.linkPattern.FindAllStringSubmatch(content, -1)
     seen := map[string]bool{}
     var links []string
@@ -380,7 +380,7 @@ func (kg *KnowledgeGraph) parseLinks(content string) []string {
     return links
 }
 
-func (kg *KnowledgeGraph) parseTags(content string) []string {
+func (kg *Dendrite) parseTags(content string) []string {
     matches := kg.tagPattern.FindAllStringSubmatch(content, -1)
     seen := map[string]bool{}
     var tags []string
@@ -434,7 +434,7 @@ func removeStr(slice []string, item string) []string {
 
 ---
 
-## Part 2: `internal/memory/graph_store.go` — CREATE THIS FILE
+## Part 2: `internal/memory/dendrite_store.go` — CREATE THIS FILE
 
 SQLite persistence with FTS5 full-text search. Uses WAL mode for concurrency safety.
 
@@ -449,26 +449,26 @@ import (
     _ "github.com/mattn/go-sqlite3"
 )
 
-// GraphStore persists KnowledgeGraph nodes to SQLite.
-type GraphStore struct {
+// DendriteStore persists Dendrite nodes to SQLite.
+type DendriteStore struct {
     db *sql.DB
 }
 
-func NewGraphStore(dbPath string) (*GraphStore, error) {
+func NewDendriteStore(dbPath string) (*DendriteStore, error) {
     db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_busy_timeout=5000")
     if err != nil {
         return nil, fmt.Errorf("open graph db: %w", err)
     }
     db.SetMaxOpenConns(1) // SQLite is single-writer
 
-    gs := &GraphStore{db: db}
+    gs := &DendriteStore{db: db}
     if err := gs.migrate(); err != nil {
         return nil, fmt.Errorf("graph db migrate: %w", err)
     }
     return gs, nil
 }
 
-func (gs *GraphStore) migrate() error {
+func (gs *DendriteStore) migrate() error {
     _, err := gs.db.Exec(`
     CREATE TABLE IF NOT EXISTS graph_nodes (
         id         TEXT PRIMARY KEY,
@@ -518,7 +518,7 @@ func (gs *GraphStore) migrate() error {
 }
 
 // Save upserts a node into SQLite.
-func (gs *GraphStore) Save(n *Node) error {
+func (gs *DendriteStore) Save(n *Node) error {
     tags, _ := json.Marshal(n.Tags)
     links, _ := json.Marshal(n.Links)
     backlinks, _ := json.Marshal(n.Backlinks)
@@ -544,14 +544,14 @@ func (gs *GraphStore) Save(n *Node) error {
 }
 
 // Delete removes a node from SQLite.
-func (gs *GraphStore) Delete(id string) error {
+func (gs *DendriteStore) Delete(id string) error {
     _, err := gs.db.Exec(`DELETE FROM graph_nodes WHERE id = ?`, id)
     return err
 }
 
 // LoadAll hydrates all stored nodes directly into the graph's node map.
 // Call this once at startup before serving any requests.
-func (gs *GraphStore) LoadAll(kg *KnowledgeGraph) error {
+func (gs *DendriteStore) LoadAll(kg *Dendrite) error {
     rows, err := gs.db.Query(`
         SELECT id, title, content, type, tags, links, backlinks, created_at, updated_at
         FROM graph_nodes
@@ -590,7 +590,7 @@ func (gs *GraphStore) LoadAll(kg *KnowledgeGraph) error {
 }
 
 // FTSSearch performs a full-text search and returns matching node IDs.
-func (gs *GraphStore) FTSSearch(query string, limit int) ([]string, error) {
+func (gs *DendriteStore) FTSSearch(query string, limit int) ([]string, error) {
     if limit <= 0 {
         limit = 10
     }
@@ -616,14 +616,14 @@ func (gs *GraphStore) FTSSearch(query string, limit int) ([]string, error) {
     return ids, rows.Err()
 }
 
-func (gs *GraphStore) Close() error {
+func (gs *DendriteStore) Close() error {
     return gs.db.Close()
 }
 ```
 
 ---
 
-## Part 3: `internal/memory/context.go` — CREATE THIS FILE
+## Part 3: `internal/memory/dendrite_context.go` — CREATE THIS FILE
 
 Replaces the flat `CompileSystemPrompt()` with intelligent graph-aware context assembly. Caches the compiled prompt and invalidates automatically when the graph changes.
 
@@ -644,10 +644,10 @@ const (
     contextNodeBudget = 0.60 // 60% for conversation-relevant nodes
 )
 
-// ContextBuilder assembles the LLM system prompt from graph nodes.
-type ContextBuilder struct {
-    graph *KnowledgeGraph
-    store *GraphStore
+// DendriteContext assembles the LLM system prompt from graph nodes.
+type DendriteContext struct {
+    graph *Dendrite
+    store *DendriteStore
 
     mu           sync.Mutex
     cachedPrompt string
@@ -656,8 +656,8 @@ type ContextBuilder struct {
     dirty        bool
 }
 
-func NewContextBuilder(graph *KnowledgeGraph, store *GraphStore) *ContextBuilder {
-    cb := &ContextBuilder{
+func NewDendriteContext(graph *Dendrite, store *DendriteStore) *DendriteContext {
+    cb := &DendriteContext{
         graph:    graph,
         store:    store,
         cacheTTL: 5 * time.Minute,
@@ -677,7 +677,7 @@ func NewContextBuilder(graph *KnowledgeGraph, store *GraphStore) *ContextBuilder
 // BuildPrompt returns the system prompt.
 // If userMessage is non-empty, it biases context toward relevant nodes.
 // Otherwise returns a cached general-purpose prompt.
-func (cb *ContextBuilder) BuildPrompt(userMessage string, maxTokens int) string {
+func (cb *DendriteContext) BuildPrompt(userMessage string, maxTokens int) string {
     if maxTokens <= 0 {
         maxTokens = defaultMaxTokens
     }
@@ -701,7 +701,7 @@ func (cb *ContextBuilder) BuildPrompt(userMessage string, maxTokens int) string 
     return prompt
 }
 
-func (cb *ContextBuilder) assemble(userMessage string, maxTokens int) string {
+func (cb *DendriteContext) assemble(userMessage string, maxTokens int) string {
     var parts []string
     used := 0
 
@@ -765,7 +765,7 @@ func (cb *ContextBuilder) assemble(userMessage string, maxTokens int) string {
     return strings.Join(parts, "\n\n---\n\n")
 }
 
-func (cb *ContextBuilder) findRelevant(userMessage string) []*Node {
+func (cb *DendriteContext) findRelevant(userMessage string) []*Node {
     seen := map[string]bool{}
     var out []*Node
 
@@ -802,7 +802,7 @@ type scoredNode struct {
     score float64
 }
 
-func (cb *ContextBuilder) score(nodes []*Node, query string) []scoredNode {
+func (cb *DendriteContext) score(nodes []*Node, query string) []scoredNode {
     q := strings.ToLower(query)
     now := time.Now().Unix()
 
@@ -853,7 +853,7 @@ func estimateTokens(text string) int {
 
 ## Part 4: `internal/api/server.go` — CREATE THIS FILE (new package)
 
-REST API that bridges the web UI to the live KnowledgeGraph. Serves the embedded HTML at `/`.
+REST API that bridges the web UI to the live Dendrite. Serves the embedded HTML at `/`.
 
 ```go
 package api
@@ -874,13 +874,13 @@ import (
 // Server exposes the knowledge graph over a local HTTP API
 // and serves the embedded graph visualisation UI.
 type Server struct {
-    graph  *memory.KnowledgeGraph
-    store  *memory.GraphStore
+    graph  *memory.Dendrite
+    store  *memory.DendriteStore
     server *http.Server
     url    string
 }
 
-func NewServer(graph *memory.KnowledgeGraph, store *memory.GraphStore) *Server {
+func NewServer(graph *memory.Dendrite, store *memory.DendriteStore) *Server {
     return &Server{graph: graph, store: store}
 }
 
@@ -893,7 +893,7 @@ func (s *Server) URL() string { return s.url }
 func (s *Server) Start(ctx context.Context) (string, error) {
     listener, err := net.Listen("tcp", "127.0.0.1:0")
     if err != nil {
-        return "", fmt.Errorf("graph server bind: %w", err)
+        return "", fmt.Errorf("DENDRITE server bind: %w", err)
     }
 
     port := listener.Addr().(*net.TCPAddr).Port
@@ -1576,7 +1576,7 @@ function toast(msg){
 ### 6a. `internal/memory/memory.go` — MODIFY
 
 **Remove the following entirely:**
-- `CompileSystemPrompt()` method (replaced by `ContextBuilder.BuildPrompt()`)
+- `CompileSystemPrompt()` method (replaced by `DendriteContext.BuildPrompt()`)
 - The hardcoded `order := []string{"AGENTS.md", "SOUL.md", ...}` list
 - The silent `if err != nil { continue }` error handling
 
@@ -1590,17 +1590,17 @@ type Persona struct {
     mu           sync.RWMutex
 
     // NEW: graph-based memory
-    graph          *KnowledgeGraph
-    store          *GraphStore
-    contextBuilder *ContextBuilder
+    graph          *Dendrite
+    store          *DendriteStore
+    contextBuilder *DendriteContext
 }
 
 func NewPersona(deviceID, basePath, defaultsPath, dbPath string) (*Persona, error) {
     // ... existing directory setup ...
 
-    graph := NewKnowledgeGraph()
+    graph := NewDendrite()
 
-    store, err := NewGraphStore(dbPath)
+    store, err := NewDendriteStore(dbPath)
     if err != nil {
         return nil, fmt.Errorf("graph store: %w", err)
     }
@@ -1616,7 +1616,7 @@ func NewPersona(deviceID, basePath, defaultsPath, dbPath string) (*Persona, erro
         defaultsPath:   defaultsPath,
         graph:          graph,
         store:          store,
-        contextBuilder: NewContextBuilder(graph, store),
+        contextBuilder: NewDendriteContext(graph, store),
     }
 
     // If graph is empty, seed from default markdown files
@@ -1661,10 +1661,10 @@ func (p *Persona) seedFromMarkdownFiles() {
 }
 
 // Graph exposes the knowledge graph (used by API server).
-func (p *Persona) Graph() *KnowledgeGraph { return p.graph }
+func (p *Persona) Graph() *Dendrite { return p.graph }
 
 // Store exposes the graph store (used by API server).
-func (p *Persona) Store() *GraphStore { return p.store }
+func (p *Persona) Store() *DendriteStore { return p.store }
 
 // CompileSystemPrompt replaces the old flat-file version.
 // Pass userMessage to get relevant context; pass "" for the general cached prompt.
@@ -1687,7 +1687,7 @@ SystemPrompt: a.persona.CompileSystemPrompt(userMsg),
 
 ### 6b. `internal/agent/agent.go` — MODIFY
 
-Add the graph server launcher. Place alongside other methods:
+Add the DENDRITE server launcher. Place alongside other methods:
 
 ```go
 import "github.com/Alartist40/cynapse/internal/api"
@@ -1767,7 +1767,7 @@ func cmdMemory(m *Model) tea.Cmd {
     }
 
     m.graphStarting = true
-    m.addSystemMsg("● Starting memory graph server...")
+    m.addSystemMsg("● Starting memory DENDRITE server...")
 
     return func() tea.Msg {
         url, err := m.agent.StartGraphServer(context.Background())
@@ -1849,7 +1849,7 @@ The implementation uses only what CYNAPSE already has:
 
 | Dependency | Already In `go.mod` | Used For |
 |------------|---------------------|----------|
-| `github.com/mattn/go-sqlite3` | ✅ YES | GraphStore |
+| `github.com/mattn/go-sqlite3` | ✅ YES | DendriteStore |
 | `net/http` | ✅ stdlib | API server |
 | `encoding/json` | ✅ stdlib | API responses |
 | `sync` | ✅ stdlib | Thread safety |
@@ -1878,7 +1878,7 @@ go build ./cmd/cynapse
 **Step 3 — Memory command works:**
 ```
 CYNAPSE > /memory
-● Starting memory graph server...
+● Starting memory DENDRITE server...
 ◆ Memory graph → http://localhost:XXXXX
 ```
 
@@ -1906,9 +1906,9 @@ CYNAPSE > /memory
 
 | What | Action |
 |------|--------|
-| `internal/memory/graph.go` | **CREATE** — in-memory graph |
-| `internal/memory/graph_store.go` | **CREATE** — SQLite persistence |
-| `internal/memory/context.go` | **CREATE** — smart context assembly |
+| `internal/memory/dendrite.go` | **CREATE** — in-memory graph |
+| `internal/memory/dendrite_store.go` | **CREATE** — SQLite persistence |
+| `internal/memory/dendrite_context.go` | **CREATE** — smart context assembly |
 | `internal/api/server.go` | **CREATE** — REST API (new package) |
 | `internal/api/web_ui.go` | **CREATE** — embedded graph UI |
 | `internal/memory/memory.go` | **MODIFY** — wire in graph, replace `CompileSystemPrompt` |

@@ -71,7 +71,7 @@ func runChat() {
 
 	// Load persona
 	deviceID := "cynapse_tui_01"
-	persona, err := memory.NewPersona(deviceID, cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath, cfg.Memory.GraphDBPath)
+	persona, err := memory.NewPersona(deviceID, cfg.Memory.PersonaPath, cfg.Memory.DefaultsPath, cfg.Memory.DendriteDBPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading persona: %v\n", err)
 		os.Exit(1)

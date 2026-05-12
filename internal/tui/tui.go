@@ -97,7 +97,7 @@ type modelListMsg struct {
 	err    error
 }
 
-type graphServerMsg struct {
+type dendriteServerMsg struct {
 	url string
 	err error
 }
@@ -134,8 +134,8 @@ type Model struct {
 	streamChunks     <-chan string
 	streamErrors     <-chan error
 
-	graphServerURL string
-	graphStarting  bool
+	dendriteURL string
+	dendriteStarting  bool
 }
 
 type message struct {
@@ -230,13 +230,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case graphServerMsg:
-		m.graphStarting = false
+	case dendriteServerMsg:
+		m.dendriteStarting = false
 		if msg.err != nil {
 			m.addSystemMsg("✗ DENDRITE failed: " + msg.err.Error())
 			return m, nil
 		}
-		m.graphServerURL = msg.url
+		m.dendriteURL = msg.url
 		m.addSystemMsg("◆ DENDRITE active → " + msg.url)
 		openBrowser(msg.url)
 		return m, nil
@@ -417,8 +417,8 @@ func (m Model) renderIdle() string {
 	}
 
 	statusLeft := fmt.Sprintf("Model: %s", m.cfg.LLM.Model)
-	if m.graphServerURL != "" {
-		statusLeft += "  ◆ " + m.graphServerURL
+	if m.dendriteURL != "" {
+		statusLeft += "  ◆ " + m.dendriteURL
 	}
 	b.WriteString(statusBarStyle.Render(statusLeft))
 	b.WriteString("\n")
@@ -493,8 +493,8 @@ func (m Model) renderActive() string {
 	}
 
 	statusLeft := fmt.Sprintf("Model: %s", m.cfg.LLM.Model)
-	if m.graphServerURL != "" {
-		statusLeft += "  ◆ " + m.graphServerURL
+	if m.dendriteURL != "" {
+		statusLeft += "  ◆ " + m.dendriteURL
 	}
 	statusRight := ""
 	if m.lastElapsed > 0 {
@@ -665,23 +665,23 @@ func cmdMemory(m *Model) tea.Cmd {
 	m.showMenu = false
 	m.input = ""
 
-	if m.graphServerURL != "" {
-		m.addSystemMsg("◆ DENDRITE active → " + m.graphServerURL)
-		openBrowser(m.graphServerURL)
+	if m.dendriteURL != "" {
+		m.addSystemMsg("◆ DENDRITE active → " + m.dendriteURL)
+		openBrowser(m.dendriteURL)
 		return nil
 	}
 
-	if m.graphStarting {
+	if m.dendriteStarting {
 		m.addSystemMsg("● DENDRITE is already starting...")
 		return nil
 	}
 
-	m.graphStarting = true
+	m.dendriteStarting = true
 	m.addSystemMsg("● Starting DENDRITE memory system (Neurons, Branches, Connections)...")
 
 	return func() tea.Msg {
 		url, err := m.agent.StartGraphServer(context.Background())
-		return graphServerMsg{url: url, err: err}
+		return dendriteServerMsg{url: url, err: err}
 	}
 }
 

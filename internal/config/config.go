@@ -66,7 +66,7 @@ type MemoryConfig struct {
 	DBPath string `yaml:"db_path"` // default: "./data/memory.db"
 
 	// SQLite database for knowledge graph
-	GraphDBPath string `yaml:"graph_db_path"` // default: "./data/graph.db"
+	DendriteDBPath string `yaml:"dendrite_db_path"` // default: "./data/dendrite.db"
 
 	// Path to default persona templates (copied when a new device connects)
 	DefaultsPath string `yaml:"defaults_path"` // default: "./persona/defaults"
@@ -176,7 +176,7 @@ func defaults() *Config {
 			PersonaPath:            "./data/persona",
 			SessionsPath:           "./data/sessions",
 			DBPath:                 "./data/memory.db",
-			GraphDBPath:            "./data/graph.db",
+			DendriteDBPath:            "./data/dendrite.db",
 			DefaultsPath:           "./persona/defaults",
 			HeartbeatIntervalHours: 6,
 			MaxSessionMessages:     100,

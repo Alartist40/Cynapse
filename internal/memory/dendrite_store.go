@@ -29,7 +29,7 @@ func NewDendriteStore(dbPath string) (*DendriteStore, error) {
 
 func (gs *DendriteStore) migrate() error {
     _, err := gs.db.Exec(`
-    CREATE TABLE IF NOT EXISTS graph_nodes (
+    CREATE TABLE IF NOT EXISTS dendrite_nodes (
         id         TEXT PRIMARY KEY,
         title      TEXT NOT NULL,
         content    TEXT NOT NULL DEFAULT '',
@@ -41,10 +41,10 @@ func (gs *DendriteStore) migrate() error {
         updated_at INTEGER NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_graph_updated ON graph_nodes(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dendrite_updated ON dendrite_nodes(updated_at DESC);
 
     -- FTS5 for fast full-text search across all node content
-    CREATE VIRTUAL TABLE IF NOT EXISTS graph_fts USING fts5(
+    CREATE VIRTUAL TABLE IF NOT EXISTS dendrite_fts USING fts5(
         id         UNINDEXED,
         title,
         content,
@@ -53,23 +53,23 @@ func (gs *DendriteStore) migrate() error {
     );
 
     -- Keep FTS in sync automatically via triggers
-    CREATE TRIGGER IF NOT EXISTS graph_nodes_ai
-    AFTER INSERT ON graph_nodes BEGIN
-        INSERT INTO graph_fts(id, title, content, tags)
+    CREATE TRIGGER IF NOT EXISTS dendrite_nodes_ai
+    AFTER INSERT ON dendrite_nodes BEGIN
+        INSERT INTO dendrite_fts(id, title, content, tags)
         VALUES (new.id, new.title, new.content, new.tags);
     END;
 
-    CREATE TRIGGER IF NOT EXISTS graph_nodes_au
-    AFTER UPDATE ON graph_nodes BEGIN
-        INSERT INTO graph_fts(graph_fts, rowid, id, title, content, tags)
+    CREATE TRIGGER IF NOT EXISTS dendrite_nodes_au
+    AFTER UPDATE ON dendrite_nodes BEGIN
+        INSERT INTO dendrite_fts(dendrite_fts, rowid, id, title, content, tags)
         VALUES ('delete', old.rowid, old.id, old.title, old.content, old.tags);
-        INSERT INTO graph_fts(id, title, content, tags)
+        INSERT INTO dendrite_fts(id, title, content, tags)
         VALUES (new.id, new.title, new.content, new.tags);
     END;
 
-    CREATE TRIGGER IF NOT EXISTS graph_nodes_ad
-    AFTER DELETE ON graph_nodes BEGIN
-        INSERT INTO graph_fts(graph_fts, rowid, id, title, content, tags)
+    CREATE TRIGGER IF NOT EXISTS dendrite_nodes_ad
+    AFTER DELETE ON dendrite_nodes BEGIN
+        INSERT INTO dendrite_fts(dendrite_fts, rowid, id, title, content, tags)
         VALUES ('delete', old.rowid, old.id, old.title, old.content, old.tags);
     END;
     `)
@@ -83,7 +83,7 @@ func (gs *DendriteStore) Save(n *Node) error {
     backlinks, _ := json.Marshal(n.Backlinks)
 
     _, err := gs.db.Exec(`
-        INSERT INTO graph_nodes
+        INSERT INTO dendrite_nodes
             (id, title, content, type, tags, links, backlinks, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
@@ -104,7 +104,7 @@ func (gs *DendriteStore) Save(n *Node) error {
 
 // Delete removes a node from SQLite.
 func (gs *DendriteStore) Delete(id string) error {
-    _, err := gs.db.Exec(`DELETE FROM graph_nodes WHERE id = ?`, id)
+    _, err := gs.db.Exec(`DELETE FROM dendrite_nodes WHERE id = ?`, id)
     return err
 }
 
@@ -113,7 +113,7 @@ func (gs *DendriteStore) Delete(id string) error {
 func (gs *DendriteStore) LoadAll(kg *Dendrite) error {
     rows, err := gs.db.Query(`
         SELECT id, title, content, type, tags, links, backlinks, created_at, updated_at
-        FROM graph_nodes
+        FROM dendrite_nodes
         ORDER BY updated_at DESC
     `)
     if err != nil {
@@ -154,8 +154,8 @@ func (gs *DendriteStore) FTSSearch(query string, limit int) ([]string, error) {
         limit = 10
     }
     rows, err := gs.db.Query(`
-        SELECT id FROM graph_fts
-        WHERE graph_fts MATCH ?
+        SELECT id FROM dendrite_fts
+        WHERE dendrite_fts MATCH ?
         ORDER BY rank
         LIMIT ?
     `, query, limit)

@@ -19,7 +19,7 @@ import (
 
 const maxToolIterations = 10
 
-var graphAPIServer *api.Server
+var dendriteServer *api.Server
 
 type Agent struct {
 	deviceID string
@@ -72,11 +72,11 @@ func (a *Agent) TriggerHeartbeat(ctx context.Context) error {
 // StartGraphServer starts the DENDRITE memory graph web UI server.
 // Safe to call multiple times — reuses the existing server.
 func (a *Agent) StartGraphServer(ctx context.Context) (string, error) {
-	if graphAPIServer != nil {
-		return graphAPIServer.URL(), nil
+	if dendriteServer != nil {
+		return dendriteServer.URL(), nil
 	}
-	graphAPIServer = api.NewServer(a.persona.Graph(), a.persona.Store())
-	return graphAPIServer.Start(ctx)
+	dendriteServer = api.NewServer(a.persona.Dendrite(), a.persona.Store())
+	return dendriteServer.Start(ctx)
 }
 
 // ProcessMessage handles one user turn. Returns the final text response.

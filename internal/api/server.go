@@ -42,7 +42,7 @@ func (s *Server) Start(ctx context.Context) (string, error) {
     s.url = fmt.Sprintf("http://localhost:%d", port)
 
     mux := http.NewServeMux()
-    mux.HandleFunc("/api/graph",      s.withCORS(s.handleGraph))
+    mux.HandleFunc("/api/dendrite",      s.withCORS(s.handleGraph))
     mux.HandleFunc("/api/nodes",      s.withCORS(s.handleNodes))
     mux.HandleFunc("/api/nodes/",     s.withCORS(s.handleNode))
     mux.HandleFunc("/api/search",     s.withCORS(s.handleSearch))
@@ -57,7 +57,7 @@ func (s *Server) Start(ctx context.Context) (string, error) {
 
     go func() {
         if err := s.server.Serve(listener); err != nil && err != http.ErrServerClosed {
-            log.Printf("[GRAPH API] error: %v", err)
+            log.Printf("[DENDRITE API] error: %v", err)
         }
     }()
 
@@ -68,13 +68,13 @@ func (s *Server) Start(ctx context.Context) (string, error) {
         s.server.Shutdown(shutCtx) //nolint:errcheck
     }()
 
-    log.Printf("[GRAPH API] serving at %s", s.url)
+    log.Printf("[DENDRITE API] serving at %s", s.url)
     return s.url, nil
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-// GET /api/graph — returns {nodes, links} shaped for D3 force layout.
+// GET /api/dendrite — returns {nodes, links} shaped for D3 force layout.
 func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodGet {
         http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -151,7 +151,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 
         node := s.graph.Upsert(body.ID, body.Title, body.Content, nodeType, body.Tags)
         if err := s.store.Save(node); err != nil {
-            log.Printf("[GRAPH API] save: %v", err)
+            log.Printf("[DENDRITE API] save: %v", err)
             http.Error(w, "storage error", http.StatusInternalServerError)
             return
         }
@@ -253,7 +253,7 @@ func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 func (s *Server) jsonResponse(w http.ResponseWriter, v any) {
     w.Header().Set("Content-Type", "application/json")
     if err := json.NewEncoder(w).Encode(v); err != nil {
-        log.Printf("[GRAPH API] encode: %v", err)
+        log.Printf("[DENDRITE API] encode: %v", err)
     }
 }
 

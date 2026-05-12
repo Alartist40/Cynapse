@@ -50,7 +50,7 @@ const webUI = `<!DOCTYPE html>
   .node-item-meta{font-size:10px;color:var(--text-dim);margin-top:2px}
 
   /* Graph area */
-  #graph-area{flex:1;position:relative;overflow:hidden}
+  #dendrite-area{flex:1;position:relative;overflow:hidden}
   #canvas{width:100%;height:100%}
   #toolbar{position:absolute;top:16px;left:16px;display:flex;gap:8px;z-index:5}
   .tool-btn{background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-family:var(--mono);font-size:11px;padding:6px 12px;cursor:pointer;transition:all .15s}
@@ -130,7 +130,7 @@ const webUI = `<!DOCTYPE html>
     <div id="node-list"></div>
   </aside>
 
-  <div id="graph-area">
+  <div id="dendrite-area">
     <div id="toolbar">
       <button class="tool-btn" onclick="resetZoom()">⟳ Reset</button>
       <button class="tool-btn" id="pause-btn" onclick="toggleForce()">⏸ Pause</button>
@@ -194,21 +194,21 @@ const webUI = `<!DOCTYPE html>
 const TYPE_COLORS={identity:'#9b59b6',person:'#e67e22',project:'#00d4ff',concept:'#2ecc71',memory:'#e74c3c',event:'#f39c12',custom:'#4a5568'};
 function typeColor(t){return TYPE_COLORS[t]||TYPE_COLORS.custom}
 
-let graphData={nodes:[],links:[]},allNodes=[],selected=null,simulation=null,svg,g,linkSel,nodeSel,forcePaused=false,zoom,isNewNode=false;
+let dendriteData={nodes:[],links:[]},allNodes=[],selected=null,simulation=null,svg,g,linkSel,nodeSel,forcePaused=false,zoom,isNewNode=false;
 
 window.addEventListener('DOMContentLoaded',async()=>{initGraph();await loadData();setInterval(loadData,10000)});
 
 async function loadData(){
   try{
-    const[gr,nr]=await Promise.all([fetch('/api/graph'),fetch('/api/nodes')]);
-    graphData=await gr.json();allNodes=await nr.json();
+    const[gr,nr]=await Promise.all([fetch('/api/dendrite'),fetch('/api/nodes')]);
+    dendriteData=await gr.json();allNodes=await nr.json();
     updateStats();renderNodeList(allNodes);updateGraph();
   }catch(e){toast('⚠ Cannot reach API')}
 }
 
 function updateStats(){
-  document.getElementById('stat-nodes').textContent=graphData.nodes.length;
-  document.getElementById('stat-links').textContent=graphData.links.length;
+  document.getElementById('stat-nodes').textContent=dendriteData.nodes.length;
+  document.getElementById('stat-links').textContent=dendriteData.links.length;
   const ts=new Set();allNodes.forEach(n=>(n.tags||[]).forEach(t=>ts.add(t)));
   document.getElementById('stat-tags').textContent=ts.size;
 }
@@ -228,7 +228,7 @@ function renderNodeList(nodes){
 }
 
 function initGraph(){
-  const area=document.getElementById('graph-area');
+  const area=document.getElementById('dendrite-area');
   const w=area.clientWidth,h=area.clientHeight;
   svg=d3.select('#canvas').attr('width',w).attr('height',h);
   const defs=svg.append('defs');
@@ -252,8 +252,8 @@ function initGraph(){
 }
 
 function updateGraph(){
-  const nodes=(graphData.nodes||[]).map(d=>({...d}));
-  const links=(graphData.links||[]).map(d=>({...d}));
+  const nodes=(dendriteData.nodes||[]).map(d=>({...d}));
+  const links=(dendriteData.links||[]).map(d=>({...d}));
   const pos={};
   if(simulation.nodes){simulation.nodes().forEach(n=>{pos[n.id]={x:n.x,y:n.y}})}
   nodes.forEach(n=>{if(pos[n.id]){n.x=pos[n.id].x;n.y=pos[n.id].y}});

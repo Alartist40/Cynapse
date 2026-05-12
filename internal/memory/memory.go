@@ -107,7 +107,7 @@ func (p *Persona) seedFromMarkdownFiles() {
 }
 
 // Graph exposes the DENDRITE memory graph (used by API server).
-func (p *Persona) Graph() *Dendrite { return p.graph }
+func (p *Persona) Dendrite() *Dendrite { return p.graph }
 
 // Store exposes the graph store (used by API server).
 func (p *Persona) Store() *DendriteStore { return p.store }
