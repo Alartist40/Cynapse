@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-beta] - 2026-05-12
+
+### Added
+- **Architectural**: **DENDRITE** Graph Memory system (Neurons, Branches, Connections).
+- **Feature**: Interactive Visual Explorer for knowledge nodes (D3.js).
+- **Feature**: Offline support for visual explorer (embedded D3.js).
+- **Feature**: Intelligent context assembly with relevance scoring and recency boost.
+- **Feature**: Full-text search (FTS5) for long-term memory.
+- **Core**: Thread-safe memory core with concurrent stress testing.
+- **TUI**: DENDRITE integration in command menu and help.
+
+### Changed
+- **Memory**: Replaced flat-file memory with SQLite-backed graph nodes.
+- **Build**: Added mandatory `sqlite_fts5` build tag requirement.
+
+### Fixed
+- **Performance**: Optimized backlink wiring with placeholder neuron strategy (O(1)).
+- **Safety**: Fixed race conditions in prompt assembly and cache invalidation.
+
 ## [1.0.0] - 2026-05-08
 
 ### Added

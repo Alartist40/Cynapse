@@ -96,6 +96,23 @@ CYNAPSE uses a modular synapse system - install only what you need:
 
 ---
 
+## 🧠 DENDRITE Memory System
+
+CYNAPSE uses **DENDRITE**, a neural-inspired graph memory system. Knowledge is stored as interconnected nodes (neurons) rather than flat files.
+
+- **Interconnected Knowledge**: Uses `[[wiki-links]]` to create relationships between concepts.
+- **Bi-directional Discovery**: Backlinks are maintained automatically for every link.
+- **Neural Context**: The agent intelligently scores and retrieves relevant nodes based on conversation context.
+- **Visual Explorer**: Interactive D3.js graph visualization (works 100% offline).
+- **Search**: Full-text search powered by SQLite FTS5.
+
+### Graph Nodes (Neurons)
+When you reference a node that doesn't exist yet (e.g., `[[future-node]]`), DENDRITE creates a "placeholder" to hold the backlink. This is then "upgraded" to a full node when you create it. This ensures connections are never lost, even if nodes are created out of order.
+
+> **Best Practice:** Create nodes before linking them to ensure all metadata is persisted immediately.
+
+---
+
 ## 🏗️ Architecture
 
 ```
