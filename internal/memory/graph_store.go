@@ -8,26 +8,26 @@ import (
     _ "github.com/mattn/go-sqlite3"
 )
 
-// GraphStore persists KnowledgeGraph nodes to SQLite.
-type GraphStore struct {
+// DendriteStore persists Dendrite nodes to SQLite.
+type DendriteStore struct {
     db *sql.DB
 }
 
-func NewGraphStore(dbPath string) (*GraphStore, error) {
+func NewDendriteStore(dbPath string) (*DendriteStore, error) {
     db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_busy_timeout=5000")
     if err != nil {
         return nil, fmt.Errorf("open graph db: %w", err)
     }
     db.SetMaxOpenConns(1) // SQLite is single-writer
 
-    gs := &GraphStore{db: db}
+    gs := &DendriteStore{db: db}
     if err := gs.migrate(); err != nil {
         return nil, fmt.Errorf("graph db migrate: %w", err)
     }
     return gs, nil
 }
 
-func (gs *GraphStore) migrate() error {
+func (gs *DendriteStore) migrate() error {
     _, err := gs.db.Exec(`
     CREATE TABLE IF NOT EXISTS graph_nodes (
         id         TEXT PRIMARY KEY,
@@ -77,7 +77,7 @@ func (gs *GraphStore) migrate() error {
 }
 
 // Save upserts a node into SQLite.
-func (gs *GraphStore) Save(n *Node) error {
+func (gs *DendriteStore) Save(n *Node) error {
     tags, _ := json.Marshal(n.Tags)
     links, _ := json.Marshal(n.Links)
     backlinks, _ := json.Marshal(n.Backlinks)
@@ -103,14 +103,14 @@ func (gs *GraphStore) Save(n *Node) error {
 }
 
 // Delete removes a node from SQLite.
-func (gs *GraphStore) Delete(id string) error {
+func (gs *DendriteStore) Delete(id string) error {
     _, err := gs.db.Exec(`DELETE FROM graph_nodes WHERE id = ?`, id)
     return err
 }
 
 // LoadAll hydrates all stored nodes directly into the graph's node map.
 // Call this once at startup before serving any requests.
-func (gs *GraphStore) LoadAll(kg *KnowledgeGraph) error {
+func (gs *DendriteStore) LoadAll(kg *Dendrite) error {
     rows, err := gs.db.Query(`
         SELECT id, title, content, type, tags, links, backlinks, created_at, updated_at
         FROM graph_nodes
@@ -149,7 +149,7 @@ func (gs *GraphStore) LoadAll(kg *KnowledgeGraph) error {
 }
 
 // FTSSearch performs a full-text search and returns matching node IDs.
-func (gs *GraphStore) FTSSearch(query string, limit int) ([]string, error) {
+func (gs *DendriteStore) FTSSearch(query string, limit int) ([]string, error) {
     if limit <= 0 {
         limit = 10
     }
@@ -175,6 +175,6 @@ func (gs *GraphStore) FTSSearch(query string, limit int) ([]string, error) {
     return ids, rows.Err()
 }
 
-func (gs *GraphStore) Close() error {
+func (gs *DendriteStore) Close() error {
     return gs.db.Close()
 }

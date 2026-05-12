@@ -69,7 +69,7 @@ func (a *Agent) TriggerHeartbeat(ctx context.Context) error {
 	return a.curator.RunMaintenance(ctx)
 }
 
-// StartGraphServer starts the knowledge graph web UI server.
+// StartGraphServer starts the DENDRITE memory graph web UI server.
 // Safe to call multiple times — reuses the existing server.
 func (a *Agent) StartGraphServer(ctx context.Context) (string, error) {
 	if graphAPIServer != nil {

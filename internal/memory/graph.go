@@ -34,8 +34,8 @@ type Node struct {
     UpdatedAt int64    `json:"updated_at"`
 }
 
-// KnowledgeGraph is the in-memory graph. All operations are thread-safe.
-type KnowledgeGraph struct {
+// Dendrite is the in-memory graph. All operations are thread-safe.
+type Dendrite struct {
     nodes       map[string]*Node
     mu          sync.RWMutex
     linkPattern *regexp.Regexp
@@ -43,8 +43,8 @@ type KnowledgeGraph struct {
     onChange    []func()
 }
 
-func NewKnowledgeGraph() *KnowledgeGraph {
-    return &KnowledgeGraph{
+func NewDendrite() *Dendrite {
+    return &Dendrite{
         nodes:       make(map[string]*Node),
         linkPattern: regexp.MustCompile(`\[\[([^\]|]+)(?:\|[^\]]+)?\]\]`),
         tagPattern:  regexp.MustCompile(`#([A-Za-z0-9_-]+)`),
@@ -52,21 +52,21 @@ func NewKnowledgeGraph() *KnowledgeGraph {
 }
 
 // OnChange registers a callback invoked on every mutation.
-// Used by ContextBuilder to invalidate the prompt cache.
-func (kg *KnowledgeGraph) OnChange(fn func()) {
+// Used by DendriteContext to invalidate the prompt cache.
+func (kg *Dendrite) OnChange(fn func()) {
     kg.mu.Lock()
     defer kg.mu.Unlock()
     kg.onChange = append(kg.onChange, fn)
 }
 
-func (kg *KnowledgeGraph) notify() {
+func (kg *Dendrite) notify() {
     for _, fn := range kg.onChange {
         go fn()
     }
 }
 
 // Upsert creates or fully replaces a node and re-wires all backlinks.
-func (kg *KnowledgeGraph) Upsert(id, title, content string, nodeType NodeType, tags []string) *Node {
+func (kg *Dendrite) Upsert(id, title, content string, nodeType NodeType, tags []string) *Node {
     kg.mu.Lock()
     defer kg.mu.Unlock()
 
@@ -112,7 +112,7 @@ func (kg *KnowledgeGraph) Upsert(id, title, content string, nodeType NodeType, t
 }
 
 // Delete removes a node and cleans up all references in the graph.
-func (kg *KnowledgeGraph) Delete(id string) bool {
+func (kg *Dendrite) Delete(id string) bool {
     kg.mu.Lock()
     defer kg.mu.Unlock()
 
@@ -137,7 +137,7 @@ func (kg *KnowledgeGraph) Delete(id string) bool {
 }
 
 // Get returns a node by ID. Returns nil, false if not found.
-func (kg *KnowledgeGraph) Get(id string) (*Node, bool) {
+func (kg *Dendrite) Get(id string) (*Node, bool) {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
     n, ok := kg.nodes[id]
@@ -145,7 +145,7 @@ func (kg *KnowledgeGraph) Get(id string) (*Node, bool) {
 }
 
 // All returns every node sorted by UpdatedAt descending.
-func (kg *KnowledgeGraph) All() []*Node {
+func (kg *Dendrite) All() []*Node {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
 
@@ -160,7 +160,7 @@ func (kg *KnowledgeGraph) All() []*Node {
 }
 
 // Neighbors returns the 1-hop neighborhood of a node (links + backlinks combined).
-func (kg *KnowledgeGraph) Neighbors(id string) []*Node {
+func (kg *Dendrite) Neighbors(id string) []*Node {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
 
@@ -192,7 +192,7 @@ func (kg *KnowledgeGraph) Neighbors(id string) []*Node {
 }
 
 // Search returns nodes whose title, content, or tags contain the query string.
-func (kg *KnowledgeGraph) Search(query string) []*Node {
+func (kg *Dendrite) Search(query string) []*Node {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
 
@@ -213,7 +213,7 @@ func (kg *KnowledgeGraph) Search(query string) []*Node {
 }
 
 // ByTag returns all nodes that carry a specific tag.
-func (kg *KnowledgeGraph) ByTag(tag string) []*Node {
+func (kg *Dendrite) ByTag(tag string) []*Node {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
 
@@ -227,7 +227,7 @@ func (kg *KnowledgeGraph) ByTag(tag string) []*Node {
 }
 
 // Len returns the total number of nodes.
-func (kg *KnowledgeGraph) Len() int {
+func (kg *Dendrite) Len() int {
     kg.mu.RLock()
     defer kg.mu.RUnlock()
     return len(kg.nodes)
@@ -235,7 +235,7 @@ func (kg *KnowledgeGraph) Len() int {
 
 // ── Internal parsing helpers ──────────────────────────────────────────────────
 
-func (kg *KnowledgeGraph) parseLinks(content string) []string {
+func (kg *Dendrite) parseLinks(content string) []string {
     matches := kg.linkPattern.FindAllStringSubmatch(content, -1)
     seen := map[string]bool{}
     var links []string
@@ -251,7 +251,7 @@ func (kg *KnowledgeGraph) parseLinks(content string) []string {
     return links
 }
 
-func (kg *KnowledgeGraph) parseTags(content string) []string {
+func (kg *Dendrite) parseTags(content string) []string {
     matches := kg.tagPattern.FindAllStringSubmatch(content, -1)
     seen := map[string]bool{}
     var tags []string

@@ -171,7 +171,7 @@ func buildMenu() []menuItem {
 	return []menuItem{
 		{"Status", cmdStatus},
 		{"Models", cmdModels},
-		{"Memory", cmdMemory},
+		{"DENDRITE", cmdMemory},
 		{"Heartbeat", cmdHeartbeat},
 		{"Clear", cmdClear},
 		{"Help", cmdHelp},
@@ -233,11 +233,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case graphServerMsg:
 		m.graphStarting = false
 		if msg.err != nil {
-			m.addSystemMsg("✗ Memory graph failed: " + msg.err.Error())
+			m.addSystemMsg("✗ DENDRITE failed: " + msg.err.Error())
 			return m, nil
 		}
 		m.graphServerURL = msg.url
-		m.addSystemMsg("◆ Memory graph → " + msg.url)
+		m.addSystemMsg("◆ DENDRITE active → " + msg.url)
 		openBrowser(msg.url)
 		return m, nil
 	}
@@ -666,18 +666,18 @@ func cmdMemory(m *Model) tea.Cmd {
 	m.input = ""
 
 	if m.graphServerURL != "" {
-		m.addSystemMsg("◆ Memory graph → " + m.graphServerURL)
+		m.addSystemMsg("◆ DENDRITE active → " + m.graphServerURL)
 		openBrowser(m.graphServerURL)
 		return nil
 	}
 
 	if m.graphStarting {
-		m.addSystemMsg("● Memory graph is already starting...")
+		m.addSystemMsg("● DENDRITE is already starting...")
 		return nil
 	}
 
 	m.graphStarting = true
-	m.addSystemMsg("● Starting memory graph server...")
+	m.addSystemMsg("● Starting DENDRITE memory system (Neurons, Branches, Connections)...")
 
 	return func() tea.Msg {
 		url, err := m.agent.StartGraphServer(context.Background())
@@ -718,7 +718,7 @@ func cmdHelp(m *Model) tea.Cmd {
   Ctrl+K      Open command menu
   Status      System status
   Models      Switch Ollama models
-  Memory      View memory info
+  DENDRITE       Launch graph explorer
   Heartbeat   Run memory curator
   Clear       Reset to idle screen
   Quit        Exit

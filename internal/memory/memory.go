@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -26,9 +25,9 @@ type Persona struct {
 	mu           sync.RWMutex
 
 	// NEW: graph-based memory
-	graph          *KnowledgeGraph
-	store          *GraphStore
-	contextBuilder *ContextBuilder
+	graph          *Dendrite
+	store          *DendriteStore
+	contextBuilder *DendriteContext
 }
 
 func NewPersona(deviceID, basePath, defaultsPath, dbPath string) (*Persona, error) {
@@ -40,9 +39,9 @@ func NewPersona(deviceID, basePath, defaultsPath, dbPath string) (*Persona, erro
 	os.MkdirAll(filepath.Join(path, "logs", "heartbeat"), 0755)
 	os.MkdirAll(filepath.Join(path, "skills"), 0755)
 
-	graph := NewKnowledgeGraph()
+	graph := NewDendrite()
 
-	store, err := NewGraphStore(dbPath)
+	store, err := NewDendriteStore(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("graph store: %w", err)
 	}
@@ -58,7 +57,7 @@ func NewPersona(deviceID, basePath, defaultsPath, dbPath string) (*Persona, erro
 		defaultsPath:   defaultsPath,
 		graph:          graph,
 		store:          store,
-		contextBuilder: NewContextBuilder(graph, store),
+		contextBuilder: NewDendriteContext(graph, store),
 	}
 
 	// If graph is empty, seed from default markdown files
@@ -107,11 +106,11 @@ func (p *Persona) seedFromMarkdownFiles() {
 	log.Printf("[PERSONA] seeded %d nodes from markdown defaults", len(seed))
 }
 
-// Graph exposes the knowledge graph (used by API server).
-func (p *Persona) Graph() *KnowledgeGraph { return p.graph }
+// Graph exposes the DENDRITE memory graph (used by API server).
+func (p *Persona) Graph() *Dendrite { return p.graph }
 
 // Store exposes the graph store (used by API server).
-func (p *Persona) Store() *GraphStore { return p.store }
+func (p *Persona) Store() *DendriteStore { return p.store }
 
 // CompileSystemPrompt replaces the old flat-file version.
 // Pass userMessage to get relevant context; pass "" for the general cached prompt.
@@ -177,6 +176,24 @@ func (p *Persona) AppendDailyLog(entry string) error {
 	ts := time.Now().Format("15:04:05")
 	_, err = f.WriteString(fmt.Sprintf("\n## %s\n%s\n", ts, entry))
 	return err
+}
+
+// ReadRecentLogs reads the daily log files from the last N days.
+func (p *Persona) ReadRecentLogs(days int) string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	var parts []string
+	for i := 0; i < days; i++ {
+		date := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+		path := filepath.Join(p.basePath, "logs", "daily", date+".md")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("## %s\n%s", date, string(data)))
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // Search performs a full-text search on the graph and returns a formatted string.

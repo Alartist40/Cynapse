@@ -13,16 +13,16 @@ import (
     "github.com/Alartist40/cynapse/internal/memory"
 )
 
-// Server exposes the knowledge graph over a local HTTP API
+// Server exposes the DENDRITE memory graph over a local HTTP API
 // and serves the embedded graph visualisation UI.
 type Server struct {
-    graph  *memory.KnowledgeGraph
-    store  *memory.GraphStore
+    graph  *memory.Dendrite
+    store  *memory.DendriteStore
     server *http.Server
     url    string
 }
 
-func NewServer(graph *memory.KnowledgeGraph, store *memory.GraphStore) *Server {
+func NewServer(graph *memory.Dendrite, store *memory.DendriteStore) *Server {
     return &Server{graph: graph, store: store}
 }
 

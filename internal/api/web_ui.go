@@ -7,7 +7,7 @@ const webUI = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CYNAPSE — Memory Graph</title>
+<title>CYNAPSE — DENDRITE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap');
@@ -116,8 +116,8 @@ const webUI = `<!DOCTYPE html>
 <div id="app">
   <aside id="sidebar">
     <div id="header">
-      <div id="logo">CYNAPSE <span>◆</span> MEMORY</div>
-      <div id="subtitle">KNOWLEDGE GRAPH EXPLORER</div>
+      <div id="logo">CYNAPSE <span>◆</span> DENDRITE</div>
+      <div id="subtitle">NEURONS, BRANCHES, CONNECTIONS</div>
     </div>
     <div id="search-wrap">
       <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">

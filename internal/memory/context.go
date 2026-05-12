@@ -14,10 +14,10 @@ const (
     contextNodeBudget = 0.60 // 60% for conversation-relevant nodes
 )
 
-// ContextBuilder assembles the LLM system prompt from graph nodes.
-type ContextBuilder struct {
-    graph *KnowledgeGraph
-    store *GraphStore
+// DendriteContext assembles the LLM system prompt from graph nodes.
+type DendriteContext struct {
+    graph *Dendrite
+    store *DendriteStore
 
     mu           sync.Mutex
     cachedPrompt string
@@ -26,8 +26,8 @@ type ContextBuilder struct {
     dirty        bool
 }
 
-func NewContextBuilder(graph *KnowledgeGraph, store *GraphStore) *ContextBuilder {
-    cb := &ContextBuilder{
+func NewDendriteContext(graph *Dendrite, store *DendriteStore) *DendriteContext {
+    cb := &DendriteContext{
         graph:    graph,
         store:    store,
         cacheTTL: 5 * time.Minute,
@@ -47,7 +47,7 @@ func NewContextBuilder(graph *KnowledgeGraph, store *GraphStore) *ContextBuilder
 // BuildPrompt returns the system prompt.
 // If userMessage is non-empty, it biases context toward relevant nodes.
 // Otherwise returns a cached general-purpose prompt.
-func (cb *ContextBuilder) BuildPrompt(userMessage string, maxTokens int) string {
+func (cb *DendriteContext) BuildPrompt(userMessage string, maxTokens int) string {
     if maxTokens <= 0 {
         maxTokens = defaultMaxTokens
     }
@@ -71,7 +71,7 @@ func (cb *ContextBuilder) BuildPrompt(userMessage string, maxTokens int) string 
     return prompt
 }
 
-func (cb *ContextBuilder) assemble(userMessage string, maxTokens int) string {
+func (cb *DendriteContext) assemble(userMessage string, maxTokens int) string {
     var parts []string
     used := 0
 
@@ -135,7 +135,7 @@ func (cb *ContextBuilder) assemble(userMessage string, maxTokens int) string {
     return strings.Join(parts, "\n\n---\n\n")
 }
 
-func (cb *ContextBuilder) findRelevant(userMessage string) []*Node {
+func (cb *DendriteContext) findRelevant(userMessage string) []*Node {
     seen := map[string]bool{}
     var out []*Node
 
@@ -172,7 +172,7 @@ type scoredNode struct {
     score float64
 }
 
-func (cb *ContextBuilder) score(nodes []*Node, query string) []scoredNode {
+func (cb *DendriteContext) score(nodes []*Node, query string) []scoredNode {
     q := strings.ToLower(query)
     now := time.Now().Unix()
 
