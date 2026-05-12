@@ -48,6 +48,9 @@ func NewDendriteContext(graph *Dendrite, store *DendriteStore) *DendriteContext 
 // If userMessage is non-empty, it biases context toward relevant nodes.
 // Otherwise returns a cached general-purpose prompt.
 func (cb *DendriteContext) BuildPrompt(userMessage string, maxTokens int) string {
+    cb.mu.Lock()
+    defer cb.mu.Unlock()
+
     if maxTokens <= 0 {
         maxTokens = defaultMaxTokens
     }
@@ -56,9 +59,6 @@ func (cb *DendriteContext) BuildPrompt(userMessage string, maxTokens int) string
     if strings.TrimSpace(userMessage) != "" {
         return cb.assemble(userMessage, maxTokens)
     }
-
-    cb.mu.Lock()
-    defer cb.mu.Unlock()
 
     if !cb.dirty && time.Since(cb.cachedAt) < cb.cacheTTL && cb.cachedPrompt != "" {
         return cb.cachedPrompt

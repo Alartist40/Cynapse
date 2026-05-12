@@ -100,22 +100,21 @@ func (kg *Dendrite) Upsert(id, title, content string, nodeType NodeType, tags []
 
     // Wire new backlinks
     for _, link := range links {
-        if target, ok := kg.nodes[link]; ok {
-            if !containsStr(target.Backlinks, id) {
-                target.Backlinks = append(target.Backlinks, id)
+        target, exists := kg.nodes[link]
+        if !exists {
+            // Create a placeholder node so the backlink has a home.
+            // It will be fully populated if/when it's eventually Upserted.
+            target = &Node{
+                ID:        link,
+                Title:     link,
+                Type:      NodeTypeCustom,
+                CreatedAt: now,
+                UpdatedAt: now,
             }
+            kg.nodes[link] = target
         }
-    }
-
-    // NEW: Search all other nodes to see if they link to this new node
-    for _, other := range kg.nodes {
-        if other.ID == id {
-            continue
-        }
-        if containsStr(other.Links, id) {
-            if !containsStr(node.Backlinks, other.ID) {
-                node.Backlinks = append(node.Backlinks, other.ID)
-            }
+        if !containsStr(target.Backlinks, id) {
+            target.Backlinks = append(target.Backlinks, id)
         }
     }
 

@@ -61,16 +61,14 @@ func (gs *DendriteStore) migrate() error {
 
     CREATE TRIGGER IF NOT EXISTS dendrite_nodes_au
     AFTER UPDATE ON dendrite_nodes BEGIN
-        INSERT INTO dendrite_fts(dendrite_fts, rowid, id, title, content, tags)
-        VALUES ('delete', old.rowid, old.id, old.title, old.content, old.tags);
+        DELETE FROM dendrite_fts WHERE id = old.id;
         INSERT INTO dendrite_fts(id, title, content, tags)
         VALUES (new.id, new.title, new.content, new.tags);
     END;
 
     CREATE TRIGGER IF NOT EXISTS dendrite_nodes_ad
     AFTER DELETE ON dendrite_nodes BEGIN
-        INSERT INTO dendrite_fts(dendrite_fts, rowid, id, title, content, tags)
-        VALUES ('delete', old.rowid, old.id, old.title, old.content, old.tags);
+        DELETE FROM dendrite_fts WHERE id = old.id;
     END;
     `)
     return err

@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -91,5 +92,35 @@ func TestDendrite_Neighbors(t *testing.T) {
 	neighbors = d.Neighbors("b")
 	if len(neighbors) != 2 { // a (backlink) and d (link)
 		t.Errorf("expected 2 neighbors for b, got %d", len(neighbors))
+	}
+}
+
+func TestDendrite_Concurrent(t *testing.T) {
+	d := NewDendrite()
+	done := make(chan bool, 50)
+
+	for i := 0; i < 50; i++ {
+		go func(i int) {
+			id := fmt.Sprintf("n%d", i)
+			target := fmt.Sprintf("n%d", (i+1)%50)
+			d.Upsert(id, fmt.Sprintf("Node %d", i), "Link to [[ "+target+" ]]", NodeTypeConcept, nil)
+			done <- true
+		}(i)
+	}
+
+	for i := 0; i < 50; i++ {
+		<-done
+	}
+
+	if d.Len() != 50 {
+		t.Fatalf("expected 50 nodes, got %d", d.Len())
+	}
+
+	// Verify all have backlinks
+	for i := 0; i < 50; i++ {
+		n, _ := d.Get(fmt.Sprintf("n%d", i))
+		if len(n.Backlinks) == 0 {
+			t.Errorf("node n%d has no backlinks", i)
+		}
 	}
 }
