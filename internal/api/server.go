@@ -47,6 +47,7 @@ func (s *Server) Start(ctx context.Context) (string, error) {
     mux.HandleFunc("/api/nodes/",     s.withCORS(s.handleNode))
     mux.HandleFunc("/api/search",     s.withCORS(s.handleSearch))
     mux.HandleFunc("/api/neighbors/", s.withCORS(s.handleNeighbors))
+    mux.HandleFunc("/d3.min.js",      s.handleD3)
     mux.HandleFunc("/",               s.handleUI)
 
     s.server = &http.Server{
@@ -246,6 +247,12 @@ func (s *Server) handleNeighbors(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "text/html; charset=utf-8")
     w.Write([]byte(webUI)) //nolint:errcheck
+}
+
+// GET /d3.min.js — serves the embedded D3.js library for offline support.
+func (s *Server) handleD3(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/javascript")
+    w.Write([]byte(d3JS)) //nolint:errcheck
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

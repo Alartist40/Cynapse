@@ -759,5 +759,7 @@ func openBrowser(url string) {
 	default:
 		return
 	}
-	cmd.Start() //nolint:errcheck
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("\n[DENDRITE] Failed to open browser: %v\n[DENDRITE] Please open manually: %s\n", err, url)
+	}
 }

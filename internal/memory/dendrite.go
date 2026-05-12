@@ -107,6 +107,18 @@ func (kg *Dendrite) Upsert(id, title, content string, nodeType NodeType, tags []
         }
     }
 
+    // NEW: Search all other nodes to see if they link to this new node
+    for _, other := range kg.nodes {
+        if other.ID == id {
+            continue
+        }
+        if containsStr(other.Links, id) {
+            if !containsStr(node.Backlinks, other.ID) {
+                node.Backlinks = append(node.Backlinks, other.ID)
+            }
+        }
+    }
+
     kg.notify()
     return node
 }
