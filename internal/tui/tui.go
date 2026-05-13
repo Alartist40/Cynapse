@@ -425,7 +425,10 @@ func (m Model) renderIdle() string {
 
 	prompt := promptStyle.Render("> ")
 	inputContent := m.input
-	if m.cursor < len(m.input) {
+	if len(m.input) == 0 {
+		placeholder := lipgloss.NewStyle().Foreground(dim).Render("Type a message or '/' for menu...")
+		inputContent = "█ " + placeholder
+	} else if m.cursor < len(m.input) {
 		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
 	} else {
 		inputContent += "█"
@@ -515,7 +518,10 @@ func (m Model) renderActive() string {
 
 	prompt := promptStyle.Render("> ")
 	inputContent := m.input
-	if m.cursor < len(m.input) {
+	if len(m.input) == 0 {
+		placeholder := lipgloss.NewStyle().Foreground(dim).Render("Type a message or '/' for menu...")
+		inputContent = "█ " + placeholder
+	} else if m.cursor < len(m.input) {
 		inputContent = m.input[:m.cursor] + "█" + m.input[m.cursor:]
 	} else {
 		inputContent += "█"
