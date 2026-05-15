@@ -1,0 +1,3 @@
+## 2024-05-18 - Missing semantic labels and ARIA attributes in Go template HTML
+**Learning:** Single-file HTML/JS/CSS blocks embedded within Go string constants (like in `internal/api/web_ui.go`) frequently lack foundational accessibility elements like semantic `<label for="...">` associated with inputs, and ARIA labels for icon-only buttons (`#detail-close`). Because there is no frontend build tool (like ESLint plugins for JSX/TSX), these common a11y issues slip through unnoticed.
+**Action:** Always manually check `<input>`/`<select>`/`<textarea>` elements for explicit `<label>` associations and icon buttons for `aria-label` when working with raw HTML strings in Go templates.
