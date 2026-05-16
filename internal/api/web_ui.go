@@ -32,6 +32,7 @@ const webUI = `<!DOCTYPE html>
   #search-wrap{padding:12px 16px;border-bottom:1px solid var(--border)}
   #search{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 10px;outline:none;transition:border-color .2s}
   #search:focus{border-color:var(--purple)}
+  :focus-visible{outline:2px solid var(--purple);outline-offset:2px}
   #search::placeholder{color:var(--text-dim)}
   #stats{display:flex;border-bottom:1px solid var(--border)}
   .stat{flex:1;text-align:center;padding:10px 0;border-right:1px solid var(--border)}
@@ -120,7 +121,7 @@ const webUI = `<!DOCTYPE html>
       <div id="subtitle">NEURONS, BRANCHES, CONNECTIONS</div>
     </div>
     <div id="search-wrap">
-      <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
+      <input id="search" type="text" placeholder="Search nodes..." aria-label="Search nodes" autocomplete="off">
     </div>
     <div id="stats">
       <div class="stat"><div class="stat-val" id="stat-nodes">0</div><div class="stat-lbl">Nodes</div></div>
@@ -153,7 +154,7 @@ const webUI = `<!DOCTYPE html>
     <div id="detail-header">
       <div class="node-type-dot" id="detail-type-dot"></div>
       <div id="detail-title">Node</div>
-      <button id="detail-close" onclick="closeDetail()">✕</button>
+      <button id="detail-close" aria-label="Close details" onclick="closeDetail()">✕</button>
     </div>
     <div id="detail-body">
       <div><div class="detail-label">Content</div><div id="detail-content"></div></div>

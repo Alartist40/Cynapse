@@ -1,0 +1,3 @@
+## 2024-05-16 - Add baseline accessibility missing in custom UI
+**Learning:** The custom UI in `internal/api/web_ui.go` lacked standard ARIA labels for an icon-only close button and an input with only placeholder text. It also lacked keyboard focus indicators for custom buttons (`:focus-visible`).
+**Action:** Always verify that input fields and icon-only buttons have accessible names, and ensure `:focus-visible` styling is included when custom UI resets are applied.
