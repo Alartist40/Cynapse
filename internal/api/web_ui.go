@@ -44,6 +44,7 @@ const webUI = `<!DOCTYPE html>
   .node-item{padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;display:flex;align-items:flex-start;gap:10px}
   .node-item:hover{background:var(--surface2)}
   .node-item.active{background:rgba(155,89,182,.12);border-left:2px solid var(--purple)}
+  .node-item:focus-visible{outline:2px solid var(--purple);outline-offset:-2px}
   .node-type-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
   .node-item-content{flex:1;min-width:0}
   .node-item-title{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text-bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -68,6 +69,7 @@ const webUI = `<!DOCTYPE html>
   #detail-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
   #detail-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:18px;line-height:1;margin-left:auto;transition:color .15s}
   #detail-close:hover{color:var(--text-bright)}
+  #detail-close:focus-visible{outline:2px solid var(--purple);outline-offset:2px;border-radius:2px}
   #detail-title{font-family:var(--sans);font-size:16px;font-weight:800;color:var(--text-bright)}
   #detail-body{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:16px}
   #detail-body::-webkit-scrollbar{width:3px}
@@ -79,6 +81,7 @@ const webUI = `<!DOCTYPE html>
   .link-list{display:flex;flex-direction:column;gap:4px}
   .link-item{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-size:11px;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:8px;transition:border-color .15s}
   .link-item:hover{border-color:var(--purple);color:var(--text-bright)}
+  .link-item:focus-visible{outline:2px solid var(--purple);outline-offset:-2px}
   .link-arrow{color:var(--text-dim);font-size:10px}
 
   /* Edit form */
@@ -120,7 +123,7 @@ const webUI = `<!DOCTYPE html>
       <div id="subtitle">NEURONS, BRANCHES, CONNECTIONS</div>
     </div>
     <div id="search-wrap">
-      <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
+      <input id="search" type="text" placeholder="Search nodes..." autocomplete="off" aria-label="Search nodes">
     </div>
     <div id="stats">
       <div class="stat"><div class="stat-val" id="stat-nodes">0</div><div class="stat-lbl">Nodes</div></div>
@@ -153,7 +156,7 @@ const webUI = `<!DOCTYPE html>
     <div id="detail-header">
       <div class="node-type-dot" id="detail-type-dot"></div>
       <div id="detail-title">Node</div>
-      <button id="detail-close" onclick="closeDetail()">✕</button>
+      <button id="detail-close" onclick="closeDetail()" aria-label="Close detail panel">✕</button>
     </div>
     <div id="detail-body">
       <div><div class="detail-label">Content</div><div id="detail-content"></div></div>
@@ -216,7 +219,7 @@ function updateStats(){
 function renderNodeList(nodes){
   const list=document.getElementById('node-list');list.innerHTML='';
   (nodes||[]).forEach(n=>{
-    const item=document.createElement('div');item.className='node-item'+(selected&&selected.id===n.id?' active':'');item.dataset.id=n.id;item.onclick=()=>selectNode(n.id);
+    const item=document.createElement('div');item.className='node-item'+(selected&&selected.id===n.id?' active':'');item.dataset.id=n.id;item.onclick=()=>selectNode(n.id);item.setAttribute('role','button');item.tabIndex=0;item.onkeydown=(e)=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectNode(n.id)}};
     const dot=document.createElement('div');dot.className='node-type-dot';dot.style.background=typeColor(n.type);
     const content=document.createElement('div');content.className='node-item-content';
     const title=document.createElement('div');title.className='node-item-title';title.textContent=n.title||n.id;
@@ -336,7 +339,7 @@ function renderLinkList(cid,ids,arrow){
   const el=document.getElementById(cid);el.innerHTML='';
   ids.forEach(id=>{
     const node=allNodes.find(n=>n.id===id);
-    const item=document.createElement('div');item.className='link-item';item.onclick=()=>selectNode(id);
+    const item=document.createElement('div');item.className='link-item';item.onclick=()=>selectNode(id);item.setAttribute('role','button');item.tabIndex=0;item.onkeydown=(e)=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectNode(id)}};
     const dot=document.createElement('div');dot.className='node-type-dot';dot.style.background=typeColor(node?node.type:'custom');
     const ar=document.createElement('span');ar.className='link-arrow';ar.textContent=arrow;
     const label=document.createElement('span');label.textContent=node?node.title:id;
