@@ -1,48 +1,68 @@
-# 🧠 CYNAPSE - Ghost Shell AI Agent
-**Modular AI Agent System for the Terminal**
+# 🧠 CYNAPSE — The AI Agent Motherboard
 
-![image alt](https://github.com/Alartist40/cynapse/blob/220feb4385532a92959e9d007420234429926c95/cynapse_logo_dark.png)
+**Your terminal. Your models. Your plugins. One brain.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org)
+[![Tests](https://img.shields.io/badge/tests-13%2F13%20pass-brightgreen)](internal/memory/dendrite_integration_test.go)
 
-CYNAPSE is a modular AI agent that runs entirely in your terminal. Built with Go and Bubble Tea, it combines the power of multiple LLM providers with a beautiful TUI interface and extensible synapse (plugin) system.
+> *"Like a motherboard connects components, Cynapse connects AI tools into a single, persistent intelligence."*
 
-**Philosophy:** Like Arch Linux for AI - install only what you need, control everything, no bloat.
+Cynapse is a **modular, terminal-first AI agent** built in Go. It doesn't try to be everything — it connects everything. Install the core once, then snap on **synapses** (plugins) like LEGO pieces: local LLM inference, git tools, web automation, benchmarking, or build your own.
+
+**Why Cynapse?**
+- 🧩 **LEGO-piece architecture** — install only what you need
+- 🧠 **Persistent memory** — DENDRITE graph memory survives API changes, model switches, even reinstalls
+- ⚡ **Streaming everywhere** — watch text appear word-by-word (Ollama, OpenAI, Anthropic)
+- 🖥️ **Terminal-native** — runs on a Raspberry Pi 5, a gaming rig, or over SSH
+- 🔌 **MCP-native** — every synapse speaks the Model Context Protocol
 
 ---
 
-## ⚡ Quick Install
+## ⚡ One-Line Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/install.sh | bash
 ```
 
-That's it! The installer will:
-- Auto-detect your OS and architecture
-- Install Go and dependencies if needed
-- Build CYNAPSE
-- Set up ~/.cynapse/ directory
-- Add `cynapse` to your PATH
+That's it. The installer handles Go, dependencies, build, and PATH setup automatically.
+
+**What happens:**
+1. Detects your OS/arch (Linux, macOS, Windows / x86_64, ARM64, ARMv7)
+2. Installs Go if missing
+3. Installs system dependencies (`build-essential`, `sqlite3`, etc.)
+4. Clones and builds Cynapse
+5. Creates `~/.cynapse/` home directory
+6. Adds `cynapse` to your PATH
+
+**Then just run:**
+```bash
+cynapse
+```
 
 ---
 
 ## 🚀 Usage
 
-### Run Interactive Chat
+### Interactive Chat (Default)
 
 ```bash
 cynapse
 ```
 
-### Manage Synapses (Extensions)
+A beautiful purple & orange TUI appears. Type naturally. Press **Ctrl+K** for the command menu.
+
+### Manage Synapses (Plugins)
 
 ```bash
 # List installed synapses
 cynapse synapse list
 
-# Install a synapse
-cynapse synapse add leafcutter
+# Install from a local binary
+cynapse synapse add leafcutter --path ./leafcutter
+
+# Install from a URL (with optional SHA-256 verification)
+cynapse synapse add speedtest --url https://example.com/speedtest --hash abc123...
 
 # Remove a synapse
 cynapse synapse remove git-tools
@@ -54,9 +74,6 @@ cynapse synapse search inference
 ### Configuration
 
 ```bash
-# Show config location
-cynapse config
-
 # Create default config
 cynapse config init
 
@@ -64,83 +81,142 @@ cynapse config init
 nano ~/.cynapse/config.yaml
 ```
 
+**Example `~/.cynapse/config.yaml`:**
+```yaml
+llm:
+  provider: "ollama"              # ollama | anthropic | openai | gemini
+  model: "qwen2.5:7b"
+  ollama_base_url: "http://localhost:11434"
+  max_tokens: 4096
+  temperature: 0.7
+
+memory:
+  persona_path: "~/.cynapse/data/persona"
+  sessions_path: "~/.cynapse/data/sessions"
+  dendrite_db_path: "~/.cynapse/data/dendrite.db"
+
+mcp:
+  enabled: true
+  servers: []
+
+tools:
+  profile: "standard"             # minimal | standard | full
+  work_dir: "./workspace"
+```
+
 ---
 
-## 📦 Synapses (Optional Extensions)
+## 📦 Synapses — LEGO Pieces for Your Agent
 
-CYNAPSE uses a modular synapse system - install only what you need:
+Synapses are discovered as executables in `~/.cynapse/synapses/` that respond to `--meta` with JSON metadata. Install them from local binaries, remote URLs, or build your own.
 
-| Synapse | Description | Install |
+| Synapse | What It Does | Install |
 |---------|-------------|---------|
-| **leafcutter** | CPU-optimized LLM inference engine | `cynapse synapse add leafcutter` |
-| **git-tools** | Repository management and analysis | `cynapse synapse add git-tools` |
-| **web-automation** | Browser control and scraping | `cynapse synapse add web-automation` |
-| **speedtest** | LLM benchmarking and metrics | `cynapse synapse add speedtest` |
+| **leafcutter** | CPU-optimized local LLM inference (70B on 4GB via quantization) | `cynapse synapse add leafcutter --path <binary>` |
+| **git-tools** | Repository management, commit analysis, history search | `cynapse synapse add git-tools --path <binary>` |
+| **web-automation** | Browser control, screenshots, web scraping | `cynapse synapse add web-automation --path <binary>` |
+| **speedtest** | LLM benchmarking and performance metrics | `cynapse synapse add speedtest --path <binary>` |
 
-> **Like biological synapses:** Each extension creates new neural connections, expanding capabilities without bloating the core.
-
----
-
-## 🎨 Features
-
-- ✅ **Beautiful TUI** - Purple & orange themed terminal interface
-- ✅ **Streaming Responses** - See text appear word-by-word
-- ✅ **Multi-LLM Support** - Ollama, Anthropic, OpenAI, Gemini
-- ✅ **Model Switching** - Change models on the fly with `/` menu
-- ✅ **Memory System** - Persona-driven memory with SQLite storage
-- ✅ **MCP Integration** - Model Context Protocol for tool calling
-- ✅ **Modular Synapses** - Extend functionality with plugins
-- ✅ **Request Cancellation** - Cancel long-running requests
-- ✅ **Session Management** - JSONL conversation logs
-- ✅ **Cross-platform** - Linux, macOS, Windows
+> **Building your own?** Any executable that prints JSON when called with `--meta` is a synapse. That's the entire protocol.
 
 ---
 
-## 🧠 DENDRITE Memory System
+## 🧠 DENDRITE — Graph Memory That Thinks in Connections
 
-CYNAPSE uses **DENDRITE**, a neural-inspired graph memory system. Knowledge is stored as interconnected nodes (neurons) rather than flat files.
+Cynapse doesn't store memory in flat files. It stores it in **DENDRITE**, a neural-inspired knowledge graph where every concept is a node and every relationship is a wire.
 
-- **Interconnected Knowledge**: Uses `[[wiki-links]]` to create relationships between concepts.
-- **Bi-directional Discovery**: Backlinks are maintained automatically for every link.
-- **Neural Context**: The agent intelligently scores and retrieves relevant nodes based on conversation context.
-- **Visual Explorer**: Interactive D3.js graph visualization (works 100% offline).
-- **Search**: Full-text search powered by SQLite FTS5.
+```
+[User Profile] ←────→ [Project: Leafcutter]
+      ↓                     ↓
+[Preferences] ←────→ [Quantization]
+      ↓
+[Fact: prefers dark mode]
+```
 
-### Graph Nodes (Neurons)
-When you reference a node that doesn't exist yet (e.g., `[[future-node]]`), DENDRITE creates a "placeholder" to hold the backlink. This is then "upgraded" to a full node when you create it. This ensures connections are never lost, even if nodes are created out of order.
+### How It Works
+- **Write `[[wiki-links]]`** in any node content — backlinks auto-wire themselves
+- **Missing nodes become placeholders** — create them later, connections are never lost
+- **Relevance scoring** — title match (+15), content frequency (+2), recency (+5), connectivity (+0.3 per link)
+- **Multi-hop traversal** — 1-hop, 2-hop, or 3-hop BFS for rich context retrieval
+- **Token budgeting** — 40% of the prompt budget for core identity, 60% for conversation-relevant context
+- **Self-improving** — heartbeat curator asks the LLM to consolidate daily logs into long-term memory
 
-> **Best Practice:** Create nodes before linking them to ensure all metadata is persisted immediately.
+### Persistence
+- **SQLite + WAL mode** — fast, reliable, single-file
+- **FTS5 full-text search** — with graceful fallback to `LIKE` queries on minimal systems
+- **Fact deduplication** — identical facts merge instead of creating duplicate nodes
+- **Cross-platform** — works on systems without the FTS5 extension (Pi Zero, embedded Linux)
+
+### Visual Explorer
+Press **DENDRITE** in the TUI menu (Ctrl+K → DENDRITE) to launch an interactive D3.js graph visualization. Works 100% offline.
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-CYNAPSE Core (Your Brain)
-├─ TUI Interface
-├─ Agent System
-├─ Memory & Persona
-└─ MCP Manager
-    └─ Synapses (Load on demand)
-        ├─ LeafcutterLLM
-        ├─ GitTools  
-        ├─ WebAutomation
-        └─ Your custom extensions...
+┌─────────────────────────────────────────────────────────┐
+│                    CYNAPSE CORE                         │
+│  ┌─────────┐  ┌─────────┐  ┌─────────────────────┐    │
+│  │   TUI   │  │  Agent  │  │  DENDRITE Memory    │    │
+│  │(Bubble  │  │ (Tool   │  │  - Graph nodes      │    │
+│  │  Tea)   │  │  Loop)  │  │  - SQLite store     │    │
+│  └────┬────┘  └────┬────┘  │  - Context builder  │    │
+│       │            │       └─────────────────────┘    │
+│       └────────────┘                                   │
+│                        ┌──────────────┐                │
+│                        │ MCP Manager  │                │
+│                        │ (Tool Router)│                │
+│                        └──────┬───────┘                │
+└───────────────────────────────┼────────────────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        │                       │                       │
+   ┌────┴────┐           ┌─────┴─────┐          ┌─────┴─────┐
+   │Synapses │           │  Local    │          │  Remote   │
+   │(Plugins)│           │  Tools    │          │  APIs     │
+   └────┬────┘           │(file I/O, │          │(Ollama,   │
+        │                │ shell,    │          │ OpenAI,   │
+   ┌────┴────┐           │ search)   │          │ Anthropic)│
+   │leafcutter│           └───────────┘          └───────────┘
+   │git-tools │
+   │web-auto  │
+   └─────────┘
 ```
 
 ---
 
-## 💻 Manual Installation (Advanced)
+## ✨ What's New
 
-If you prefer to build manually:
+### v2.1.0 (Latest)
+- ✅ **OpenAI & Anthropic streaming** — SSE-based with tool-call reconstruction
+- ✅ **Synapse local-path installation** — `cynapse synapse add <name> --path <binary>`
+- ✅ **Synapse manifest system** — `synapses.json` caches metadata, no need to execute binaries on startup
+- ✅ **Synapse URL download** — install from remote URLs with SHA-256 verification
+- ✅ **DENDRITE multi-hop traversal** — 2-hop and 3-hop neighborhood queries
+- ✅ **DENDRITE fact deduplication** — identical memories merge instead of duplicating
+- ✅ **DENDRITE FTS5 fallback** — works on systems without the FTS5 SQLite extension
+- ✅ **Relevance engine overhaul** — FTS5 + word-by-word search + stop-word filtering
+- ✅ **13 integration tests** — full lifecycle, persistence, traversal, deduplication
+
+### v2.0.0-beta
+- Multi-LLM support (Ollama, Anthropic, OpenAI, Gemini)
+- MCP integration
+- TUI with Bubble Tea
+- Session management
+- Heartbeat curator
+
+---
+
+## 🛠️ Manual Build
 
 ```bash
-# Clone repository
+# Clone
 git clone https://github.com/Alartist40/cynapse.git
 cd cynapse
 
-# Install dependencies (Linux/Debian)
-sudo apt-get install build-essential pkg-config libopenblas-dev libsqlite3-dev
+# Install dependencies (Debian/Ubuntu)
+sudo apt-get install build-essential pkg-config libsqlite3-dev
 
 # Build
 go build -o cynapse ./cmd/cynapse
@@ -158,121 +234,77 @@ cynapse
 
 ---
 
-## 🔧 Configuration
-
-CYNAPSE uses `~/.cynapse/config.yaml`:
-
-```yaml
-# LLM Provider
-llm:
-  provider: "ollama"              # ollama | anthropic | openai | gemini
-  model: "qwen3.5:9b"
-  ollama_base_url: "http://localhost:11434"
-  max_tokens: 4096
-  temperature: 0.7
-
-# Memory System
-memory:
-  persona_path: "~/.cynapse/data/persona"
-  sessions_path: "~/.cynapse/data/sessions"
-  db_path: "~/.cynapse/data/memory.db"
-
-# MCP Servers (auto-loaded from synapses)
-mcp:
-  enabled: true
-  servers: []
-
-# Tools
-tools:
-  profile: "standard"             # minimal | standard | full
-  work_dir: "./workspace"
-```
-
----
-
-## 🎯 Building Your Own Synapse
-
-Want to build custom extensions? Use the synapse template:
+## 🧪 Testing
 
 ```bash
-# Clone template
-git clone https://github.com/Alartist40/cynapse-synapse-template my-synapse
-cd my-synapse
+# Run all tests
+go test ./...
 
-# Implement your tools in internal/tools.go
-# Update synapse.yaml with metadata
+# Run memory tests with verbosity
+go test ./internal/memory/... -v
 
-# Build
-go build -o my-synapse ./cmd/synapse
-
-# Test
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | ./my-synapse
-
-# Users can install with:
-# cynapse synapse add my-synapse
+# Build check
+go build ./...
 ```
 
-See [Synapse Development Guide](docs/SYNAPSE_DEVELOPMENT.md) for details.
+**Current test status:** `13/13 passing` in the memory package.
 
 ---
 
-## 📊 System Requirements
+## 🖥️ System Requirements
 
-**Minimum:**
-- Go 1.22+ (auto-installed by installer)
-- 2GB RAM
-- 500MB disk space
+| | Minimum | Recommended |
+|--|---------|-------------|
+| **RAM** | 2GB | 4GB+ |
+| **Disk** | 500MB | 2GB+ |
+| **Go** | 1.22+ | 1.22+ |
+| **OS** | Linux, macOS, Windows | Linux x86_64/ARM64 |
 
-**Recommended:**
-- 4GB+ RAM (for larger models)
-- 8GB+ RAM (for LeafcutterLLM with 7B models)
+**Tested on:**
+- Raspberry Pi 5 (8GB) — primary target platform
+- Ubuntu 22.04+ / Debian 12+
+- macOS Ventura+ (Intel & Apple Silicon)
+- Windows 10/11 (WSL2 recommended)
 
-**Supported Platforms:**
-- Linux (x86_64, arm64, armv7)
-- macOS (x86_64, arm64)
-- Windows (x86_64)
+---
 
-**Tested On:**
-- Raspberry Pi 5 (8GB)
-- Raspberry Pi Zero 2W
-- Ubuntu 22.04+
-- macOS Ventura+
-- Windows 10/11
+## 🔮 Roadmap
+
+- [ ] Gemini streaming support
+- [ ] Cynapse ↔ Leafcutter runtime bridge (use Leafcutter as LLM backend)
+- [ ] Remote synapse registry (download synapses without `--path`)
+- [ ] Semantic search in DENDRITE (vector embeddings)
+- [ ] Voice synapse (STT + TTS)
+- [ ] Multi-agent federation
 
 ---
 
 ## 🤝 Contributing
 
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions welcome! See [handoff-cynapse.md](handoff-cynapse.md) for current state and context.
 
-**Areas to contribute:**
+**Priority areas:**
 - New synapse development
 - LLM provider integrations
-- Documentation improvements
-- Bug fixes and performance optimizations
+- DENDRITE graph algorithms
+- Cross-platform testing
 
 ---
 
 ## 📜 License
 
-MIT License - see [LICENSE](LICENSE) file.
+MIT License — see [LICENSE](LICENSE).
 
 ---
 
 ## 🙏 Acknowledgments
 
-- Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI framework
-- Inspired by biological neural networks
-- MCP protocol by Anthropic
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea) — the TUI framework that makes terminals beautiful
+- [MCP](https://modelcontextprotocol.io) — Anthropic's Model Context Protocol
+- [LeafcutterLLM](https://github.com/Alartist40/LeafcutterLLM) — our Rust inference engine synapse
 
 ---
 
-## 📬 Contact
+**Built with 💜 for the terminal. Designed for the future.**
 
-**Author:** Alartist40  
-**Repository:** [github.com/Alartist40/cynapse](https://github.com/Alartist40/cynapse)  
-**Website:** [alartist40.github.io](https://alartist40.github.io)
-
----
-
-**Built with 💜 for the terminal**
+> *"The synapse is not the neuron. The synapse is the connection. Cynapse is the connection."*

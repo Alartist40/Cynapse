@@ -217,10 +217,44 @@ func (p *Persona) Search(query string, limit int) (string, error) {
 }
 
 // SaveFact creates a new memory node in the graph for a discovered fact.
+// If an identical fact already exists, it updates the existing node instead.
 func (p *Persona) SaveFact(fact, tags string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Deduplication: check for identical existing memory
+	trimmed := strings.TrimSpace(fact)
+	for _, n := range p.graph.All() {
+		if n.Type == NodeTypeMemory && strings.TrimSpace(n.Content) == trimmed {
+			// Update tags if new ones provided
+			if tags != "" {
+				newTags := strings.Split(tags, ",")
+				for i := range newTags {
+					newTags[i] = strings.TrimSpace(newTags[i])
+				}
+				// Merge tags
+				tagSet := make(map[string]bool)
+				for _, t := range n.Tags {
+					tagSet[t] = true
+				}
+				for _, t := range newTags {
+					tagSet[t] = true
+				}
+				var merged []string
+				for t := range tagSet {
+					merged = append(merged, t)
+				}
+				n.Tags = merged
+				n.UpdatedAt = time.Now().Unix()
+				_ = p.store.Save(n)
+			}
+			return nil // existing fact, no new node needed
+		}
+	}
+
 	id := fmt.Sprintf("fact_%d", time.Now().UnixNano())
 	title := "Fact: " + truncate(fact, 40)
-	
+
 	var tagList []string
 	if tags != "" {
 		tagList = strings.Split(tags, ",")

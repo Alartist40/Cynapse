@@ -76,7 +76,6 @@ func (cb *DendriteContext) assemble(userMessage string, maxTokens int) string {
     used := 0
 
     coreBudget := int(float64(maxTokens) * coreNodeBudget)
-    ctxBudget := maxTokens - coreBudget
 
     // Always include core identity nodes first
     coreIDs := []string{"identity", "soul", "agents", "tools"}
@@ -105,7 +104,7 @@ func (cb *DendriteContext) assemble(userMessage string, maxTokens int) string {
             }
             part := fmt.Sprintf("## %s\n\n%s", sn.node.Title, sn.node.Content)
             cost := estimateTokens(part)
-            if used+cost > used+ctxBudget {
+            if used+cost > maxTokens {
                 break
             }
             parts = append(parts, part)
@@ -146,7 +145,22 @@ func (cb *DendriteContext) findRelevant(userMessage string) []*Node {
         }
     }
 
-    // Graph content search
+    // 1. Try FTS5 first (most precise, if available)
+    if cb.store != nil {
+        ids, err := cb.store.FTSSearch(userMessage, 20)
+        if err == nil {
+            for _, id := range ids {
+                if n, ok := cb.graph.Get(id); ok {
+                    addNode(n)
+                    for _, neighbor := range cb.graph.Neighbors(n.ID) {
+                        addNode(neighbor)
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Full-query substring search (fallback / complement)
     for _, n := range cb.graph.Search(userMessage) {
         addNode(n)
         for _, neighbor := range cb.graph.Neighbors(n.ID) {
@@ -154,17 +168,56 @@ func (cb *DendriteContext) findRelevant(userMessage string) []*Node {
         }
     }
 
-    // Tag-based search from individual words
+    // 3. Word-by-word search in titles, content, and tags
     words := strings.Fields(strings.ToLower(userMessage))
     for _, word := range words {
-        if len(word) >= 3 {
-            for _, n := range cb.graph.ByTag(word) {
-                addNode(n)
+        if len(word) < 3 {
+            continue
+        }
+        if isStopWord(word) {
+            continue
+        }
+        for _, n := range cb.graph.Search(word) {
+            addNode(n)
+            for _, neighbor := range cb.graph.Neighbors(n.ID) {
+                addNode(neighbor)
             }
+        }
+        for _, n := range cb.graph.ByTag(word) {
+            addNode(n)
         }
     }
 
     return out
+}
+
+var stopWords = map[string]bool{
+    "the": true, "and": true, "for": true, "are": true, "but": true,
+    "not": true, "you": true, "all": true, "can": true, "had": true,
+    "her": true, "was": true, "one": true, "our": true, "out": true,
+    "day": true, "get": true, "has": true, "him": true, "his": true,
+    "how": true, "its": true, "may": true, "new": true, "now": true,
+    "old": true, "see": true, "two": true, "who": true, "boy": true,
+    "did": true, "she": true, "use": true, "way": true,
+    "many": true, "oil": true, "sit": true, "set": true, "run": true,
+    "eat": true, "far": true, "sea": true, "eye": true, "ago": true,
+    "off": true, "too": true, "any": true, "say": true, "man": true,
+    "try": true, "ask": true, "end": true, "why": true, "let": true,
+    "put": true, "own": true, "tell": true,
+    "when": true, "come": true, "here": true, "just": true,
+    "like": true, "long": true, "make": true, "over": true, "such": true,
+    "take": true, "than": true, "them": true, "well": true, "were": true,
+    "what": true, "will": true, "with": true, "have": true, "from": true,
+    "they": true, "know": true, "want": true, "been": true, "good": true,
+    "much": true, "some": true, "time": true, "would": true,
+    "there": true, "their": true, "could": true, "other": true, "after": true,
+    "first": true, "never": true, "these": true, "think": true, "where": true,
+    "being": true, "every": true, "great": true, "might": true, "shall": true,
+    "still": true, "those": true, "while": true, "about": true, "should": true,
+}
+
+func isStopWord(w string) bool {
+    return stopWords[w]
 }
 
 type scoredNode struct {

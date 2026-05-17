@@ -156,10 +156,27 @@ func handleSynapseCommand(args []string) {
 
 	case "add", "install":
 		if len(subargs) == 0 {
-			fmt.Println("Usage: cynapse synapse add <name>")
+			fmt.Println("Usage: cynapse synapse add <name> [--path <binary>]")
 			os.Exit(1)
 		}
-		if err := registry.Install(subargs[0], synapseDir); err != nil {
+		name := subargs[0]
+
+		// Parse optional flags
+		var sourcePath string
+		for i := 1; i < len(subargs); i++ {
+			if subargs[i] == "--path" && i+1 < len(subargs) {
+				sourcePath = subargs[i+1]
+				i++
+			}
+		}
+
+		var err error
+		if sourcePath != "" {
+			err = registry.InstallFromPath(name, synapseDir, sourcePath)
+		} else {
+			err = registry.Install(name, synapseDir)
+		}
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -241,10 +258,10 @@ USAGE:
   cynapse help            Show this help
 
 SYNAPSE COMMANDS:
-  list                    List installed synapses
-  add <name>              Install a synapse
-  remove <name>           Remove a synapse
-  search [query]          Search available synapses
+  list                              List installed synapses
+  add <name> [--path <binary>]      Install a synapse
+  remove <name>                     Remove a synapse
+  search [query]                    Search available synapses
 
 CONFIG COMMANDS:
   init                    Create default config
@@ -270,7 +287,7 @@ Synapse commands:
 
 Examples:
   cynapse synapse list
-  cynapse synapse add leafcutter
+  cynapse synapse add leafcutter --path ./leafcutter
   cynapse synapse remove git-tools
   cynapse synapse search inference
 `)

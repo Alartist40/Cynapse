@@ -123,7 +123,7 @@ install_go() {
     fi
     
     echo "Installing Go..."
-    GO_VERSION="1.22.0"
+    GO_VERSION="1.22.4"
     
     if [ "$OS_TYPE" = "linux" ]; then
         curl -fsSL https://go.dev/dl/go${GO_VERSION}.${OS_TYPE}-${OS_ARCH}.tar.gz -o /tmp/go.tar.gz
@@ -232,8 +232,9 @@ main() {
     echo -e "  ${YELLOW}cynapse${NC}"
     echo ""
     echo -e "${BLUE}Manage synapses:${NC}"
-    echo -e "  ${YELLOW}cynapse synapse list${NC}       - List installed synapses"
-    echo -e "  ${YELLOW}cynapse synapse add <name>${NC} - Install a synapse"
+    echo -e "  ${YELLOW}cynapse synapse list${NC}              - List installed synapses"
+    echo -e "  ${YELLOW}cynapse synapse add <name> --path <binary>${NC}"
+    echo -e "  ${YELLOW}cynapse synapse search [query]${NC}    - Search available synapses"
     echo ""
     echo -e "${BLUE}Get help:${NC}"
     echo -e "  ${YELLOW}cynapse help${NC}"

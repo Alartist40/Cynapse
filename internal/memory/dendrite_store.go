@@ -10,7 +10,8 @@ import (
 
 // DendriteStore persists Dendrite nodes to SQLite.
 type DendriteStore struct {
-    db *sql.DB
+    db      *sql.DB
+    hasFTS5 bool
 }
 
 func NewDendriteStore(dbPath string) (*DendriteStore, error) {
@@ -28,7 +29,8 @@ func NewDendriteStore(dbPath string) (*DendriteStore, error) {
 }
 
 func (gs *DendriteStore) migrate() error {
-    _, err := gs.db.Exec(`
+    // Core table always created
+    if _, err := gs.db.Exec(`
     CREATE TABLE IF NOT EXISTS dendrite_nodes (
         id         TEXT PRIMARY KEY,
         title      TEXT NOT NULL,
@@ -42,8 +44,12 @@ func (gs *DendriteStore) migrate() error {
     );
 
     CREATE INDEX IF NOT EXISTS idx_dendrite_updated ON dendrite_nodes(updated_at DESC);
+    `); err != nil {
+        return err
+    }
 
-    -- FTS5 for fast full-text search across all node content
+    // Try FTS5; if unavailable, gracefully fall back
+    if _, err := gs.db.Exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS dendrite_fts USING fts5(
         id         UNINDEXED,
         title,
@@ -51,8 +57,24 @@ func (gs *DendriteStore) migrate() error {
         tags,
         tokenize = 'porter unicode61'
     );
+    `); err != nil {
+        // FTS5 not available — create fallback text index table
+        gs.hasFTS5 = false
+        _, _ = gs.db.Exec(`
+        CREATE TABLE IF NOT EXISTS dendrite_fts_fallback (
+            id    TEXT PRIMARY KEY,
+            title TEXT,
+            content TEXT,
+            tags  TEXT
+        );
+        `)
+        return nil
+    }
 
-    -- Keep FTS in sync automatically via triggers
+    gs.hasFTS5 = true
+
+    // Sync triggers only if FTS5 exists
+    _, err := gs.db.Exec(`
     CREATE TRIGGER IF NOT EXISTS dendrite_nodes_ai
     AFTER INSERT ON dendrite_nodes BEGIN
         INSERT INTO dendrite_fts(id, title, content, tags)
@@ -80,7 +102,13 @@ func (gs *DendriteStore) Save(n *Node) error {
     links, _ := json.Marshal(n.Links)
     backlinks, _ := json.Marshal(n.Backlinks)
 
-    _, err := gs.db.Exec(`
+    tx, err := gs.db.Begin()
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    _, err = tx.Exec(`
         INSERT INTO dendrite_nodes
             (id, title, content, type, tags, links, backlinks, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -97,13 +125,49 @@ func (gs *DendriteStore) Save(n *Node) error {
         string(tags), string(links), string(backlinks),
         n.CreatedAt, n.UpdatedAt,
     )
-    return err
+    if err != nil {
+        return err
+    }
+
+    // Fallback FTS sync when FTS5 is unavailable
+    if !gs.hasFTS5 {
+        _, err = tx.Exec(`
+            INSERT INTO dendrite_fts_fallback (id, title, content, tags)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                content = excluded.content,
+                tags = excluded.tags
+        `, n.ID, n.Title, n.Content, string(tags))
+        if err != nil {
+            return err
+        }
+    }
+
+    return tx.Commit()
 }
 
 // Delete removes a node from SQLite.
 func (gs *DendriteStore) Delete(id string) error {
-    _, err := gs.db.Exec(`DELETE FROM dendrite_nodes WHERE id = ?`, id)
-    return err
+    tx, err := gs.db.Begin()
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    _, err = tx.Exec(`DELETE FROM dendrite_nodes WHERE id = ?`, id)
+    if err != nil {
+        return err
+    }
+
+    if !gs.hasFTS5 {
+        _, err = tx.Exec(`DELETE FROM dendrite_fts_fallback WHERE id = ?`, id)
+        if err != nil {
+            return err
+        }
+    }
+
+    return tx.Commit()
 }
 
 // LoadAll hydrates all stored nodes directly into the graph's node map.
@@ -151,12 +215,37 @@ func (gs *DendriteStore) FTSSearch(query string, limit int) ([]string, error) {
     if limit <= 0 {
         limit = 10
     }
+
+    if gs.hasFTS5 {
+        rows, err := gs.db.Query(`
+            SELECT id FROM dendrite_fts
+            WHERE dendrite_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?
+        `, query, limit)
+        if err != nil {
+            return nil, err
+        }
+        defer rows.Close()
+
+        var ids []string
+        for rows.Next() {
+            var id string
+            if err := rows.Scan(&id); err != nil {
+                continue
+            }
+            ids = append(ids, id)
+        }
+        return ids, rows.Err()
+    }
+
+    // Fallback: LIKE-based search across title/content/tags
+    pattern := "%" + query + "%"
     rows, err := gs.db.Query(`
-        SELECT id FROM dendrite_fts
-        WHERE dendrite_fts MATCH ?
-        ORDER BY rank
+        SELECT id FROM dendrite_fts_fallback
+        WHERE title LIKE ? OR content LIKE ? OR tags LIKE ?
         LIMIT ?
-    `, query, limit)
+    `, pattern, pattern, pattern, limit)
     if err != nil {
         return nil, err
     }

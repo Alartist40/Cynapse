@@ -341,10 +341,218 @@ type openaiClient struct {
 }
 
 func (c *anthropicClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
-	chunks := make(chan string)
+	chunks := make(chan string, 10)
 	errors := make(chan error, 1)
-	close(chunks)
-	errors <- fmt.Errorf("streaming not implemented for anthropic")
+
+	go func() {
+		defer close(chunks)
+		defer close(errors)
+
+		type aContent struct {
+			Type      string `json:"type"`
+			Text      string `json:"text,omitempty"`
+			ID        string `json:"id,omitempty"`
+			Name      string `json:"name,omitempty"`
+			Input     any    `json:"input,omitempty"`
+			ToolUseID string `json:"tool_use_id,omitempty"`
+			Content   string `json:"content,omitempty"`
+			PartialJSON string `json:"partial_json,omitempty"`
+		}
+		type aMsg struct {
+			Role    string     `json:"role"`
+			Content []aContent `json:"content"`
+		}
+		type aTool struct {
+			Name        string         `json:"name"`
+			Description string         `json:"description"`
+			InputSchema map[string]any `json:"input_schema"`
+		}
+		type aReq struct {
+			Model     string  `json:"model"`
+			MaxTokens int     `json:"max_tokens"`
+			System    string  `json:"system,omitempty"`
+			Messages  []aMsg  `json:"messages"`
+			Tools     []aTool `json:"tools,omitempty"`
+			Stream    bool    `json:"stream"`
+		}
+
+		apiReq := aReq{
+			Model:     c.model,
+			MaxTokens: req.MaxTokens,
+			System:    req.SystemPrompt,
+			Stream:    true,
+		}
+
+		for _, m := range req.Messages {
+			role := string(m.Role)
+			var contents []aContent
+
+			if m.Role == RoleTool {
+				role = "user"
+				contents = append(contents, aContent{
+					Type:      "tool_result",
+					ToolUseID: m.ToolCallID,
+					Content:   m.Content,
+				})
+			} else if len(m.ToolCalls) > 0 {
+				for _, tc := range m.ToolCalls {
+					contents = append(contents, aContent{
+						Type:  "tool_use",
+						ID:    tc.ID,
+						Name:  tc.Name,
+						Input: tc.Arguments,
+					})
+				}
+				if m.Content != "" {
+					contents = append(contents, aContent{Type: "text", Text: m.Content})
+				}
+			} else {
+				contents = append(contents, aContent{Type: "text", Text: m.Content})
+			}
+
+			apiReq.Messages = append(apiReq.Messages, aMsg{
+				Role:    role,
+				Content: contents,
+			})
+		}
+		for _, t := range req.Tools {
+			apiReq.Tools = append(apiReq.Tools, aTool{
+				Name: t.Name, Description: t.Description, InputSchema: t.Parameters,
+			})
+		}
+
+		body, err := json.Marshal(apiReq)
+		if err != nil {
+			errors <- fmt.Errorf("marshaling request: %w", err)
+			return
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
+		if err != nil {
+			errors <- fmt.Errorf("creating request: %w", err)
+			return
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("x-api-key", c.apiKey)
+		httpReq.Header.Set("anthropic-version", "2023-06-01")
+		httpReq.Header.Set("Accept", "text/event-stream")
+
+		resp, err := c.http.Do(httpReq)
+		if err != nil {
+			errors <- fmt.Errorf("anthropic request failed: %w", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			errors <- fmt.Errorf("anthropic HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+			return
+		}
+
+		// Read SSE stream line by line
+		scanner := bufio.NewScanner(resp.Body)
+		var toolCallBuffers []struct {
+			ID   string
+			Name string
+			Args string
+		}
+		var hasToolCalls bool
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				break
+			}
+
+			var event struct {
+				Type    string `json:"type"`
+				Index   int    `json:"index"`
+				ContentBlock *struct {
+					Type string `json:"type"`
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"content_block,omitempty"`
+				Delta *struct {
+					Text        string `json:"text,omitempty"`
+					PartialJSON string `json:"partial_json,omitempty"`
+					StopReason  string `json:"stop_reason,omitempty"`
+				} `json:"delta,omitempty"`
+			}
+
+			if err := json.Unmarshal([]byte(data), &event); err != nil {
+				continue
+			}
+
+			switch event.Type {
+			case "content_block_delta":
+				if event.Delta != nil {
+					if event.Delta.Text != "" {
+						select {
+						case chunks <- event.Delta.Text:
+						case <-ctx.Done():
+							errors <- ctx.Err()
+							return
+						}
+					}
+					if event.Delta.PartialJSON != "" {
+						hasToolCalls = true
+						for len(toolCallBuffers) <= event.Index {
+							toolCallBuffers = append(toolCallBuffers, struct {
+								ID   string
+								Name string
+								Args string
+							}{})
+						}
+						toolCallBuffers[event.Index].Args += event.Delta.PartialJSON
+					}
+				}
+			case "content_block_start":
+				if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
+					hasToolCalls = true
+					for len(toolCallBuffers) <= event.Index {
+						toolCallBuffers = append(toolCallBuffers, struct {
+							ID   string
+							Name string
+							Args string
+						}{})
+					}
+					toolCallBuffers[event.Index].ID = event.ContentBlock.ID
+					toolCallBuffers[event.Index].Name = event.ContentBlock.Name
+				}
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			errors <- fmt.Errorf("reading stream: %w", err)
+			return
+		}
+
+		if hasToolCalls && len(toolCallBuffers) > 0 {
+			var toolCalls []ToolCall
+			for _, buf := range toolCallBuffers {
+				if buf.Name == "" {
+					continue
+				}
+				toolCalls = append(toolCalls, ToolCall{
+					ID:        buf.ID,
+					Name:      buf.Name,
+					Arguments: json.RawMessage(buf.Args),
+				})
+			}
+			if len(toolCalls) > 0 {
+				data, _ := json.Marshal(toolCalls)
+				chunks <- string(data)
+			}
+		}
+	}()
+
 	return chunks, errors
 }
 
@@ -552,10 +760,193 @@ func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error
 }
 
 func (c *openaiClient) ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error) {
-	chunks := make(chan string)
+	chunks := make(chan string, 10)
 	errors := make(chan error, 1)
-	close(chunks)
-	errors <- fmt.Errorf("streaming not implemented for openai")
+
+	go func() {
+		defer close(chunks)
+		defer close(errors)
+
+		type oMsg struct {
+			Role       string `json:"role"`
+			Content    string `json:"content,omitempty"`
+			ToolCallID string `json:"tool_call_id,omitempty"`
+		}
+		type oTool struct {
+			Type     string `json:"type"`
+			Function struct {
+				Name        string         `json:"name"`
+				Description string         `json:"description"`
+				Parameters  map[string]any `json:"parameters"`
+			} `json:"function"`
+		}
+		type oReq struct {
+			Model       string   `json:"model"`
+			MaxTokens   int      `json:"max_tokens"`
+			Temperature float64  `json:"temperature"`
+			Messages    []oMsg   `json:"messages"`
+			Tools       []oTool  `json:"tools,omitempty"`
+			Stream      bool     `json:"stream"`
+		}
+
+		apiReq := oReq{Model: c.model, MaxTokens: req.MaxTokens, Temperature: req.Temperature, Stream: true}
+
+		if req.SystemPrompt != "" {
+			apiReq.Messages = append(apiReq.Messages, oMsg{Role: "system", Content: req.SystemPrompt})
+		}
+		for _, m := range req.Messages {
+			om := oMsg{Role: string(m.Role), Content: m.Content}
+			if m.Role == RoleTool {
+				om.ToolCallID = m.ToolCallID
+			}
+			apiReq.Messages = append(apiReq.Messages, om)
+		}
+		for _, t := range req.Tools {
+			ot := oTool{Type: "function"}
+			ot.Function.Name = t.Name
+			ot.Function.Description = t.Description
+			ot.Function.Parameters = t.Parameters
+			apiReq.Tools = append(apiReq.Tools, ot)
+		}
+
+		body, err := json.Marshal(apiReq)
+		if err != nil {
+			errors <- fmt.Errorf("marshaling request: %w", err)
+			return
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			errors <- fmt.Errorf("creating request: %w", err)
+			return
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+		httpReq.Header.Set("Accept", "text/event-stream")
+
+		resp, err := c.http.Do(httpReq)
+		if err != nil {
+			errors <- fmt.Errorf("openai request failed: %w", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			errors <- fmt.Errorf("openai HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+			return
+		}
+
+		// Read SSE stream line by line
+		scanner := bufio.NewScanner(resp.Body)
+		var toolCallBuffers []struct {
+			ID       string
+			Name     string
+			Args     string
+			Index    int
+		}
+		var hasToolCalls bool
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			// SSE format: "data: {...}" or "data: [DONE]"
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				break
+			}
+
+			var streamResp struct {
+				Choices []struct {
+					Delta struct {
+						Content   string `json:"content"`
+						ToolCalls []struct {
+							Index    int    `json:"index"`
+							ID       string `json:"id"`
+							Function struct {
+								Name      string `json:"name"`
+								Arguments string `json:"arguments"`
+							} `json:"function"`
+						} `json:"tool_calls"`
+					} `json:"delta"`
+					FinishReason *string `json:"finish_reason"`
+				} `json:"choices"`
+			}
+
+			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
+				continue
+			}
+
+			if len(streamResp.Choices) == 0 {
+				continue
+			}
+
+			delta := streamResp.Choices[0].Delta
+
+			// Accumulate tool calls
+			if len(delta.ToolCalls) > 0 {
+				hasToolCalls = true
+				for _, tc := range delta.ToolCalls {
+					// Grow buffer if needed
+					for len(toolCallBuffers) <= tc.Index {
+						toolCallBuffers = append(toolCallBuffers, struct {
+							ID    string
+							Name  string
+							Args  string
+							Index int
+						}{Index: len(toolCallBuffers)})
+					}
+					buf := &toolCallBuffers[tc.Index]
+					if tc.ID != "" {
+						buf.ID = tc.ID
+					}
+					if tc.Function.Name != "" {
+						buf.Name = tc.Function.Name
+					}
+					buf.Args += tc.Function.Arguments
+				}
+				continue
+			}
+
+			if delta.Content != "" {
+				select {
+				case chunks <- delta.Content:
+				case <-ctx.Done():
+					errors <- ctx.Err()
+					return
+				}
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			errors <- fmt.Errorf("reading stream: %w", err)
+			return
+		}
+
+		// If we accumulated tool calls, emit them as a JSON chunk (agent-compatible)
+		if hasToolCalls && len(toolCallBuffers) > 0 {
+			var toolCalls []ToolCall
+			for _, buf := range toolCallBuffers {
+				if buf.Name == "" {
+					continue
+				}
+				toolCalls = append(toolCalls, ToolCall{
+					ID:        buf.ID,
+					Name:      buf.Name,
+					Arguments: json.RawMessage(buf.Args),
+				})
+			}
+			if len(toolCalls) > 0 {
+				data, _ := json.Marshal(toolCalls)
+				chunks <- string(data)
+			}
+		}
+	}()
+
 	return chunks, errors
 }
 

@@ -202,6 +202,118 @@ func (kg *Dendrite) Neighbors(id string) []*Node {
     return out
 }
 
+// Neighbors2Hop returns nodes within 2 hops (links + backlinks) from the given node.
+func (kg *Dendrite) Neighbors2Hop(id string) []*Node {
+    kg.mu.RLock()
+    defer kg.mu.RUnlock()
+
+    node, ok := kg.nodes[id]
+    if !ok {
+        return nil
+    }
+
+    seen := map[string]bool{id: true}
+    var out []*Node
+    var hop1 []string
+
+    for _, lid := range node.Links {
+        if !seen[lid] {
+            if n, ok := kg.nodes[lid]; ok {
+                out = append(out, n)
+                seen[lid] = true
+                hop1 = append(hop1, lid)
+            }
+        }
+    }
+    for _, bid := range node.Backlinks {
+        if !seen[bid] {
+            if n, ok := kg.nodes[bid]; ok {
+                out = append(out, n)
+                seen[bid] = true
+                hop1 = append(hop1, bid)
+            }
+        }
+    }
+
+    for _, h1ID := range hop1 {
+        if h1Node, ok := kg.nodes[h1ID]; ok {
+            for _, lid := range h1Node.Links {
+                if !seen[lid] {
+                    if n, ok := kg.nodes[lid]; ok {
+                        out = append(out, n)
+                        seen[lid] = true
+                    }
+                }
+            }
+            for _, bid := range h1Node.Backlinks {
+                if !seen[bid] {
+                    if n, ok := kg.nodes[bid]; ok {
+                        out = append(out, n)
+                        seen[bid] = true
+                    }
+                }
+            }
+        }
+    }
+
+    return out
+}
+
+// Neighbors3Hop returns nodes within 3 hops from the given node.
+func (kg *Dendrite) Neighbors3Hop(id string) []*Node {
+    kg.mu.RLock()
+    defer kg.mu.RUnlock()
+
+    _, ok := kg.nodes[id]
+    if !ok {
+        return nil
+    }
+
+    seen := map[string]bool{id: true}
+    var out []*Node
+
+    type queueItem struct {
+        nodeID string
+        depth  int
+    }
+    queue := []queueItem{{nodeID: id, depth: 0}}
+
+    for len(queue) > 0 {
+        item := queue[0]
+        queue = queue[1:]
+
+        if item.depth >= 3 {
+            continue
+        }
+
+        n, ok := kg.nodes[item.nodeID]
+        if !ok {
+            continue
+        }
+
+        for _, lid := range n.Links {
+            if !seen[lid] {
+                if target, ok := kg.nodes[lid]; ok {
+                    out = append(out, target)
+                    seen[lid] = true
+                    queue = append(queue, queueItem{nodeID: lid, depth: item.depth + 1})
+                }
+            }
+        }
+        for _, bid := range n.Backlinks {
+            if !seen[bid] {
+                if target, ok := kg.nodes[bid]; ok {
+                    out = append(out, target)
+                    seen[bid] = true
+                    queue = append(queue, queueItem{nodeID: bid, depth: item.depth + 1})
+                }
+            }
+        }
+    }
+
+    return out
+}
+
 // Search returns nodes whose title, content, or tags contain the query string.
 func (kg *Dendrite) Search(query string) []*Node {
     kg.mu.RLock()
