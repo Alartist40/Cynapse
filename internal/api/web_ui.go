@@ -120,7 +120,7 @@ const webUI = `<!DOCTYPE html>
       <div id="subtitle">NEURONS, BRANCHES, CONNECTIONS</div>
     </div>
     <div id="search-wrap">
-      <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
+      <input id="search" type="text" placeholder="Search nodes..." autocomplete="off" aria-label="Search nodes">
     </div>
     <div id="stats">
       <div class="stat"><div class="stat-val" id="stat-nodes">0</div><div class="stat-lbl">Nodes</div></div>
@@ -153,7 +153,7 @@ const webUI = `<!DOCTYPE html>
     <div id="detail-header">
       <div class="node-type-dot" id="detail-type-dot"></div>
       <div id="detail-title">Node</div>
-      <button id="detail-close" onclick="closeDetail()">✕</button>
+      <button id="detail-close" onclick="closeDetail()" aria-label="Close details" title="Close details">✕</button>
     </div>
     <div id="detail-body">
       <div><div class="detail-label">Content</div><div id="detail-content"></div></div>
@@ -166,9 +166,9 @@ const webUI = `<!DOCTYPE html>
       </div>
     </div>
     <div id="edit-form">
-      <div><div class="form-label">Title</div><input class="form-input" id="edit-title" type="text" placeholder="Node title"></div>
+      <div><label class="form-label" for="edit-title">Title</label><input class="form-input" id="edit-title" type="text" placeholder="Node title"></div>
       <div>
-        <div class="form-label">Type</div>
+        <label class="form-label" for="edit-type">Type</label>
         <select class="form-select" id="edit-type">
           <option value="identity">Identity</option><option value="person">Person</option>
           <option value="project">Project</option><option value="concept">Concept</option>
@@ -177,7 +177,7 @@ const webUI = `<!DOCTYPE html>
         </select>
       </div>
       <div>
-        <div class="form-label">Content</div>
+        <label class="form-label" for="edit-content">Content</label>
         <textarea class="form-textarea" id="edit-content" placeholder="Markdown content. Use [[node-id]] to link. Use #tag for tags."></textarea>
         <div class="form-hint">[[node-id]] creates links · #tag adds tags</div>
       </div>
