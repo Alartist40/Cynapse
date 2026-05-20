@@ -80,13 +80,13 @@ func (a *Agent) StartGraphServer(ctx context.Context) (string, error) {
 }
 
 // ProcessMessage handles one user turn. Returns the final text response.
-func (a *Agent) ProcessMessage(ctx context.Context, userMsg string) (string, error) {
+func (a *Agent) ProcessMessage(ctx context.Context, userMsg string, attachments ...llm.Attachment) (string, error) {
 	sess, err := a.sessions.Get(a.deviceID)
 	if err != nil {
 		return "", fmt.Errorf("getting session: %w", err)
 	}
 
-	sess.Append(session.Entry{Role: llm.RoleUser, Content: userMsg})
+	sess.Append(session.Entry{Role: llm.RoleUser, Content: userMsg, Attachments: attachments})
 
 	if sess.Len() > a.cfg.Memory.MaxSessionMessages {
 		sess.Compact(a.cfg.Memory.MaxSessionMessages / 2)
@@ -199,7 +199,7 @@ func (a *Agent) selfImproveFork(userMsg, agentResponse string) {
 	}
 }
 
-func (a *Agent) ProcessMessageStream(ctx context.Context, userInput string) (<-chan string, <-chan error) {
+func (a *Agent) ProcessMessageStream(ctx context.Context, userInput string, attachments ...llm.Attachment) (<-chan string, <-chan error) {
 	chunks := make(chan string, 10)
 	errors := make(chan error, 1)
 
@@ -213,7 +213,7 @@ func (a *Agent) ProcessMessageStream(ctx context.Context, userInput string) (<-c
 			return
 		}
 
-		sess.Append(session.Entry{Role: llm.RoleUser, Content: userInput})
+		sess.Append(session.Entry{Role: llm.RoleUser, Content: userInput, Attachments: attachments})
 
 		if sess.Len() > a.cfg.Memory.MaxSessionMessages {
 			sess.Compact(a.cfg.Memory.MaxSessionMessages / 2)

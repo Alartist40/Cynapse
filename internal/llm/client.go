@@ -30,6 +30,18 @@ type Message struct {
 	Content    string      `json:"content"`
 	ToolCallID string      `json:"tool_call_id,omitempty"`
 	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
+	// Images contains base64-encoded images for multimodal models (Ollama format).
+	Images []string `json:"images,omitempty"`
+	// Attachments contains file attachments that should be included with this message.
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// Attachment represents a file attached to a message.
+type Attachment struct {
+	Type     string `json:"type"`     // image | text | pdf | binary
+	Filename string `json:"filename"`
+	MIME     string `json:"mime"`
+	Content  string `json:"content"`  // text or base64
 }
 
 type ToolCall struct {
@@ -69,6 +81,7 @@ type Client interface {
 	Chat(ctx context.Context, req *Request) (*Response, error)
 	ChatStream(ctx context.Context, req *Request) (<-chan string, <-chan error)
 	Provider() string
+	Close() error
 }
 
 // ─── Model Discovery ─────────────────────────────────────────────────────────
@@ -139,8 +152,11 @@ func New(cfg *config.LLMConfig) (Client, error) {
 		}
 		return &ollamaClient{baseClient: base, baseURL: baseURL, model: cfg.Model}, nil
 
+	case "local":
+		return newLocalClient(base, cfg, cfg.ModelsDir)
+
 	default:
-		return nil, fmt.Errorf("unknown LLM provider: %q (use ollama|anthropic|openai|gemini)", cfg.Provider)
+		return nil, fmt.Errorf("unknown LLM provider: %q (use ollama|anthropic|openai|gemini|local)", cfg.Provider)
 	}
 }
 
@@ -223,6 +239,7 @@ type anthropicClient struct {
 }
 
 func (c *anthropicClient) Provider() string { return "anthropic" }
+func (c *anthropicClient) Close() error   { return nil }
 
 func (c *anthropicClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type aContent struct {
@@ -557,6 +574,7 @@ func (c *anthropicClient) ChatStream(ctx context.Context, req *Request) (<-chan 
 }
 
 func (c *openaiClient) Provider() string { return "openai" }
+func (c *openaiClient) Close() error   { return nil }
 
 func (c *openaiClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type oMsg struct {
@@ -650,6 +668,7 @@ type geminiClient struct {
 }
 
 func (c *geminiClient) Provider() string { return "gemini" }
+func (c *geminiClient) Close() error   { return nil }
 
 func (c *geminiClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type gPart struct {
@@ -967,11 +986,13 @@ type ollamaClient struct {
 }
 
 func (c *ollamaClient) Provider() string { return "ollama" }
+func (c *ollamaClient) Close() error   { return nil }
 
 func (c *ollamaClient) Chat(ctx context.Context, req *Request) (*Response, error) {
 	type oMsg struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role    string   `json:"role"`
+		Content string   `json:"content"`
+		Images  []string `json:"images,omitempty"`
 	}
 	type oTool struct {
 		Type     string `json:"type"`
@@ -1000,7 +1021,19 @@ func (c *ollamaClient) Chat(ctx context.Context, req *Request) (*Response, error
 		apiReq.Messages = append(apiReq.Messages, oMsg{Role: "system", Content: req.SystemPrompt})
 	}
 	for _, m := range req.Messages {
-		apiReq.Messages = append(apiReq.Messages, oMsg{Role: string(m.Role), Content: m.Content})
+		content := m.Content
+		var images []string
+		// Collect image attachments
+		for _, att := range m.Attachments {
+			if att.Type == "image" {
+				images = append(images, att.Content)
+			} else if att.Type == "text" || att.Type == "pdf" {
+				content += "\n\n[Attachment: " + att.Filename + "]\n" + att.Content
+			}
+		}
+		// Collect inline images
+		images = append(images, m.Images...)
+		apiReq.Messages = append(apiReq.Messages, oMsg{Role: string(m.Role), Content: content, Images: images})
 	}
 	for _, t := range req.Tools {
 		ot := oTool{Type: "function"}
@@ -1054,8 +1087,9 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 		defer close(errors)
 
 		type oMsg struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role    string   `json:"role"`
+			Content string   `json:"content"`
+			Images  []string `json:"images,omitempty"`
 		}
 		type oTool struct {
 			Type     string `json:"type"`
@@ -1084,7 +1118,17 @@ func (c *ollamaClient) ChatStream(ctx context.Context, req *Request) (<-chan str
 			apiReq.Messages = append(apiReq.Messages, oMsg{Role: "system", Content: req.SystemPrompt})
 		}
 		for _, m := range req.Messages {
-			apiReq.Messages = append(apiReq.Messages, oMsg{Role: string(m.Role), Content: m.Content})
+			content := m.Content
+			var images []string
+			for _, att := range m.Attachments {
+				if att.Type == "image" {
+					images = append(images, att.Content)
+				} else if att.Type == "text" || att.Type == "pdf" {
+					content += "\n\n[Attachment: " + att.Filename + "]\n" + att.Content
+				}
+			}
+			images = append(images, m.Images...)
+			apiReq.Messages = append(apiReq.Messages, oMsg{Role: string(m.Role), Content: content, Images: images})
 		}
 		for _, t := range req.Tools {
 			ot := oTool{Type: "function"}

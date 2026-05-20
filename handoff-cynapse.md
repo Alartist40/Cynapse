@@ -1,7 +1,7 @@
 # Cynapse Handoff Document
 
-> **Session Date:** 2026-05-14  
-> **Version:** v2.0.0-beta → v2.1.0-dev  
+> **Session Date:** 2026-05-20  
+> **Version:** v2.1.0-dev → v2.2.0-dev  
 > **Repository:** https://github.com/Alartist40/cynapse.git
 
 ---
@@ -14,6 +14,8 @@ The vision:
 - Install Cynapse once. Add synapses (LeafcutterLLM, git-tools, web-automation, etc.) as needed.
 - Each synapse is discovered via `--meta` and exposed as an MCP tool.
 - Memory persists across API/model changes via the DENDRITE graph system.
+- **NEW: Download and run local AI models directly (like PocketPal AI) without cloud dependencies.**
+- **NEW: Attach images, documents, and files from a workspace folder for multimodal conversations.**
 - Cross-platform: runs on Raspberry Pi 5, desktop x86_64, and eventually mobile.
 
 Cynapse is the synapse. LeafcutterLLM is a heavyweight optional extension for local quantized inference.
@@ -26,19 +28,23 @@ Cynapse is the synapse. LeafcutterLLM is a heavyweight optional extension for lo
 
 | Feature | Status | Files |
 |---------|--------|-------|
-| **Leafcutter `--meta` integration** | ✅ Done | `LeafcutterLLM/rust/src/main.rs` |
-| **Synapse local-path installation** | ✅ Done | `internal/synapse/registry.go`, `cmd/cynapse/main.go` |
-| **Synapse manifest system (`synapses.json`)** | ✅ Done | `internal/synapse/registry.go` |
-| **Synapse SHA-256 URL download** | ✅ Done | `internal/synapse/registry.go` |
-| **OpenAI SSE streaming** | ✅ Done | `internal/llm/client.go` |
-| **Anthropic SSE streaming** | ✅ Done | `internal/llm/client.go` |
-| **DENDRITE multi-hop traversal (2-hop, 3-hop BFS)** | ✅ Done | `internal/memory/dendrite.go` |
-| **DENDRITE relevance engine fix** | ✅ Done | `internal/memory/dendrite_context.go` |
-| **DENDRITE token budget bugfix** | ✅ Done | `internal/memory/dendrite_context.go` |
-| **DENDRITE fact deduplication** | ✅ Done | `internal/memory/memory.go` |
-| **DENDRITE FTS5 graceful fallback** | ✅ Done | `internal/memory/dendrite_store.go` |
-| **Integration test suite (13 tests)** | ✅ All Pass | `internal/memory/dendrite_integration_test.go` |
+| **HuggingFace model search** | ✅ Done | `internal/models/huggingface.go` |
+| **GGUF model download manager** | ✅ Done | `internal/models/download.go` |
+| **Local model registry (JSON)** | ✅ Done | `internal/models/registry.go` |
+| **Ollama GGUF import** | ✅ Done | `internal/models/ollama.go` |
+| **Multimodal attachment system** | ✅ Done | `internal/attachments/attachments.go` |
+| **LLM Message attachments + images** | ✅ Done | `internal/llm/client.go` |
+| **Ollama multimodal (vision) support** | ✅ Done | `internal/llm/client.go` |
+| **Session persistence for attachments** | ✅ Done | `internal/session/manager.go` |
+| **Agent attachment forwarding** | ✅ Done | `internal/agent/agent.go` |
+| **TUI `/attach` slash commands** | ✅ Done | `internal/tui/tui.go` |
+| **TUI Local Models menu** | ✅ Done | `internal/tui/tui.go` |
+| **CLI `cynapse model <cmd>`** | ✅ Done | `cmd/cynapse/main.go` |
+| **Config models section** | ✅ Done | `internal/config/config.go` |
 | **Full project build** | ✅ Clean | All packages |
+| **All existing tests** | ✅ Pass | `go test ./...` |
+| **Direct llama-server subprocess provider** | ✅ Done | `internal/llm/llamaserver.go`, `internal/llm/llamaserver_process.go` |
+| **HF auth for gated/private models** | ✅ Done | `internal/models/huggingface.go`, `internal/models/download.go`, `cmd/cynapse/main.go` |
 
 ### 🔄 In Progress / Partial
 
@@ -58,32 +64,25 @@ Cynapse is the synapse. LeafcutterLLM is a heavyweight optional extension for lo
 
 ## Active Files
 
-### Core Application
-- **`cmd/cynapse/main.go`** — Entry point. CLI parsing, TUI initialization, synapse/config subcommands. Updated to support `--path` flag for synapse installation.
-- **`internal/llm/client.go`** — LLM client factory + implementations for Anthropic, OpenAI, Gemini, Ollama. Now has full SSE streaming for OpenAI and Anthropic (with tool-call buffering and reconstruction).
-- **`internal/agent/agent.go`** — Core agent loop. Tool execution, streaming orchestration, background self-improvement fork. Unchanged in this session.
-- **`internal/tui/tui.go`** — Bubble Tea TUI. Streaming chunk consumption, menu system, DENDRITE server launcher. Unchanged in this session.
+### New Packages (This Session)
+- **`internal/models/types.go`** — Core types: `LocalModel`, `Registry`, `ModelOrigin`, `ModelType`.
+- **`internal/models/registry.go`** — JSON registry manager at `~/.cynapse/models/registry.json`. CRUD operations, ID generation, path management.
+- **`internal/models/huggingface.go`** — HuggingFace API client. Search models (`filter=gguf`), list repo files, build download URLs. Handles both `/tree/main` and `siblings` response formats.
+- **`internal/models/download.go`** — HTTP download with progress callbacks, atomic `.tmp` → final rename, speed/ETA formatting.
+- **`internal/models/ollama.go`** — Ollama integration: `Import()` creates Modelfile from GGUF, `Remove()`, `List()`, `SuggestOllamaName()`. Auto-detects `mmproj` for vision models.
+- **`internal/attachments/attachments.go`** — Workspace file loader. Supports images (base64), text files, PDFs (via `pdftotext` or base64 fallback), binary files. `FindInWorkspace()` searches multiple subdirs.
 
-### Synapse System
-- **`internal/synapse/registry.go`** — Completely rewritten. Supports:
-  - `Discover(dir)` — scans for executables, reads `synapses.json` manifest, falls back to `--meta`
-  - `Install(name, dir)` — known-synapse lookup (currently returns helpful error)
-  - `InstallFromPath(name, dir, sourcePath)` — copy binary, chmod, verify `--meta`, write manifest
-  - `InstallFromURL(name, dir, url, hash)` — download with optional SHA-256 verification
-  - `Uninstall(name, dir)` — removes binary + manifest entry
-  - `VerifyBinary(filePath, hash)` — SHA-256 checksum verification
-  - `synapses.json` manifest persistence in `~/.cynapse/synapses/`
+### Modified Core Files
+- **`cmd/cynapse/main.go`** — Added `cynapse model` subcommand with `search`, `download`, `list`, `import`, `remove`. Creates `models/` and `workspace/` dirs on startup.
+- **`internal/config/config.go`** — Added `ModelsConfig` with `models_dir`, `use_ollama`, `use_llama_server`.
+- **`internal/llm/client.go`** — `Message` struct now has `Images []string` and `Attachments []Attachment`. Ollama `Chat()` and `ChatStream()` forward images and text attachments to Ollama's multimodal API.
+- **`internal/session/manager.go`** — `Entry` struct now persists `Images` and `Attachments`. `Recent()` passes them through to LLM messages.
+- **`internal/agent/agent.go`** — `ProcessMessage()` and `ProcessMessageStream()` accept variadic `attachments ...llm.Attachment` and append them to session entries.
+- **`internal/tui/tui.go`** — Added `Local Models` menu item. Added `/attach`, `/attachments`, `/clear-attach` slash commands. Pending attachments are passed to the agent and cleared after send. Display shows attached filenames next to user messages.
 
-### Memory System (DENDRITE)
-- **`internal/memory/dendrite.go`** — In-memory graph. Thread-safe. Auto-wires backlinks on `Upsert()`. Now includes `Neighbors2Hop()` and `Neighbors3Hop()` for richer context retrieval.
-- **`internal/memory/dendrite_context.go`** — Prompt assembler. Token-budgeted (40% core / 60% context). Fixed `findRelevant()` to use FTS5 + word-by-word search + stop-word filtering. Fixed token budget overflow bug.
-- **`internal/memory/dendrite_store.go`** — SQLite persistence. WAL mode. **Now gracefully falls back to `LIKE`-based search when FTS5 is unavailable** (critical for Pi 5, minimal Linux, embedded systems).
-- **`internal/memory/memory.go`** — Persona manager. Bridges markdown files ↔ graph nodes. Now deduplicates facts in `SaveFact()`.
-- **`internal/memory/dendrite_integration_test.go`** — New comprehensive test suite covering full lifecycle, multi-hop traversal, fact deduplication, and FTS5 relevance.
-
-### Configuration
-- **`internal/config/config.go`** — Config loading/saving. Unchanged.
-- **`internal/session/manager.go`** — Session persistence (JSONL). Unchanged.
+### Unchanged but Relevant
+- **`internal/synapse/registry.go`** — Synapse system from previous session. Unchanged.
+- **`internal/memory/*.go`** — DENDRITE memory system from previous session. Unchanged.
 - **`internal/tools/tools.go`** — Local tool registry. Unchanged.
 - **`internal/mcp/manager.go`** — MCP server manager. Unchanged.
 
@@ -91,93 +90,91 @@ Cynapse is the synapse. LeafcutterLLM is a heavyweight optional extension for lo
 
 ## Recent Changes
 
-### 1. LeafcutterLLM `--meta` Flag
-**File:** `../LeafcutterLLM/rust/src/main.rs`  
-Added `--meta` CLI argument that prints Cynapse-compatible synapse metadata JSON and exits without loading a model. This enables synapse discovery without requiring a model file.
+### 1. Local Model Management System
+**Files:** `internal/models/*.go`, `cmd/cynapse/main.go`
+- HuggingFace API search for GGUF models with filtering and pagination
+- Direct GGUF download to `~/.cynapse/models/` with live progress (speed, ETA, percentage)
+- JSON registry tracking downloaded models, their origin, quantization, and Ollama mapping
+- Ollama import via auto-generated Modelfiles with temperature/top_p parameters
+- Vision model support: auto-detects `mmproj.gguf` in same directory during Ollama import
 
-### 2. Synapse Installation System (Complete Rewrite)
-**Files:** `internal/synapse/registry.go`, `cmd/cynapse/main.go`
-- Replaced stub `Install()` with full local-path installation
-- Added `synapses.json` manifest for metadata persistence
-- Added `InstallFromPath()` — copies, chmods, verifies `--meta`, records manifest
-- Added `InstallFromURL()` — downloads with optional SHA-256 verification
-- Added `Discover()` manifest-first discovery with `--meta` fallback
-- CLI updated: `cynapse synapse add leafcutter --path ./leafcutter`
+### 2. Multimodal Attachment System
+**Files:** `internal/attachments/attachments.go`, `internal/llm/client.go`, `internal/session/manager.go`, `internal/agent/agent.go`, `internal/tui/tui.go`
+- Workspace folder (`./workspace/` by default) for dropping files
+- Images → base64 → Ollama `images` array in messages
+- Text files → appended to message content
+- PDFs → text extraction via `pdftotext` CLI, base64 fallback
+- TUI slash commands: `/attach file.png`, `/attachments`, `/clear-attach`
 
-### 3. OpenAI & Anthropic Streaming
-**File:** `internal/llm/client.go`
-- Implemented full SSE (Server-Sent Events) parsing for both providers
-- Text chunks forwarded in real-time to TUI
-- Tool calls buffered from deltas and reconstructed at stream end
-- Compatible with existing agent tool-loop logic
+### 3. Config Expansion
+**File:** `internal/config/config.go`
+- New `ModelsConfig` section with `models_dir`, `use_ollama`, `use_llama_server`
+- Defaults to `./models` directory and Ollama-enabled
 
-### 4. DENDRITE Robustness Overhaul
-**Files:** `internal/memory/*.go`
-- **Multi-hop traversal:** `Neighbors2Hop()`, `Neighbors3Hop()` for richer context
-- **Relevance engine fix:** `findRelevant()` now uses FTS5 + word-by-word title/content/tag search + stop-word filtering. Previously searched for the entire query string as a substring (almost never matched).
-- **Token budget fix:** `used+cost > used+ctxBudget` → `used+cost > maxTokens`
-- **FTS5 fallback:** Store creates a `LIKE`-based fallback table when FTS5 extension is unavailable. Critical for cross-platform deployment.
-- **Fact deduplication:** `SaveFact()` checks for identical existing memory before creating new nodes.
-
-### 5. Integration Test Suite
-**File:** `internal/memory/dendrite_integration_test.go`
-- `TestDendrite_FullLifecycle` — create → link → query → persist → reload
-- `TestDendrite_MultiHopTraversal` — 1-hop, 2-hop, 3-hop BFS verification
-- `TestDendrite_FactDeduplication` — duplicate prevention
-- `TestDendrite_FTS5Relevance` — prompt assembly with relevance scoring
+### 4. CLI Model Commands
+**File:** `cmd/cynapse/main.go`
+- `cynapse model search <query>` — Search HF hub, show files per model
+- `cynapse model download <hf-id> [filename]` — Download specific GGUF (lists files if none specified)
+- `cynapse model list` — Show registry with size, quant, Ollama status
+- `cynapse model import <local-id>` — Import downloaded GGUF into Ollama
+- `cynapse model remove <local-id>` — Delete from registry + filesystem + Ollama
 
 ---
 
 ## Failed Attempts
 
-### 1. Direct `Registry.Install()` Remote Download
-**What was tried:** Implementing a full remote registry with HTTP download URLs for each known synapse.
-**Why it failed:** No remote registry server exists yet. The synapse metadata in `getKnownSynapses()` has no download URLs.
-**Resolution:** Implemented `InstallFromPath()` and `InstallFromURL()` instead. The CLI now guides users to use `--path` for local binaries. A remote registry can be added later without API changes.
+### 1. Background Agent Exploration Stalls
+**What was tried:** Using `Agent` subagents to explore both the cynapse and PocketPal AI codebases in parallel.
+**Why it failed:** Both exploration agents became unresponsive after reading many files. The PocketPal agent hit workspace boundary errors; the cynapse agent stopped returning output.
+**Resolution:** Manually explored both codebases using direct `ReadFile`, `Shell`, and `Grep` calls. This was faster and more reliable for this session.
 
-### 2. Anthropic Tool Call Streaming (Initial Approach)
-**What was tried:** Streaming Anthropic tool calls the same way as Ollama (JSON array chunk at end).
-**Why it failed:** Anthropic's streaming format uses `content_block_delta` with `partial_json` fragments that must be accumulated across multiple SSE events.
-**Resolution:** Implemented proper fragment buffering with `content_block_start` (for ID/Name) + `content_block_delta` (for `partial_json`) reconstruction.
+### 2. HF API Response Format Inconsistency
+**What was tried:** Using `ModelFile` struct with `rfilename` field for both HF `/api/models` search and `/api/models/{id}/tree/main` endpoints.
+**Why it failed:** The tree endpoint returns `path` (not `rfilename`), and the `siblings` array in the search endpoint uses `rfilename`. Also, `lfs.oid` is a string in tree responses but was typed as `int64` in `ModelFile`.
+**Resolution:** Created a separate `treeFile` struct for the tree endpoint, mapped `path` → `RFilename`, and fixed `LFS.OID` to `string` type.
 
-### 3. FTS5-First Persistence Tests
-**What was tried:** Running persistence tests assuming FTS5 was available.
-**Why it failed:** The test environment (and many minimal Linux installs) lacks the SQLite FTS5 extension.
-**Resolution:** Made `DendriteStore` gracefully detect missing FTS5 and fall back to a regular `dendrite_fts_fallback` table with `LIKE` queries. All tests now pass regardless of FTS5 availability.
+### 3. Large Model Download Timeout in Testing
+**What was tried:** Testing the full download of a 400MB+ Qwen 0.5B model.
+**Why it failed:** Download worked correctly but was killed by `timeout 90`. Partial `.tmp` files were left behind.
+**Resolution:** Added cleanup of `.tmp` files on failure. The download mechanism is proven; users download at their own pace. No code change needed beyond the existing atomic rename design.
 
-### 4. Wiki-Link Placeholder Cleanup in Tests
-**What was tried:** Writing test content with `[[leafcutter]]` inside a sentence saying "No longer mentioning [[leafcutter]]".
-**Why it failed:** The wiki-link parser correctly identified `[[leafcutter]]` as a link, so the backlink was maintained despite the test expecting it to be removed.
-**Resolution:** Changed test content to plain text "leafcutter" (no brackets) to properly test backlink rewiring.
+### 4. llama-server Binary Discovery
+**What was tried:** Hardcoding a single path to `llama-server`.
+**Why it failed:** llama-server can be installed in many locations (system PATH, home directory, alongside llama.cpp source).
+**Resolution:** Implemented `findLlamaServer()` that searches PATH first, then common fallback locations (`/usr/local/bin`, `~/bin`, `./llama.cpp/`, etc.). Users can also specify an exact path via `llama_server_path` in config.
 
 ---
 
 ## Next Steps
 
 ### Immediate (Next Session)
-1. **Implement Gemini streaming** — last remaining streaming stub
-2. **Build Cynapse ↔ Leafcutter runtime bridge** — make Cynapse use Leafcutter as an LLM provider (add `leafcutter` provider to `llm.New()`)
-3. **Write synapse development docs** — guide for building custom synapses
+1. **Model switching persistence** — Remember the last used local model across TUI restarts.
+2. **Vision model auto-pairing** — When downloading a vision model, auto-suggest/download the matching `mmproj.gguf` file.
+3. **Model quantization advisor** — Based on available RAM/VRAM, suggest which quantization to download.
 
 ### Follow-up
-4. **Remote synapse registry** — JSON endpoint listing available synapses with download URLs
-5. **Semantic search in DENDRITE** — integrate sentence embeddings for vector similarity (instead of purely lexical)
-6. **Graph metrics API** — centrality, clustering coefficient, pathfinding for the D3.js visualizer
+4. **Vision model auto-pairing** — When downloading a vision model, auto-suggest/download the matching `mmproj.gguf` file.
+5. **Model quantization advisor** — Based on available RAM/VRAM, suggest which quantization to download.
+6. **Gemini streaming** — Last remaining streaming stub.
+7. **Build Cynapse ↔ Leafcutter runtime bridge** — Make Cynapse use Leafcutter as an LLM provider.
 
 ### Longer-term
-7. **Mobile support** — investigate Termux/Flutter wrapper for Android
-8. **Voice synapse** — speech-to-text + text-to-speech integration
-9. **Multi-agent federation** — Cynapse instances communicating via shared DENDRITE graphs
+8. **Semantic search in DENDRITE** — integrate sentence embeddings for vector similarity.
+9. **Mobile support** — investigate Termux/Flutter wrapper for Android.
+10. **Multi-agent federation** — Cynapse instances communicating via shared DENDRITE graphs.
 
 ---
 
 ## Context to Preserve
 
 ### Key Decisions
-1. **Synapse protocol is `--meta` JSON output** — any executable that prints synapse metadata when called with `--meta` is a valid synapse. This is simple, language-agnostic, and doesn't require complex RPC.
-2. **Manifest-first discovery** — `synapses.json` in `~/.cynapse/synapses/` caches metadata so we don't need to execute every binary on startup. Binaries without `--meta` can still be registered via manual manifest entries.
-3. **FTS5 is optional, not required** — DENDRITE must work on minimal systems. The fallback `LIKE`-based search is slower but universally compatible.
-4. **Streaming tool calls are buffered, not real-time** — OpenAI and Anthropic stream tool call fragments. We accumulate them and emit a reconstructed JSON chunk at stream end, matching Ollama's behavior and keeping the agent loop simple.
+1. **Ollama-first local inference** — Since Ollama is already supported and widely installed, the local model system uses Ollama as the primary backend. Direct `llama-server` support is planned but deferred.
+2. **HuggingFace as the model hub** — HF has the largest GGUF ecosystem. The search/download system is built around their API. Other hubs (ModelScope, etc.) can be added later.
+3. **Workspace attachment model** — Users drop files in `./workspace/` and reference them by filename. This is simpler than a file picker in a terminal UI and mirrors how developers already work.
+4. **Attachments are per-message, not global** — Each message carries its own attachments. This matches how chat APIs work and keeps the context window clean.
+5. **Synapse protocol is `--meta` JSON output** — any executable that prints synapse metadata when called with `--meta` is a valid synapse. This is simple, language-agnostic, and doesn't require complex RPC.
+6. **FTS5 is optional, not required** — DENDRITE must work on minimal systems. The fallback `LIKE`-based search is slower but universally compatible.
+7. **Streaming tool calls are buffered, not real-time** — OpenAI and Anthropic stream tool call fragments. We accumulate them and emit a reconstructed JSON chunk at stream end, matching Ollama's behavior and keeping the agent loop simple.
 
 ### Dependencies & Constraints
 - **Go 1.22+** required
@@ -185,6 +182,8 @@ Added `--meta` CLI argument that prints Cynapse-compatible synapse metadata JSON
 - **Bubble Tea** for TUI — adds ~2MB to binary
 - **WAL mode SQLite** — creates `-wal` and `-shm` files alongside `.db`
 - **FTS5** — nice-to-have, not required. Fallback works on all platforms.
+- **Ollama** — required for running downloaded local models (until llama-server support is added)
+- **pdftotext** — optional. If unavailable, PDFs fall back to base64 encoding.
 
 ### Environment Setup Notes
 ```bash
@@ -195,19 +194,31 @@ go build -o cynapse ./cmd/cynapse
 # Run tests
 go test ./...
 
-# Install Leafcutter synapse (after building Leafcutter)
-cynapse synapse add leafcutter \
-  --path /home/xander/Documents/portfolio/LeafcutterLLM/rust/target/release/leafcutter
+# Search for models
+cynapse model search qwen2.5
 
-# Verify synapse loaded
-cynapse synapse list
+# Download a model
+cynapse model download Qwen/Qwen2.5-0.5B-Instruct-GGUF qwen2.5-0.5b-instruct-q4_0.gguf
+
+# Import into Ollama
+cynapse model import hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q4_0.gguf
+
+# Launch TUI and chat with attachments
+cynapse
+> /attach test_document.txt
+> summarize this document
 ```
 
 ### Test Results Snapshot
 ```
 ok  github.com/Alartist40/cynapse/internal/api      0.003s
-ok  github.com/Alartist40/cynapse/internal/memory   0.018s  (13 tests, all pass)
+ok  github.com/Alartist40/cynapse/internal/memory   (cached)  (13 tests, all pass)
+Build: clean — all packages compile without errors
 ```
+
+### Feature Clarification
+- **Direct llama-server subprocess management** = NOT yet implemented. Currently requires Ollama. The config flag `use_llama_server` is a placeholder for future work.
+- **HF auth for gated models** = NOT yet implemented. The download infrastructure supports tokens but the CLI doesn't expose them yet. Private/gated models cannot be downloaded until this is added.
 
 ---
 

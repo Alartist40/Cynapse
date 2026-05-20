@@ -11,8 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/Alartist40/cynapse/internal/agent"
+	"github.com/Alartist40/cynapse/internal/attachments"
 	"github.com/Alartist40/cynapse/internal/config"
 	"github.com/Alartist40/cynapse/internal/llm"
+	"github.com/Alartist40/cynapse/internal/models"
 )
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -97,6 +99,11 @@ type modelListMsg struct {
 	err    error
 }
 
+type localModelListMsg struct {
+	models []models.LocalModel
+	err    error
+}
+
 type dendriteServerMsg struct {
 	url string
 	err error
@@ -136,6 +143,9 @@ type Model struct {
 
 	dendriteURL string
 	dendriteStarting  bool
+
+	// Attachments for next message
+	pendingAttachments []llm.Attachment
 }
 
 type message struct {
@@ -171,6 +181,7 @@ func buildMenu() []menuItem {
 	return []menuItem{
 		{"Status", cmdStatus},
 		{"Models", cmdModels},
+		{"Local Models", cmdLocalModels},
 		{"DENDRITE", cmdMemory},
 		{"Heartbeat", cmdHeartbeat},
 		{"Clear", cmdClear},
@@ -227,6 +238,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.models = msg.models
 			m.showModelsMenu()
+		}
+		return m, nil
+
+	case localModelListMsg:
+		if msg.err != nil {
+			m.addSystemMsg(fmt.Sprintf("Failed to load local models: %v", msg.err))
+			m.showMenu = false
+			m.restoreMainMenu()
+		} else {
+			m.showLocalModelsMenu(msg.models)
 		}
 		return m, nil
 
@@ -301,9 +322,72 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle slash commands
+		input := m.input
+		if strings.HasPrefix(input, "/attach ") {
+			filename := strings.TrimSpace(strings.TrimPrefix(input, "/attach "))
+			workspaceDir := m.cfg.Tools.WorkDir
+			if workspaceDir == "" {
+				workspaceDir = "./workspace"
+			}
+			path, err := attachments.FindInWorkspace(filename, workspaceDir)
+			if err != nil {
+				m.addSystemMsg(fmt.Sprintf("⚠ Cannot attach: %v", err))
+				m.input = ""
+				m.cursor = 0
+				return m, nil
+			}
+			att, err := attachments.Load(path)
+			if err != nil {
+				m.addSystemMsg(fmt.Sprintf("⚠ Failed to load attachment: %v", err))
+				m.input = ""
+				m.cursor = 0
+				return m, nil
+			}
+			m.pendingAttachments = append(m.pendingAttachments, llm.Attachment{
+				Type:     string(att.Type),
+				Filename: att.Filename,
+				MIME:     att.MIME,
+				Content:  att.Content,
+			})
+			m.addSystemMsg(fmt.Sprintf("📎 Attached: %s (%s)", att.Filename, att.Type))
+			m.input = ""
+			m.cursor = 0
+			return m, nil
+		}
+		if strings.TrimSpace(input) == "/clear-attach" {
+			m.pendingAttachments = nil
+			m.addSystemMsg("📎 Cleared all attachments")
+			m.input = ""
+			m.cursor = 0
+			return m, nil
+		}
+		if strings.TrimSpace(input) == "/attachments" {
+			if len(m.pendingAttachments) == 0 {
+				m.addSystemMsg("📎 No pending attachments")
+			} else {
+				var names []string
+				for _, a := range m.pendingAttachments {
+					names = append(names, fmt.Sprintf("%s (%s)", a.Filename, a.Type))
+				}
+				m.addSystemMsg("📎 Pending: " + strings.Join(names, ", "))
+			}
+			m.input = ""
+			m.cursor = 0
+			return m, nil
+		}
+
 		// Send to agent
-		userInput := m.input
-		m.addUserMsg(userInput)
+		userInput := input
+		displayMsg := userInput
+		if len(m.pendingAttachments) > 0 {
+			var attNames []string
+			for _, a := range m.pendingAttachments {
+				attNames = append(attNames, a.Filename)
+			}
+			displayMsg = fmt.Sprintf("%s 📎[%s]", userInput, strings.Join(attNames, ", "))
+		}
+		m.addUserMsg(displayMsg)
 		m.input = ""
 		m.cursor = 0
 		m.waitingResp = true
@@ -551,10 +635,11 @@ func (m *Model) showModelsMenu() {
 					m.addSystemMsg("⚠ Cancelled previous request")
 				}
 
+				m.cfg.LLM.Provider = "ollama"
 				m.cfg.LLM.Model = name
 				m.showMenu = false
 				m.input = ""
-				m.addSystemMsg(fmt.Sprintf("Switched to model: %s", name))
+				m.addSystemMsg(fmt.Sprintf("Switched to Ollama model: %s", name))
 				m.restoreMainMenu()
 				return nil
 			},
@@ -566,6 +651,50 @@ func (m *Model) showModelsMenu() {
 		return nil
 	}})
 	m.menuItems = modelItems
+	m.showMenu = true
+	m.menuCursor = 0
+}
+
+func (m *Model) showLocalModelsMenu(localModels []models.LocalModel) {
+	var items []menuItem
+	for _, lm := range localModels {
+		model := lm
+		label := fmt.Sprintf("%s (%s, %s)", model.Name, model.Quant, models.FormatBytes(model.Size))
+		items = append(items, menuItem{
+			label: label,
+			action: func(m *Model) tea.Cmd {
+				if m.waitingResp && m.cancelFunc != nil {
+					m.cancelFunc()
+					m.waitingResp = false
+					m.addSystemMsg("⚠ Cancelled previous request")
+				}
+
+				if model.OllamaName != "" {
+					// Use Ollama if already imported
+					m.cfg.LLM.Provider = "ollama"
+					m.cfg.LLM.Model = model.OllamaName
+					m.addSystemMsg(fmt.Sprintf("Switched to Ollama model: %s", model.OllamaName))
+				} else {
+					// Use direct local inference via llama-server
+					m.cfg.LLM.Provider = "local"
+					m.cfg.LLM.Model = model.ID
+					m.cfg.LLM.ModelsDir = m.cfg.Models.ModelsDir
+					m.addSystemMsg(fmt.Sprintf("Switched to local model: %s (will start llama-server)", model.Name))
+					m.addSystemMsg("💡 If llama-server is not installed, run: cynapse model import " + model.ID)
+				}
+				m.showMenu = false
+				m.input = ""
+				m.restoreMainMenu()
+				return nil
+			},
+		})
+	}
+	items = append(items, menuItem{"← Back", func(m *Model) tea.Cmd {
+		m.restoreMainMenu()
+		m.menuCursor = 0
+		return nil
+	}})
+	m.menuItems = items
 	m.showMenu = true
 	m.menuCursor = 0
 }
@@ -589,7 +718,11 @@ func (m *Model) sendToAgent(input string) tea.Cmd {
 	m.currentModel = m.cfg.LLM.Model
 	m.streamStartTime = time.Now()
 
-	chunks, errs := m.agent.ProcessMessageStream(ctx, input)
+	// Pass pending attachments and clear them
+	atts := m.pendingAttachments
+	m.pendingAttachments = nil
+
+	chunks, errs := m.agent.ProcessMessageStream(ctx, input, atts...)
 	m.streamChunks = chunks
 	m.streamErrors = errs
 
@@ -661,6 +794,29 @@ func cmdModels(m *Model) tea.Cmd {
 	}
 }
 
+func cmdLocalModels(m *Model) tea.Cmd {
+	m.showMenu = false
+	m.input = ""
+
+	m.menuItems = []menuItem{
+		{"Loading local models...", func(m *Model) tea.Cmd { return nil }},
+	}
+	m.menuCursor = 0
+
+	return func() tea.Msg {
+		modelsDir := m.cfg.Models.ModelsDir
+		if modelsDir == "" {
+			modelsDir = "./models"
+		}
+		mgr := models.NewManager(modelsDir)
+		reg, err := mgr.Load()
+		if err != nil {
+			return localModelListMsg{err: err}
+		}
+		return localModelListMsg{models: reg.Models}
+	}
+}
+
 func cmdMemory(m *Model) tea.Cmd {
 	m.showMenu = false
 	m.input = ""
@@ -715,13 +871,19 @@ func cmdHelp(m *Model) tea.Cmd {
 	m.showMenu = false
 	m.input = ""
 	help := `CYNAPSE Commands:
-  Ctrl+K      Open command menu
-  Status      System status
-  Models      Switch Ollama models
+  Ctrl+K         Open command menu
+  Status         System status
+  Models         Switch Ollama models
+  Local Models   Manage downloaded models
   DENDRITE       Launch graph explorer
-  Heartbeat   Run memory curator
-  Clear       Reset to idle screen
-  Quit        Exit
+  Heartbeat      Run memory curator
+  Clear          Reset to idle screen
+  Quit           Exit
+
+Attachments:
+  /attach <file>      Attach a file from workspace
+  /attachments        List pending attachments
+  /clear-attach       Clear all attachments
 
 Type naturally to chat with the agent.`
 	m.addSystemMsg(help)

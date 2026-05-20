@@ -17,6 +17,7 @@ type Config struct {
 	Memory  MemoryConfig  `yaml:"memory"`
 	Tools   ToolsConfig   `yaml:"tools"`
 	MCP     MCPConfig     `yaml:"mcp"`
+	Models  ModelsConfig  `yaml:"models"`
 }
 
 // ─── Gateway ─────────────────────────────────────────────────────────────────
@@ -29,7 +30,7 @@ type GatewayConfig struct {
 // ─── LLM ─────────────────────────────────────────────────────────────────────
 
 type LLMConfig struct {
-	// Provider: "ollama" | "anthropic" | "openai" | "gemini"
+	// Provider: "ollama" | "anthropic" | "openai" | "gemini" | "local"
 	Provider string `yaml:"provider"`
 
 	// Model name — provider-specific
@@ -37,6 +38,7 @@ type LLMConfig struct {
 	//   anthropic: "claude-sonnet-4-20250514"
 	//   openai:    "gpt-4o", "gpt-4o-mini"
 	//   gemini:    "gemini-2.0-flash", "gemini-pro"
+	//   local:     path to GGUF or local model ID
 	Model string `yaml:"model"`
 
 	// API keys (can also be set via env vars)
@@ -46,6 +48,13 @@ type LLMConfig struct {
 
 	// Ollama base URL (default: http://localhost:11434)
 	OllamaBaseURL string `yaml:"ollama_base_url"`
+
+	// Local model settings (provider: "local")
+	LlamaServerPath  string `yaml:"llama_server_path"`  // path to llama-server binary
+	LocalGPULayers   int    `yaml:"local_gpu_layers"`   // -ngl (default: 0)
+	LocalContextSize int    `yaml:"local_context_size"` // -c (default: 4096)
+	LocalThreads     int    `yaml:"local_threads"`      // -t (default: auto)
+	ModelsDir        string `yaml:"models_dir"`         // for resolving local model IDs
 
 	// Generation params
 	MaxTokens   int     `yaml:"max_tokens"`   // default 4096
@@ -76,6 +85,23 @@ type MemoryConfig struct {
 
 	// Max session messages before compaction
 	MaxSessionMessages int `yaml:"max_session_messages"` // default: 100
+}
+
+// ─── Local Models ────────────────────────────────────────────────────────────
+
+type ModelsConfig struct {
+	// Directory to store downloaded GGUF models
+	ModelsDir string `yaml:"models_dir"` // default: "./models"
+
+	// Whether to use Ollama for running local models (requires ollama installed)
+	UseOllama bool `yaml:"use_ollama"` // default: true
+
+	// Whether to search for llama-server binary for direct inference
+	UseLlamaServer bool `yaml:"use_llama_server"` // default: false
+
+	// HuggingFace API token for gated/private models
+	// Can also be set via HF_TOKEN environment variable
+	HFToken string `yaml:"hf_token"`
 }
 
 // ─── Tools ───────────────────────────────────────────────────────────────────
@@ -189,6 +215,11 @@ func defaults() *Config {
 		MCP: MCPConfig{
 			Enabled: true,
 		},
+		Models: ModelsConfig{
+			ModelsDir:      "./models",
+			UseOllama:      true,
+			UseLlamaServer: false,
+		},
 	}
 }
 
@@ -216,5 +247,8 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("CYNAPSE_AUTH_TOKEN"); v != "" {
 		cfg.Gateway.AuthToken = v
+	}
+	if v := os.Getenv("HF_TOKEN"); v != "" {
+		cfg.Models.HFToken = v
 	}
 }
