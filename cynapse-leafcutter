@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# Cynapse + Leafcutter Connector
+# Automatically detects Cynapse's model directory and runs the latest downloaded model
+# Usage: cynapse-leafcutter [--model-id <id>] [--chat] [--generate "prompt"]
+
+set -euo pipefail
+
+LEAFCUTTER_BIN="${LEAFCUTTER_BIN:-$(which leafcutter 2>/dev/null || true)}"
+MODELS_DIR="${CYNAPSE_MODELS_DIR:-${HOME}/.cynapse/workspace/models}"
+MODE="chat"
+MODEL_ID=""
+PROMPT=""
+MAX_TOKENS=256
+TEMPERATURE=0.7
+
+# ─── Parse args ──────────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --model-id)
+            MODEL_ID="$2"
+            shift 2
+            ;;
+        --chat)
+            MODE="chat"
+            shift
+            ;;
+        --generate)
+            MODE="generate"
+            PROMPT="$2"
+            shift 2
+            ;;
+        --max-tokens)
+            MAX_TOKENS="$2"
+            shift 2
+            ;;
+        --temperature)
+            TEMPERATURE="$2"
+            shift 2
+            ;;
+        --help)
+            echo "Cynapse + Leafcutter Connector"
+            echo ""
+            echo "Usage: cynapse-leafcutter [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --model-id <id>       Specific model ID to run (auto-detects latest if omitted)"
+            echo "  --chat                Interactive chat mode (default)"
+            echo "  --generate <prompt>   One-shot generation mode"
+            echo "  --max-tokens <n>      Max tokens to generate (default: 256)"
+            echo "  --temperature <t>     Sampling temperature (default: 0.7)"
+            echo "  --help                Show this help"
+            echo ""
+            echo "Environment:"
+            echo "  LEAFCUTTER_BIN        Path to leafcutter binary"
+            echo "  CYNAPSE_MODELS_DIR    Path to Cynapse models directory"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Run 'cynapse-leafcutter --help' for usage."
+            exit 1
+            ;;
+    esac
+done
+
+# ─── Find leafcutter ─────────────────────────────────────────────────────────
+if [[ -z "$LEAFCUTTER_BIN" ]]; then
+    # Try common install locations
+    for path in \
+        "$HOME/.local/bin/leafcutter" \
+        "$HOME/.leafcutter/LeafcutterLLM/rust/target/release/leafcutter" \
+        "/usr/local/bin/leafcutter"
+    do
+        if [[ -x "$path" ]]; then
+            LEAFCUTTER_BIN="$path"
+            break
+        fi
+    done
+fi
+
+if [[ -z "$LEAFCUTTER_BIN" ]] || [[ ! -x "$LEAFCUTTER_BIN" ]]; then
+    echo "❌ leafcutter binary not found."
+    echo ""
+    echo "Install it with:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/Alartist40/LeafcutterLLM/main/install.sh | bash"
+    echo ""
+    echo "Or set LEAFCUTTER_BIN to the binary path:"
+    echo "  export LEAFCUTTER_BIN=/path/to/leafcutter"
+    exit 1
+fi
+
+echo "🌿 Using leafcutter: $LEAFCUTTER_BIN"
+
+# ─── Find models directory ───────────────────────────────────────────────────
+if [[ ! -d "$MODELS_DIR" ]]; then
+    # Try to find Cynapse workspace
+    for path in \
+        "$HOME/.cynapse/workspace/models" \
+        "$HOME/cynapse/workspace/models" \
+        "./workspace/models" \
+        "./models"
+    do
+        if [[ -d "$path" ]]; then
+            MODELS_DIR="$path"
+            break
+        fi
+    done
+fi
+
+if [[ ! -d "$MODELS_DIR" ]]; then
+    echo "❌ Models directory not found: $MODELS_DIR"
+    echo "Download a model first:"
+    echo "  cynapse model download meta-llama/Llama-3.2-1B-Instruct-GGUF Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+    exit 1
+fi
+
+echo "📁 Models directory: $MODELS_DIR"
+
+# ─── Find model ──────────────────────────────────────────────────────────────
+MODEL_PATH=""
+
+if [[ -n "$MODEL_ID" ]]; then
+    # Look for specific model
+    for f in "$MODELS_DIR"/*.gguf; do
+        if [[ "$(basename "$f")" == "$MODEL_ID" ]] || [[ "$(basename "$f" .gguf)" == "$MODEL_ID" ]]; then
+            MODEL_PATH="$f"
+            break
+        fi
+    done
+    if [[ -z "$MODEL_PATH" ]]; then
+        echo "❌ Model not found: $MODEL_ID"
+        echo "Available models:"
+        ls -1 "$MODELS_DIR"/*.gguf 2>/dev/null || echo "  (none)"
+        exit 1
+    fi
+else
+    # Auto-detect: use the most recently modified GGUF
+    MODEL_PATH=$(find "$MODELS_DIR" -maxdepth 1 -name "*.gguf" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+    if [[ -z "$MODEL_PATH" ]]; then
+        echo "❌ No .gguf models found in $MODELS_DIR"
+        echo "Download a model first:"
+        echo "  cynapse model download meta-llama/Llama-3.2-1B-Instruct-GGUF Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        exit 1
+    fi
+fi
+
+echo "🧠 Model: $(basename "$MODEL_PATH")"
+echo ""
+
+# ─── Run leafcutter ──────────────────────────────────────────────────────────
+if [[ "$MODE" == "chat" ]]; then
+    exec "$LEAFCUTTER_BIN" chat \
+        --model "$MODEL_PATH" \
+        --temperature "$TEMPERATURE" \
+        --max-tokens "$MAX_TOKENS"
+else
+    exec "$LEAFCUTTER_BIN" generate \
+        --model "$MODEL_PATH" \
+        --prompt "$PROMPT" \
+        --temperature "$TEMPERATURE" \
+        --max-tokens "$MAX_TOKENS"
+fi

@@ -155,8 +155,11 @@ func New(cfg *config.LLMConfig) (Client, error) {
 	case "local":
 		return newLocalClient(base, cfg, cfg.ModelsDir)
 
+	case "leafcutter":
+		return newLeafcutterClient(base, cfg, cfg.ModelsDir)
+
 	default:
-		return nil, fmt.Errorf("unknown LLM provider: %q (use ollama|anthropic|openai|gemini|local)", cfg.Provider)
+		return nil, fmt.Errorf("unknown LLM provider: %q (use ollama|anthropic|openai|gemini|local|leafcutter)", cfg.Provider)
 	}
 }
 

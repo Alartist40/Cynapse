@@ -49,8 +49,9 @@ type LLMConfig struct {
 	// Ollama base URL (default: http://localhost:11434)
 	OllamaBaseURL string `yaml:"ollama_base_url"`
 
-	// Local model settings (provider: "local")
+	// Local model settings (provider: "local" | "leafcutter")
 	LlamaServerPath  string `yaml:"llama_server_path"`  // path to llama-server binary
+	LeafcutterPath   string `yaml:"leafcutter_path"`    // path to leafcutter binary (auto-detected if empty)
 	LocalGPULayers   int    `yaml:"local_gpu_layers"`   // -ngl (default: 0)
 	LocalContextSize int    `yaml:"local_context_size"` // -c (default: 4096)
 	LocalThreads     int    `yaml:"local_threads"`      // -t (default: auto)
