@@ -13,7 +13,9 @@ Cynapse is a **modular, terminal-first AI agent** built in Go. It doesn't try to
 **Why Cynapse?**
 - 🧩 **LEGO-piece architecture** — install only what you need
 - 🧠 **Persistent memory** — DENDRITE graph memory survives API changes, model switches, even reinstalls
-- ⚡ **Streaming everywhere** — watch text appear word-by-word (Ollama, OpenAI, Anthropic)
+- ⚡ **Streaming everywhere** — watch text appear word-by-word (Ollama, OpenAI, Anthropic, local)
+- 💻 **Run models locally** — search, download, and run GGUF models from HuggingFace (like PocketPal AI)
+- 📎 **Multimodal attachments** — drop images, PDFs, and text files into `./workspace/` and chat about them
 - 🖥️ **Terminal-native** — runs on a Raspberry Pi 5, a gaming rig, or over SSH
 - 🔌 **MCP-native** — every synapse speaks the Model Context Protocol
 
@@ -31,9 +33,11 @@ That's it. The installer handles Go, dependencies, build, and PATH setup automat
 1. Detects your OS/arch (Linux, macOS, Windows / x86_64, ARM64, ARMv7)
 2. Installs Go if missing
 3. Installs system dependencies (`build-essential`, `sqlite3`, etc.)
-4. Clones and builds Cynapse
-5. Creates `~/.cynapse/` home directory
-6. Adds `cynapse` to your PATH
+4. Offers to install Ollama for local model inference
+5. Clones and builds Cynapse
+6. Creates `~/.cynapse/` home directory + `./workspace/` for attachments
+7. Generates a default `config.yaml`
+8. Adds `cynapse` to your PATH
 
 **Then just run:**
 ```bash
@@ -51,6 +55,61 @@ cynapse
 ```
 
 A beautiful purple & orange TUI appears. Type naturally. Press **Ctrl+K** for the command menu.
+
+### Local Model Management (PocketPal-Style)
+
+Search, download, and run AI models directly on your machine. No cloud required.
+
+```bash
+# Search HuggingFace for GGUF models
+cynapse model search qwen2.5
+
+# Download a specific model file
+cynapse model download Qwen/Qwen2.5-0.5B-Instruct-GGUF qwen2.5-0.5b-instruct-q4_0.gguf
+
+# Download a gated/private model (requires HF token)
+cynapse model download meta-llama/Llama-3.2-1B-Instruct-GGUF \
+  Llama-3.2-1B-Instruct-Q4_0.gguf --token hf_xxx
+
+# Or set token via environment:
+export HF_TOKEN=hf_xxx
+
+# List downloaded models
+cynapse model list
+
+# Import into Ollama (recommended)
+cynapse model import hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q4_0.gguf
+
+# Run directly without Ollama (uses llama-server)
+# In TUI: Ctrl+K → Local Models → select model
+```
+
+### Multimodal Attachments
+
+Drop files in `./workspace/` then attach them in chat:
+
+```bash
+# In the TUI:
+> /attach image.png
+📎 Attached: image.png (image)
+
+> /attach report.pdf
+📎 Attached: report.pdf (pdf)
+
+> what does this diagram show?
+CYNAPSE: This diagram illustrates...
+
+# List pending attachments
+> /attachments
+
+# Clear all attachments
+> /clear-attach
+```
+
+**Supported file types:**
+- **Images:** PNG, JPG, GIF, BMP, WebP → base64 for vision models
+- **Text:** TXT, MD, CSV, JSON, code files → read as text
+- **PDFs:** Extracted via `pdftotext` (if available) or base64 fallback
 
 ### Manage Synapses (Plugins)
 
@@ -84,9 +143,12 @@ nano ~/.cynapse/config.yaml
 **Example `~/.cynapse/config.yaml`:**
 ```yaml
 llm:
-  provider: "ollama"              # ollama | anthropic | openai | gemini
-  model: "qwen2.5:7b"
+  provider: "ollama"              # ollama | anthropic | openai | gemini | local
+  model: "qwen2.5"
   ollama_base_url: "http://localhost:11434"
+  llama_server_path: ""           # path to llama-server binary
+  local_gpu_layers: 0             # GPU offloading for local models
+  local_context_size: 4096        # Context window for local models
   max_tokens: 4096
   temperature: 0.7
 
@@ -102,6 +164,12 @@ mcp:
 tools:
   profile: "standard"             # minimal | standard | full
   work_dir: "./workspace"
+
+models:
+  models_dir: "~/.cynapse/models"
+  use_ollama: true
+  use_llama_server: false
+  hf_token: ""                    # HuggingFace token for gated models
 ```
 
 ---
@@ -188,7 +256,17 @@ Press **DENDRITE** in the TUI menu (Ctrl+K → DENDRITE) to launch an interactiv
 
 ## ✨ What's New
 
-### v2.1.0 (Latest)
+### v2.2.0 (Latest)
+- ✅ **Local model management** — search, download, and run GGUF models from HuggingFace
+- ✅ **Direct llama-server inference** — run models without Ollama (auto port allocation, health checks)
+- ✅ **Ollama GGUF import** — one-command import with auto-generated Modelfiles
+- ✅ **HuggingFace authentication** — `--token` flag, `HF_TOKEN` env var, config support for gated models
+- ✅ **Multimodal attachments** — images, PDFs, text files from `./workspace/` folder
+- ✅ **Vision model support** — base64 image encoding for Ollama and local llama-server
+- ✅ **TUI slash commands** — `/attach`, `/attachments`, `/clear-attach`
+- ✅ **TUI Local Models menu** — switch between Ollama and direct local inference
+
+### v2.1.0
 - ✅ **OpenAI & Anthropic streaming** — SSE-based with tool-call reconstruction
 - ✅ **Synapse local-path installation** — `cynapse synapse add <name> --path <binary>`
 - ✅ **Synapse manifest system** — `synapses.json` caches metadata, no need to execute binaries on startup
@@ -270,10 +348,16 @@ go build ./...
 
 ## 🔮 Roadmap
 
+- [x] Local model search & download from HuggingFace
+- [x] Direct llama-server subprocess inference
+- [x] Multimodal attachments (images, PDFs, text)
+- [x] HuggingFace authentication for gated models
 - [ ] Gemini streaming support
 - [ ] Cynapse ↔ Leafcutter runtime bridge (use Leafcutter as LLM backend)
 - [ ] Remote synapse registry (download synapses without `--path`)
 - [ ] Semantic search in DENDRITE (vector embeddings)
+- [ ] Vision model auto-pairing (auto-download mmproj)
+- [ ] Model quantization advisor (RAM-based suggestions)
 - [ ] Voice synapse (STT + TTS)
 - [ ] Multi-agent federation
 

@@ -179,39 +179,107 @@ main() {
     echo ""
     
     # Step 5: Create ~/.cynapse directory
-    echo -e "${YELLOW}[5/7] Setting up CYNAPSE home directory...${NC}"
+    echo -e "${YELLOW}[5/8] Setting up CYNAPSE home directory...${NC}"
     mkdir -p ~/.cynapse/synapses
     mkdir -p ~/.cynapse/data/persona
     mkdir -p ~/.cynapse/data/sessions
     mkdir -p ~/.cynapse/logs
+    mkdir -p ~/.cynapse/models
     
-    # Copy default config if doesn't exist
-    if [ ! -f ~/.cynapse/config.yaml ]; then
-        if [ -f config.yaml ]; then
-            cp config.yaml ~/.cynapse/config.yaml
-        fi
+    # Create workspace in current project dir or home
+    WORKSPACE_DIR="$(pwd)/workspace"
+    mkdir -p "$WORKSPACE_DIR"
+    
+    # Create default config if doesn't exist
+    CONFIG_PATH="$HOME/.cynapse/config.yaml"
+    if [ ! -f "$CONFIG_PATH" ]; then
+        echo -e "${YELLOW}Creating default config...${NC}"
+        cat > "$CONFIG_PATH" << 'EOF'
+gateway:
+  address: 0.0.0.0:8080
+  auth_token: ""
+
+llm:
+  provider: ollama
+  model: qwen2.5
+  anthropic_key: ""
+  openai_key: ""
+  gemini_key: ""
+  ollama_base_url: http://localhost:11434
+  llama_server_path: ""
+  local_gpu_layers: 0
+  local_context_size: 4096
+  local_threads: 0
+  models_dir: ""
+  max_tokens: 4096
+  temperature: 0.7
+  max_retries: 3
+
+memory:
+  persona_path: ~/.cynapse/data/persona
+  sessions_path: ~/.cynapse/data/sessions
+  db_path: ~/.cynapse/data/memory.db
+  dendrite_db_path: ~/.cynapse/data/dendrite.db
+  defaults_path: ./persona/defaults
+  heartbeat_interval_hours: 6
+  max_session_messages: 100
+
+tools:
+  profile: standard
+  allow: []
+  deny: []
+  work_dir: ./workspace
+  timeout_seconds: 30
+
+mcp:
+  enabled: true
+  servers: []
+
+models:
+  models_dir: ~/.cynapse/models
+  use_ollama: true
+  use_llama_server: false
+  hf_token: ""
+EOF
+        echo -e "${GREEN}✓ Created ~/.cynapse/config.yaml${NC}"
     fi
     
-    echo -e "${GREEN}✓ Created ~/.cynapse${NC}"
+    echo -e "${GREEN}✓ Created ~/.cynapse + workspace/${NC}"
     echo ""
     
-    # Step 6: Build CYNAPSE
-    echo -e "${YELLOW}[6/7] Building CYNAPSE...${NC}"
+    # Step 6: Check/Install Ollama (optional but recommended)
+    echo -e "${YELLOW}[6/8] Checking Ollama...${NC}"
+    if command -v ollama &> /dev/null; then
+        echo -e "${GREEN}✓ Ollama already installed${NC}"
+    else
+        echo -e "${YELLOW}Ollama not found. Install it for local model support? (y/n)${NC}"
+        read -r INSTALL_OLLAMA
+        if [ "$INSTALL_OLLAMA" = "y" ] || [ "$INSTALL_OLLAMA" = "Y" ]; then
+            echo "Installing Ollama..."
+            curl -fsSL https://ollama.com/install.sh | sh
+            echo -e "${GREEN}✓ Ollama installed${NC}"
+        else
+            echo -e "${YELLOW}Skipped Ollama. You can install later from https://ollama.com${NC}"
+            echo -e "${YELLOW}Or use direct llama-server inference (install llama.cpp separately)${NC}"
+        fi
+    fi
+    echo ""
+    
+    # Step 7: Build CYNAPSE
+    echo -e "${YELLOW}[7/8] Building CYNAPSE...${NC}"
     go mod download
     go build -o /tmp/cynapse ./cmd/cynapse
     echo -e "${GREEN}✓ Build complete${NC}"
     echo ""
     
-    # Step 7: Install to system PATH
-    echo -e "${YELLOW}[7/7] Installing to system PATH...${NC}"
+    # Step 8: Install to system PATH
+    echo -e "${YELLOW}[8/8] Installing to system PATH...${NC}"
     
     if [ "$OS_TYPE" = "windows" ]; then
-        # Windows: install to user's local bin
         mkdir -p ~/bin
         mv /tmp/cynapse ~/bin/cynapse.exe
         echo -e "${YELLOW}Add $HOME/bin to your PATH${NC}"
     else
-        # Unix: install to /usr/local/bin
         if [ -w /usr/local/bin ]; then
             mv /tmp/cynapse /usr/local/bin/cynapse
         else
@@ -231,10 +299,19 @@ main() {
     echo -e "${BLUE}Run CYNAPSE:${NC}"
     echo -e "  ${YELLOW}cynapse${NC}"
     echo ""
+    echo -e "${BLUE}Search & download local models:${NC}"
+    echo -e "  ${YELLOW}cynapse model search qwen2.5${NC}"
+    echo -e "  ${YELLOW}cynapse model download <hf-id> <filename>${NC}"
+    echo -e "  ${YELLOW}cynapse model list${NC}"
+    echo -e "  ${YELLOW}cynapse model import <local-id>${NC}"
+    echo ""
+    echo -e "${BLUE}Drop files in ./workspace/ then attach in chat:${NC}"
+    echo -e "  ${YELLOW}/attach image.png${NC}"
+    echo -e "  ${YELLOW}/attach document.pdf${NC}"
+    echo ""
     echo -e "${BLUE}Manage synapses:${NC}"
-    echo -e "  ${YELLOW}cynapse synapse list${NC}              - List installed synapses"
+    echo -e "  ${YELLOW}cynapse synapse list${NC}"
     echo -e "  ${YELLOW}cynapse synapse add <name> --path <binary>${NC}"
-    echo -e "  ${YELLOW}cynapse synapse search [query]${NC}    - Search available synapses"
     echo ""
     echo -e "${BLUE}Get help:${NC}"
     echo -e "  ${YELLOW}cynapse help${NC}"
