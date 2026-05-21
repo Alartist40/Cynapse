@@ -1,0 +1,3 @@
+## 2026-05-21 - [Replacing Divs with Block-Level Labels for Web UI Embedded in String]
+**Learning:** Found a reusable a11y pattern when improving form accessibility in the embedded web UI: replacing highly stylized `<div>` elements wrapped around form inputs with semantic `<label for="...">` tags. By applying `display: block` to the existing label's CSS class, the visual layout created by the block-level `<div>` element is preserved while greatly enhancing screen reader and click-to-focus accessibility.
+**Action:** Always prefer semantic `<label>` tags with a `for` attribute over non-semantic `<div>` elements for form labels. If the layout breaks because the label is an inline element, add `display: block` to the label's CSS to maintain the original visual structure.
