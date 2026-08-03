@@ -455,24 +455,101 @@ resolve relative to **CWD** (not config dir). Keep Go's exact semantics.
 
 ---
 
-## 7. Persona & Curator
+## 7. Persona & Curator (verified from `internal/memory/memory.go`)
 
-- `persona.rs`: device dir under `memory.persona_path/<device_id>/` containing
-  AGENTS.md, USER.md, MEMORY.md, HEARTBEAT.md, SOUL.md, TOOLS.md, IDENTITY.md.
-  `SaveFact(fact, tags)` → upsert a DENDRITE node; `AppendDailyLog(entry)` →
-  append to today's `DAILYLOG-YYYY-MM-DD.md` (Go behavior: check exact format in
-  `memory.go` when porting — mark as a **to-verify-detail**).
-- `CompileSystemPrompt(userMsg)` — combines persona MD files + DENDRITE context
-  (Go builds persona prompt; confirm exact assembly in `memory.go` — mark
-  to-verify).
-- `Curator` heartbeat: runs maintenance every `heartbeat_interval_hours`; on
-  trigger runs `selfImproveFork`-style LLM review + daily log append. Port from
-  `memory.go`/`agent.go`.
+I read `memory.go` verbatim. Locked-down behavior:
 
-**To-verify during implementation** (I have not yet read `internal/memory/memory.go`
-in full): exact `SaveFact` node creation, daily-log filename format, and
-`CompileSystemPrompt` assembly. These are flagged in the plan so the build step
-reads them first.
+**Persona directory layout (created by `NewPersona`):**
+- Root: `{persona_path}/{device_id}/` (mkdir 0755).
+- Subdirs auto-created: `logs/daily/`, `logs/heartbeat/`, `skills/`.
+- Core persona files (seeded from `{defaults_path}/*` on first boot only):
+  ```
+  IDENTITY.md   → node id "identity"    type=Identity  title="Identity"
+  SOUL.md       → node id "soul"        type=Identity  title="Soul"
+  AGENTS.md     → node id "agents"      type=Concept   title="Agent Rules"
+  USER.md       → node id "user"        type=Person    title="User Profile"
+  TOOLS.md      → node id "tools"       type=Concept   title="Tools"
+  MEMORY.md     → node id "memory_notes" type=Memory    title="Memory"
+  HEARTBEAT.md  → node id "heartbeat"   type=Concept   title="Heartbeat"
+  ```
+
+**`NewPersona(device_id, base_path, defaults_path, db_path)` flow:**
+1. `os.MkdirAll(base/device_id)` then the three subdirs.
+2. `NewDendrite()` (in-memory graph).
+3. `NewDendriteStore(db_path)` (opens SQLite).
+4. `store.LoadAll(graph)` — hydrate persisted nodes. **Warning logged on
+   failure but does NOT abort** (graceful first-boot).
+5. If `graph.Len() == 0` (first boot) → `seed_from_markdown_files()`:
+   - Reads each seed file from `{defaults_path}`.
+   - Calls `graph.Upsert(id, title, content, type, nil)`.
+   - **SECOND PASS**: `for n in graph.All() { store.Save(n) }` — required
+     because Upsert auto-wires backlinks that need persisting.
+6. Returns `Persona{graph, store, context_builder}`.
+
+**`CompileSystemPrompt(user_msg) -> String`:**
+```rust
+fn compile_system_prompt(&self, user_msg: &str) -> String {
+    self.context_builder.build_prompt(user_msg, 6000)
+}
+```
+That is — Persona does NOT mix markdown files into the prompt directly. The
+markdown files exist only to seed DENDRITE on first boot. **All prompt
+assembly is `DendriteContext::BuildPrompt` with max_tokens=6000.** This is a
+major simplification.
+
+**`SaveFact(fact, tags) -> Result<()>`:**
+1. Trim the fact.
+2. Walk `graph.All()` looking for an existing `Memory`-type node whose trimmed
+   content equals the new fact — if found:
+   - If `tags != ""`: parse CSV, merge with existing tags into a set, update.
+   - `updated_at = now`; `store.Save(node)`; return (dedup, no new node).
+3. Else: create new node:
+   - `id = format!("fact_{}", unix_nanos())` (Go: `fact_<unix_nanos>`).
+   - `title = format!("Fact: {}", truncate(fact, 40))` (40-char preview + "...").
+   - `type = NodeType::Memory`.
+   - `tags = if tags != "" { split_csv_trim } else { vec![] }`.
+   - `graph.Upsert(...)`; `store.Save(node)`.
+
+**`AppendDailyLog(entry) -> Result<()>`:**
+- `path = base/logs/daily/{YYYY-MM-DD}.md` (Go format `2006-01-02`).
+- `os.OpenFile(O_APPEND|O_CREATE|O_WRONLY, 0644)`.
+- Write `format!("\n## {HH:MM:SS}\n{entry}\n")` (timestamp + content).
+
+**`ReadRecentLogs(days: i32) -> String`:**
+- Walk `i in 0..days`, read `{date-i}.md`, skip missing.
+- Concatenate as `"## {date}\n{content}"` blocks joined by `"\n\n"`.
+
+**`AtomicWrite(name, content) -> Result<()>` (critical for safety):**
+1. `tmp = base/{name}.tmp`; `bak = base/{name}.bak`.
+2. `defer remove_tmp()` (cleanup stale temp on any exit).
+3. Write content to tmp.
+4. `rename(base/{name}, base/{name}.bak)` (ignore if missing — first write).
+5. `rename(tmp, base/{name})` — if fails, restore from bak.
+6. If `name` is a known core node, `graph.Upsert` + `store.Save` to sync.
+7. On success: remove bak.
+
+**`Curator` (heartbeat loop):**
+- `NewCurator(persona, llm_client, interval_hours)` — default 6h, min 1.
+- `Start(ctx)`: spawn ticker goroutine, on each tick call `RunMaintenance`.
+  Stop channels: `c.stop` and `ctx.Done()`.
+- `RunMaintenance(ctx)`:
+  - Read recent logs (7 days).
+  - If empty → skip (return nil).
+  - Read current `MEMORY.md` + `HEARTBEAT.md` (fallback default instructions
+    if HEARTBEAT.md is empty).
+  - Build prompt asking LLM to update MEMORY.md based on logs.
+  - `LLM.chat(req)` with `max_tokens=4096, temperature=0.3`.
+  - Trim response. Reject if < 20 chars (sanity check).
+  - `persona.AtomicWrite("MEMORY.md", new_content)`.
+  - `persona.AppendDailyLog("[CURATOR] Heartbeat complete. Tokens used: in=X out=Y. MEMORY.md updated.")`.
+
+**Type mapping for Rust:**
+- `NewPersona` returns `Arc<Persona>` (the agent shares it).
+- Persona fields: `device_id: String`, `base_path: PathBuf`, `defaults_path:
+  PathBuf`, `graph: Arc<Dendrite>`, `store: Arc<DendriteStore>`,
+  `context_builder: Arc<DendriteContext>`, `mu: RwLock<()>`.
+- Methods that mutate (WriteFile, AtomicWrite, SaveFact, AppendDailyLog)
+  take a write lock. Read methods take a read lock.
 
 ---
 

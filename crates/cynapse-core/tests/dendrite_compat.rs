@@ -5,10 +5,16 @@
 //! row content.
 
 use cynapse_core::dendrite::{Dendrite, DendriteStore, NodeType};
+use cynapse_core::session::{Entry, Manager};
 
 const LIVE_DB_CANDIDATES: [&str; 2] = [
     "/home/xander/Documents/portfolio/cynapse/data/dendrite.db",
     "data/dendrite.db",
+];
+
+const LIVE_SESSION_CANDIDATES: [&str; 2] = [
+    "/home/xander/Documents/portfolio/cynapse/data/sessions",
+    "data/sessions",
 ];
 
 /// The 8 nodes that the Go build currently seeds and persists.
@@ -66,6 +72,40 @@ fn reads_live_dendrite_db() {
     assert!(
         hits.contains(&"identity".to_string()),
         "fts should find identity node, got {hits:?}"
+    );
+}
+
+#[test]
+fn reads_live_go_session_jsonl() {
+    let Some(sessions_dir) = LIVE_SESSION_CANDIDATES
+        .iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.exists())
+    else {
+        eprintln!("SKIP: live sessions dir not found");
+        return;
+    };
+
+    let manager = Manager::new_with_mode(sessions_dir, 0o644).expect("open sessions dir");
+    let keys = manager.list().expect("list sessions");
+    assert!(!keys.is_empty(), "expected at least one Go session");
+    let session = manager.get(&keys[0]).expect("load first session");
+    assert!(
+        session.len() >= 4,
+        "expected Go session {} to have entries, got {}",
+        keys[0],
+        session.len()
+    );
+    let entries = session.entries();
+    // Role/ts round-trip integrity against the Go writer's output.
+    for e in &entries {
+        assert!(e.ts > 0, "Go sessions always set ts");
+        assert!(!e.role.to_string().is_empty());
+    }
+    eprintln!(
+        "OK: read live Go session {} with {} entries",
+        keys[0],
+        entries.len()
     );
 }
 
