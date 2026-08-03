@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = ["crates/cynapse-core", "crates/cynapse-tui"]
+
+[package]
+name = "cynapse"
+version = "0.1.0"
+edition = "2024"
+description = "Local-first AI agent terminal with a persistent graph memory (DENDRITE). Rust port of the Go cynapse agent."
+license = "MIT"
+
+[[bin]]
+name = "cynapse"
+path = "src/main.rs"
+
+[dependencies]
+cynapse-core = { path = "crates/cynapse-core" }
+cynapse-tui = { path = "crates/cynapse-tui" }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde_yaml = "0.9"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[profile.release]
+opt-level = 1
+codegen-units = 256
+incremental = true
+
+[profile.release-lto]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+
+[profile.selfdev]
+inherits = "release"
+
+[profile.dev.package.ratatui]
+opt-level = 3
+[profile.dev.package.crossterm]
+opt-level = 3
+[profile.dev.package.unicode-width]
+opt-level = 3
+
+[profile.selfdev.package.ratatui]
+opt-level = 3
+[profile.selfdev.package.crossterm]
+opt-level = 3
+[profile.selfdev.package.unicode-width]
+opt-level = 3
+
+[profile.test.package.ratatui]
+opt-level = 3
+[profile.test.package.crossterm]
+opt-level = 3
+[profile.test.package.unicode-width]
+opt-level = 3
