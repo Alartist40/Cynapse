@@ -16,6 +16,8 @@ pub struct Cli {
 pub enum Command {
     /// Print version information.
     Version,
+    /// Launch the interactive chat TUI.
+    Chat,
     /// Inspect and validate the YAML configuration.
     Config(ConfigCmd),
     /// Query the DENDRITE graph memory.
