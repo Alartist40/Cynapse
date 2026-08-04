@@ -224,6 +224,8 @@ struct OllamaResponseMessage {
     #[serde(default)]
     content: String,
     #[serde(default)]
+    thinking: String,
+    #[serde(default)]
     tool_calls: Vec<OllamaResponseToolCall>,
 }
 
@@ -255,6 +257,7 @@ impl LlmClient for OllamaClient {
         let o: OllamaResponse = serde_json::from_slice(&data).context("parsing ollama response")?;
         let mut result = Response {
             content: o.message.content,
+            thinking: o.message.thinking,
             usage: Usage {
                 input_tokens: o.prompt_eval_count,
                 output_tokens: o.eval_count,
@@ -433,6 +436,11 @@ fn handle_ollama_line(
         Err(_) => return Ok(()), // skip malformed lines
     };
     if let Some(message) = parsed.get("message") {
+        if let Some(thinking) = message.get("thinking").and_then(|t| t.as_str()) {
+            if !thinking.is_empty() {
+                let _ = chunks_tx.send(format!("[thinking]{thinking}"));
+            }
+        }
         if let Some(calls) = message.get("tool_calls").and_then(|c| c.as_array()) {
             for call in calls {
                 let name = call

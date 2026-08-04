@@ -103,9 +103,8 @@ impl LlmClient for LeafcutterClient {
         let parsed: Value = serde_json::from_slice(&data).context("parsing leafcutter response")?;
 
         let mut result = Response {
-            content: String::new(),
-            tool_calls: Vec::new(),
             usage: Usage::default(),
+            ..Default::default()
         };
         if let Some(usage) = parsed.get("usage") {
             result.usage.input_tokens =

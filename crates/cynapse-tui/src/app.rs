@@ -87,6 +87,7 @@ fn filtered_slash(query: &str) -> Vec<&'static (&'static str, &'static str)> {
 enum UiMsg {
     User(String),
     Assistant(String),
+    Thinking(String),
     Tool(String),
     ToolResult(String),
     System(String),
@@ -307,6 +308,7 @@ struct App {
 
     busy: bool,
     streaming: String,
+    streaming_thinking: String,
     spinner: usize,
     stream_start: Instant,
     last_elapsed: Option<Duration>,
@@ -327,9 +329,10 @@ struct App {
 
     chat_scroll: usize,
     follow: bool,
-    width: u16,
     show_slash_menu: bool,
     slash_cursor: usize,
+    dirty: bool,
+    width: u16,
     height: u16,
 }
 
@@ -354,6 +357,7 @@ impl App {
             quit: false,
             busy: false,
             streaming: String::new(),
+            streaming_thinking: String::new(),
             spinner: 0,
             stream_start: Instant::now(),
             last_elapsed: None,
@@ -372,6 +376,7 @@ impl App {
             follow: true,
             show_slash_menu: false,
             slash_cursor: 0,
+            dirty: true,
             width: 0,
             height: 0,
         }
@@ -389,6 +394,7 @@ impl App {
     // ── Event handling ──────────────────────────────────────────────────────
 
     async fn on_event(&mut self, ev: Event) -> Result<bool> {
+        self.dirty = true;
         match ev {
             Event::Key(k) => self.handle_key(k).await?,
             Event::Resize(w, h) => {
@@ -414,6 +420,7 @@ impl App {
     fn on_tick(&mut self) {
         if self.busy && self.streaming.is_empty() {
             self.spinner = (self.spinner + 1) % SPINNER.len();
+            self.dirty = true;
         }
     }
 
@@ -666,6 +673,7 @@ impl App {
         self.cursor = 0;
         self.busy = true;
         self.streaming.clear();
+        self.streaming_thinking.clear();
         self.stream_start = Instant::now();
         self.spinner = 0;
         self.follow = true;
@@ -1010,6 +1018,7 @@ impl App {
     // ── Streaming ───────────────────────────────────────────────────────────
 
     fn on_chunk(&mut self, chunk: &str) {
+        self.dirty = true;
         let t = chunk.trim();
         if let Some(rest) = t.strip_prefix("[tool result]") {
             self.messages.push(UiMsg::ToolResult(rest.trim().to_string()));
@@ -1019,14 +1028,23 @@ impl App {
             self.messages.push(UiMsg::Tool(rest.trim().to_string()));
             return;
         }
+        if let Some(rest) = chunk.strip_prefix("[thinking]") {
+            self.streaming_thinking.push_str(rest);
+            return;
+        }
         self.streaming.push_str(chunk);
     }
 
     fn finalize_stream(&mut self) {
+        self.dirty = true;
         if !self.busy {
             return;
         }
         self.busy = false;
+        let thinking = std::mem::take(&mut self.streaming_thinking);
+        if !thinking.trim().is_empty() {
+            self.messages.push(UiMsg::Thinking(thinking));
+        }
         let content = std::mem::take(&mut self.streaming);
         if !content.is_empty() {
             self.last_tokens = llm::estimate_tokens_chars(&content);
@@ -1048,6 +1066,7 @@ impl App {
     }
 
     fn on_stream_error(&mut self, e: anyhow::Error) {
+        self.dirty = true;
         self.busy = false;
         self.streaming.clear();
         self.chunks = None;
@@ -1065,6 +1084,7 @@ impl App {
     // ── Confirm prompt handling ─────────────────────────────────────────────
 
     fn on_confirm_request(&mut self, msg: ConfirmMsg) {
+        self.dirty = true;
         let card = format_confirm_card(&msg.req);
         self.messages.push(UiMsg::System(card));
         self.confirm = Some(ConfirmState { req: msg.req, reply: msg.reply });
@@ -1205,7 +1225,7 @@ impl App {
         let word = Paragraph::new(Line::from(Span::styled(
             "C Y N A P S E",
             Style::default()
-                .fg(GOLD)
+                .fg(PURPLE_ACCENT)
                 .add_modifier(Modifier::BOLD),
         )))
         .alignment(Alignment::Center);
@@ -1312,7 +1332,7 @@ impl App {
         }
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(GOLD))
+            .border_style(Style::default().fg(PURPLE_ACCENT))
             .title(" commands ");
         let dropdown = Paragraph::new(lines).block(block);
         f.render_widget(dropdown, area);
@@ -1376,7 +1396,7 @@ impl App {
             bar.push_str(&" ".repeat(pad));
             bar.push_str(&right);
         }
-        let status = Paragraph::new(Line::from(Span::styled(bar, Style::default().fg(DIM))));
+        let status = Paragraph::new(Line::from(Span::styled(bar, Style::default().fg(BRIGHT))));
         f.render_widget(status, area);
     }
 
@@ -1407,20 +1427,22 @@ impl App {
         let mut lines: Vec<Line<'static>> = Vec::new();
         let user_p = Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD);
         let asst_p = Style::default().fg(BRIGHT);
+        let think_p = Style::default().fg(DIM).add_modifier(Modifier::ITALIC);
         let tool_p = Style::default().fg(GOLD);
         let toolres_p = Style::default().fg(DIM);
-        let sys_p = Style::default().fg(GOLD);
+        let sys_p = Style::default().fg(PURPLE_ACCENT);
 
         for m in &self.messages {
             let (prefix, style): (&str, Style) = match m {
                 UiMsg::User(_) => ("You: ", user_p),
                 UiMsg::Assistant(_) => ("CYNAPSE: ", asst_p),
-                UiMsg::Tool(_) => ("🔧 Tool: ", tool_p),
-                UiMsg::ToolResult(_) => ("✓ ", toolres_p),
-                UiMsg::System(_) => ("● ", sys_p),
+                UiMsg::Thinking(_) => ("  ... ", think_p),
+                UiMsg::Tool(_) => ("[tool] ", tool_p),
+                UiMsg::ToolResult(_) => ("[ok] ", toolres_p),
+                UiMsg::System(_) => ("* ", sys_p),
             };
             let content = match m {
-                UiMsg::User(c) | UiMsg::Assistant(c) | UiMsg::Tool(c) | UiMsg::ToolResult(c) | UiMsg::System(c) => c,
+                UiMsg::User(c) | UiMsg::Assistant(c) | UiMsg::Thinking(c) | UiMsg::Tool(c) | UiMsg::ToolResult(c) | UiMsg::System(c) => c,
             };
             let prefix_w = prefix.width();
             let body_w = width.saturating_sub(prefix_w).max(1);
@@ -1444,6 +1466,22 @@ impl App {
         }
 
         if self.busy {
+            // Show live thinking stream (italic dim) if present
+            if !self.streaming_thinking.is_empty() {
+                let body_w = width.saturating_sub("  ... ".width()).max(1);
+                let wrapped = wrap_text(&self.streaming_thinking, body_w);
+                for (i, w) in wrapped.iter().enumerate() {
+                    if i == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled("  ... ", think_p),
+                            Span::styled(w.clone(), think_p),
+                        ]));
+                    } else {
+                        lines.push(Line::from(vec![Span::styled(w.clone(), think_p)]));
+                    }
+                }
+            }
+            // Show live assistant answer stream
             if !self.streaming.is_empty() {
                 let body_w = width.saturating_sub("CYNAPSE: ".width()).max(1);
                 let wrapped = wrap_text(&self.streaming, body_w);
@@ -1457,10 +1495,12 @@ impl App {
                         lines.push(Line::from(vec![Span::styled(w.clone(), asst_p)]));
                     }
                 }
-            } else {
+            }
+            // Show a spinner when there is nothing to display yet
+            if self.streaming.is_empty() && self.streaming_thinking.is_empty() {
                 let frame = SPINNER[self.spinner % SPINNER.len()];
                 lines.push(Line::from(Span::styled(
-                    format!("  {frame} thinking..."),
+                    format!(" {frame} thinking..."),
                     Style::default().fg(GOLD),
                 )));
             }
@@ -1681,12 +1721,18 @@ async fn run_loop<B: ratatui::backend::Backend>(
     }
 
     let mut app = App::new(agent, cfg, allowlist, llm_client, events_rx, confirm_rx);
-    let mut tick = tokio::time::interval(Duration::from_millis(100));
+    // Spinner ticks at 80ms when streaming, otherwise the loop just idles
+    // until a state-changing event arrives.
+    let mut tick = tokio::time::interval(Duration::from_millis(80));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        terminal
-            .draw(|f| app.draw(f))
-            .map_err(|e| anyhow!("draw failed: {e}"))?;
+        if app.dirty {
+            terminal
+                .draw(|f| app.draw(f))
+                .map_err(|e| anyhow!("draw failed: {e}"))?;
+            app.dirty = false;
+        }
         if app.quit {
             break;
         }

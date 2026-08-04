@@ -138,6 +138,7 @@ impl Default for Request {
 #[derive(Debug, Clone, Default)]
 pub struct Response {
     pub content: String,
+    pub thinking: String,
     pub tool_calls: Vec<ToolCall>,
     pub usage: Usage,
 }
