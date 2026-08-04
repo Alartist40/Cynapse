@@ -177,3 +177,66 @@ async fn live_circuit_breaker_recovers() {
     assert!(elapsed < Duration::from_secs(5), "breaker did not open fast");
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+// ─── Leafcutter provider ─────────────────────────────────────────────────────
+//
+// Requires a local GGUF + the leafcutter binary on PATH (or
+// LE AFCUTTER_MODEL). Ignored by default.
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires leafcutter binary + a local GGUF model"]
+async fn live_leafcutter_chat_roundtrip() {
+    let model = std::env::var("LEAFCUTTER_MODEL")
+        .unwrap_or_else(|_| "/home/xander/Downloads/models/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf".into());
+    let mut cfg = Config::default();
+    cfg.llm.provider = "leafcutter".to_string();
+    cfg.llm.model = model;
+    cfg.llm.max_tokens = 64;
+    cfg.llm.temperature = 0.2;
+
+    let client = new_client(&cfg.llm).expect("leafcutter client");
+    let req = cynapse_core::llm::Request {
+        system_prompt: String::new(),
+        messages: vec![cynapse_core::llm::Message::text(
+            cynapse_core::llm::Role::User,
+            "Reply with exactly: HELLO_LEAFCUTTER",
+        )],
+        tools: Vec::new(),
+        max_tokens: 64,
+        temperature: 0.2,
+    };
+    let resp = client.chat(&req).await.expect("leafcutter chat");
+    println!("LEAFCUTTER REPLY: {}", resp.content);
+    assert!(!resp.content.trim().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires leafcutter binary + a local GGUF model"]
+async fn live_leafcutter_stream_roundtrip() {
+    let model = std::env::var("LEAFCUTTER_MODEL")
+        .unwrap_or_else(|_| "/home/xander/Downloads/models/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf".into());
+    let mut cfg = Config::default();
+    cfg.llm.provider = "leafcutter".to_string();
+    cfg.llm.model = model;
+    cfg.llm.max_tokens = 64;
+    cfg.llm.temperature = 0.2;
+
+    let client = new_client(&cfg.llm).expect("leafcutter client");
+    let req = cynapse_core::llm::Request {
+        system_prompt: String::new(),
+        messages: vec![cynapse_core::llm::Message::text(
+            cynapse_core::llm::Role::User,
+            "Count from one to three, one per line.",
+        )],
+        tools: Vec::new(),
+        max_tokens: 64,
+        temperature: 0.2,
+    };
+    let mut handle = client.chat_stream(&req, Default::default());
+    let mut text = String::new();
+    while let Some(c) = handle.chunks.recv().await {
+        text.push_str(&c);
+    }
+    println!("LEAFCUTTER STREAM: {}", text.trim());
+    assert!(!text.trim().is_empty(), "leafcutter stream produced no content");
+}

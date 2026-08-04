@@ -107,6 +107,8 @@ pub fn new(cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
             }
         }
         "gemini" => Err(anyhow!("gemini provider is deferred (v2 scope)")),
+        "local" => Err(anyhow!("local provider is deferred; use leafcutter for local inference")),
+        "leafcutter" => crate::llm::leafcutter::new(base, cfg),
         other => Err(anyhow!("unknown provider: {other}")),
     }
 }
@@ -145,12 +147,12 @@ pub async fn list_ollama_models(base_url: &str) -> Result<Vec<String>> {
 // ─── Base client: shared HTTP + retry logic ─────────────────────────────────
 
 pub(crate) struct BaseClient {
-    http: reqwest::Client,
+    pub(crate) http: reqwest::Client,
     max_retries: u32,
 }
 
 impl BaseClient {
-    async fn do_request(
+    pub(crate) async fn do_request(
         &self,
         method: &str,
         url: &str,
@@ -650,8 +652,7 @@ impl LlmClient for OpenAiClient {
     }
 }
 
-fn build_openai_request(model: String, req: &Request, stream: bool) -> Value {
-    let mut messages: Vec<Value> = Vec::new();
+pub(crate) fn build_openai_request(model: String, req: &Request, stream: bool) -> Value {    let mut messages: Vec<Value> = Vec::new();
     if !req.system_prompt.is_empty() {
         messages.push(json!({"role": "system", "content": req.system_prompt}));
     }
@@ -709,7 +710,7 @@ fn build_openai_request(model: String, req: &Request, stream: bool) -> Value {
 }
 
 /// Handle one SSE line for OpenAI. Returns false if `[DONE]` was seen.
-fn handle_openai_sse_line(
+pub(crate) fn handle_openai_sse_line(
     line: &str,
     buffers: &mut Vec<(String, String, String)>,
     has_tool_calls: &mut bool,

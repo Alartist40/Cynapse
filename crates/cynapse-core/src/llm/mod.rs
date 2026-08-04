@@ -6,6 +6,8 @@
 
 pub mod providers;
 
+pub mod leafcutter;
+
 #[cfg(feature = "anthropic")]
 pub mod anthropic;
 
