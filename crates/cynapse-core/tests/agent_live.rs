@@ -240,3 +240,31 @@ async fn live_leafcutter_stream_roundtrip() {
     println!("LEAFCUTTER STREAM: {}", text.trim());
     assert!(!text.trim().is_empty(), "leafcutter stream produced no content");
 }
+
+// ─── OCR ────────────────────────────────────────────────────────────────────
+//
+// Transcribes a real image with the local unlimited-ocr model via Ollama.
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires Ollama with frob/unlimited-ocr (or another vision model) pulled"]
+async fn live_ocr_extracts_document_text() {
+    let image = std::env::var("OCR_IMAGE").unwrap_or_else(|_| {
+        "/home/xander/Downloads/models/unlimited ocr/baidu.png".to_string()
+    });
+    if !std::path::Path::new(&image).exists() {
+        eprintln!("skipping: image not found at {image}");
+        return;
+    }
+    let cfg = cynapse_core::config::OcrConfig::default();
+    let http = reqwest::Client::new();
+    let text = cynapse_core::ocr::extract_image_text(
+        &image,
+        &cfg,
+        "http://localhost:11434",
+        &http,
+    )
+    .await
+    .expect("OCR should succeed against live Ollama");
+    println!("OCR TEXT ({} chars): {}", text.len(), &text[..text.len().min(400)]);
+    assert!(!text.trim().is_empty(), "OCR returned no text");
+}

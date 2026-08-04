@@ -16,6 +16,7 @@ use tokio::sync::mpsc;
 use crate::compressor::Compactor;
 use crate::config::Config;
 use crate::llm::{self, Cancelled, LlmClient, Message, Request, Role, ToolCall};
+use crate::ocr;
 use crate::persona::Persona;
 use crate::redact;
 use crate::session::{Entry, Manager, Session};
@@ -107,6 +108,7 @@ pub struct Agent {
     cb: Arc<CircuitBreaker>,
     comp: Arc<Compactor>,
     redact: bool,
+    http: reqwest::Client,
 }
 
 /// Resolve the model's context length for compression purposes.
@@ -142,6 +144,7 @@ impl Agent {
             cb: Arc::new(CircuitBreaker::new(3, Duration::from_secs(30))),
             comp,
             redact,
+            http: reqwest::Client::new(),
         }
     }
 
@@ -172,9 +175,18 @@ impl Agent {
     pub async fn process_message(&self, user_msg: &str, attachments: Vec<llm::Attachment>) -> Result<String> {
         let sess = self.sessions.get(&self.device_id)?;
 
+        let content = ocr::augment_with_ocr(
+            user_msg,
+            &ocr::to_core_attachments(&attachments),
+            &self.cfg.ocr,
+            &self.cfg.llm.ollama_base_url,
+            &self.http,
+        )
+        .await;
+
         sess.append(Entry {
             role: Role::User,
-            content: user_msg.to_string(),
+            content: content.clone(),
             tool_call_id: None,
             tool_calls: Vec::new(),
             images: Vec::new(),
@@ -331,6 +343,7 @@ impl Agent {
             cb: self.cb.clone(),
             comp: self.comp.clone(),
             redact: self.redact,
+            http: self.http.clone(),
         });
 
         let sess_fut = self.sessions.get(&self.device_id);
@@ -346,8 +359,16 @@ impl Agent {
             };
 
             let agent = &me;
+            let content = ocr::augment_with_ocr(
+                &user_msg,
+                &ocr::to_core_attachments(&attachments),
+                &agent.cfg.ocr,
+                &agent.cfg.llm.ollama_base_url,
+                &agent.http,
+            )
+            .await;
             if let Err(e) = agent
-                .append_user_and_maybe_compress(&sess, user_msg.clone(), attachments)
+                .append_user_and_maybe_compress(&sess, content, attachments)
                 .await
             {
                 let _ = errors_tx.send(e);

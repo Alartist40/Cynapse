@@ -36,6 +36,8 @@ pub struct Config {
     pub security: SecurityConfig,
     /// Number of pre-update backups to retain (default: 5).
     pub backup_keep: u32,
+    /// Document-analysis / OCR settings.
+    pub ocr: OcrConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +134,31 @@ pub struct ToolsConfig {
 pub struct McpConfig {
     pub enabled: bool,
     pub servers: Vec<McpServer>,
+}
+
+/// Document-analysis (OCR) settings. Images attached to a message are
+/// transcribed with a vision-capable model before they reach the chat
+/// model. The model list is tried in order so the local
+/// `unlimited-ocr` big model is used first, with generic Ollama vision
+/// models (and finally the chat model's own multimodal handling) as
+/// fallbacks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OcrConfig {
+    pub enabled: bool,
+    /// Ordered list of Ollama models to try for OCR. The first one that
+    /// returns text wins.
+    pub models: Vec<String>,
+    /// Prompt sent alongside the image (Ollama `/api/generate`).
+    pub prompt: String,
+    /// Ollama base URL for OCR. Empty reuses `llm.ollama_base_url`.
+    pub ollama_base_url: String,
+    /// Skip images larger than this many MB (avoid base64 blow-ups).
+    pub max_image_mb: u64,
+    /// Per-model request timeout (seconds).
+    pub timeout_seconds: u64,
+    /// Prefix inserted before the transcription in the user message.
+    pub prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,6 +270,25 @@ impl Default for McpServer {
     }
 }
 
+impl Default for OcrConfig {
+    fn default() -> Self {
+        OcrConfig {
+            enabled: true,
+            models: vec![
+                "frob/unlimited-ocr:q8_0".to_string(),
+                "llava".to_string(),
+                "llama3.2-vision".to_string(),
+                "moondream".to_string(),
+            ],
+            prompt: "<image>document parsing.".to_string(),
+            ollama_base_url: String::new(),
+            max_image_mb: 20,
+            timeout_seconds: 120,
+            prefix: "[OCR transcription of the attached image]\n".to_string(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -253,6 +299,7 @@ impl Default for Config {
             mcp: McpConfig::default(),
             models: ModelsConfig::default(),
             security: SecurityConfig::default(),
+            ocr: OcrConfig::default(),
             backup_keep: 5,
         }
     }

@@ -13,6 +13,7 @@ pub mod confirm;
 pub mod dendrite;
 pub mod llm;
 pub mod netguard;
+pub mod ocr;
 pub mod persona;
 pub mod redact;
 pub mod session;
