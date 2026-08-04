@@ -5,7 +5,7 @@
 //! row content.
 
 use cynapse_core::dendrite::{Dendrite, DendriteStore, NodeType};
-use cynapse_core::session::{Entry, Manager};
+use cynapse_core::session::Manager;
 
 const LIVE_DB_CANDIDATES: [&str; 2] = [
     "/home/xander/Documents/portfolio/cynapse/data/dendrite.db",

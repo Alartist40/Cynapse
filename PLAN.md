@@ -775,21 +775,43 @@ layout in `ratatui::layout`, reuse buffers.)
 
 ---
 
-## 11. CLI (root crate)
+## 11. CLI (root crate — clap derive, jcode-style)
 
-Port `cmd/cynapse/main.go` + jcode-style clap derive. Binary name `cynapse`:
+Port `cmd/cynapse/main.go` to clap derive. Binary name: `cynapse`.
+Subcommand set (v1):
 
-- no args / unknown → interactive chat (TUI).
-- `cynapse version` — `CYNAPSE v2.0.0-beta` (bump to `v3.0.0-rs`? — keep
-  `v2.0.0-beta` string for compat; decide at build).
-- `cynapse config init|edit|help` — init writes default YAML (0600), edit opens
-  `$EDITOR`.
-- `cynapse model ...` / `cynapse synapse ...` — **v2** (stub with a clear
-  "not yet implemented in the Rust build" message in v1).
-- `cynapse update` — **v2** (stub).
+| Subcommand | Behavior |
+|------------|----------|
+| (no args)  | Launch TUI (chat) — same as `cynapse chat` |
+| `chat`     | Launch TUI explicitly |
+| `version`  | Print `CYNAPSE v3.0.0-rs (rustc X, build YYYY-MM-DD)` |
+| `config init` | Write default `~/.cynapse/config.yaml` (mode 0600) |
+| `config edit` | Open config in `$EDITOR` (fallback `vi`) |
+| `config show` | Print resolved config (after env override) as YAML |
+| `config path` | Print absolute path to config |
+| `memory list` | List all DENDRITE nodes (id, title, type, updated) — table output |
+| `memory get <id>` | Print full node content (markdown body) |
+| `memory search <q>` | FTS5 search; print matching titles + snippets |
+| `memory stats` | Node count, edge count, FTS5 status, db size |
+| `memory export` | Dump all nodes as JSON to stdout (for backup/migration) |
+| `model ...` | **v2 stub**: prints "model commands not yet implemented in the Rust build" |
+| `synapse ...` | **v2 stub**: same |
+| `update`    | **v2 stub**: same |
+| `doctor`    | Cheap diagnostics: config exists? dendrite.db opens? workspace dir?
+               provider reachable (if ollama: GET /api/tags)? |
 
-Also add (small, jcode-style, cheap): `cynapse memory list|search <q>`
-(reads DENDRITE directly) — useful for verifying the DB port without the TUI.
+The `memory *` subcommands are **the verification tool** — they let us prove
+the DENDRITE port works against live data without booting the TUI. Milestone 2
+ends when `cynapse memory list` shows the 8 real nodes from the user's
+`/home/xander/Documents/portfolio/cynapse/data/dendrite.db`.
+
+Version string: **v3.0.0-rs** (new major — Rust rewrite). Both binaries can
+coexist on PATH because the user runs `cynapse` from the same repo dir as today
+(no binary collision).
+
+---
+
+
 
 ---
 
@@ -874,3 +896,47 @@ Also add (small, jcode-style, cheap): `cynapse memory list|search <q>`
 *This plan is deliberately implementation-ready. Any deviation from the Go
 source discovered while porting will be flagged and default to matching the Go
 behavior unless the user says otherwise.*
+
+---
+
+## 17. Immediate next step (single concrete action)
+
+**Milestone 1, Task 1 — Scaffold the workspace.**
+
+A single subagent dispatches once you approve this plan:
+
+1. `cd /home/xander/Documents/portfolio/cynapse-rs && git init -b main`.
+2. Write root `Cargo.toml` with `[workspace]` members = `[".", "crates/*"]`.
+3. Write `rust-toolchain.toml` pinning stable.
+4. Create empty crate dirs: `crates/cynapse-core/src/lib.rs` and
+   `crates/cynapse-tui/src/lib.rs` with `[package]` stanzas.
+5. Write root `src/main.rs` (`fn main() { println!("cynapse v3.0.0-rs") }`)
+   and `src/cli.rs` with a minimal clap derive that handles
+   `cynapse version` only.
+6. Add `.gitignore` (target/, *.swp, Cargo.lock.bak, etc.) and a stub
+   `README.md` pointing at this plan.
+7. `cargo build` must succeed. `cargo run -- version` must print the version.
+8. Commit: `git add -A && git commit -m "feat: scaffold cynapse-rs workspace"`.
+
+Estimated: 1 subagent, 5-10 min, ≤ 8 files. After it returns we do
+two-stage review (spec compliance + code quality) before moving to
+Milestone 2 (DENDRITE).
+
+---
+
+## 18. Verification matrix (the proof we did it right)
+
+| Claim | How we prove it |
+|-------|-----------------|
+| DENDRITE byte-compatible with Go DB | Open the live `data/dendrite.db`; assert 8 nodes load with exact IDs + types |
+| DENDRITE scoring identical | Run `BuildPrompt` on fixed input → compare with snapshot from Go binary |
+| Session JSONL byte-compatible | Write a Go session, read it from Rust; write from Rust, read in Go |
+| Config YAML byte-compatible | Same: round-trip |
+| Approval regex matches Go | Port `approval_test.go` cases verbatim as Rust tests |
+| Redact patterns match Go | Same: port test cases |
+| TUI starts in < 50ms | `time ./target/release/cynapse chat` then `q`, assert < 50ms cold |
+| Streaming doesn't block UI | Inject 1000-char/sec stream; assert TUI stays interactive (keypress within 100ms) |
+| DENDRITE search by tag/title/content | Unit tests ported from `dendrite_test.go` (verbatim test cases) |
+| Heartbeat curator atomic write | Simulate crash mid-write; assert `.bak` exists, `.tmp` removed |
+
+End of plan.

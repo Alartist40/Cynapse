@@ -4,6 +4,13 @@
 //! `internal/llm/client.go`. JSON shapes match so session JSONL and
 //! provider payloads interoperate with the original.
 
+pub mod providers;
+
+#[cfg(feature = "anthropic")]
+pub mod anthropic;
+
+pub use providers::{new, list_ollama_models, Cancelled, LlmClient, StreamHandle};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
