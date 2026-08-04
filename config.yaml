@@ -1,9 +1,8 @@
-# Cynapse (Rust port) local config for live-data development.
+# Cynapse (Rust) local config.
 #
 # Loaded from the working directory (falling back to ~/.cynapse/config.yaml,
-# then built-in defaults). Paths are resolved relative to the current working
-# directory — run the binary from this repo root to operate on the live Go
-# data in ../cynapse/data, so sessions/persona/DENDRITE stay byte-compatible.
+# then built-in defaults). Paths resolve relative to the current working
+# directory — run the binary from this repo root.
 gateway:
     address: 0.0.0.0:8080
     auth_token: ""
@@ -25,11 +24,11 @@ llm:
     temperature: 0.7
     max_retries: 3
 memory:
-    persona_path: ../cynapse/data/persona
-    sessions_path: ../cynapse/data/sessions
-    db_path: ../cynapse/data/memory.db
-    dendrite_db_path: ../cynapse/data/dendrite.db
-    defaults_path: ../cynapse/persona/defaults
+    persona_path: ./persona/devices
+    sessions_path: ./data/sessions
+    db_path: ./data/memory.db
+    dendrite_db_path: ./data/dendrite.db
+    defaults_path: ./persona/defaults
     heartbeat_interval_hours: 6
     max_session_messages: 100
 tools:
