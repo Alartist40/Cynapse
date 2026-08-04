@@ -939,4 +939,35 @@ Milestone 2 (DENDRITE).
 | DENDRITE search by tag/title/content | Unit tests ported from `dendrite_test.go` (verbatim test cases) |
 | Heartbeat curator atomic write | Simulate crash mid-write; assert `.bak` exists, `.tmp` removed |
 
+---
+
+## 19. Milestone Progress (running)
+
+Status as of the current commit (`master` head):
+
+| ID  | Status | Description |
+|-----|--------|-------------|
+| M1  | ✅ committed (`0879812`) | Scaffold: 3-crate workspace, config, CLI skeleton, dependency tree, profiles |
+| M2  | ✅ committed (`0879812`) | DENDRITE: in-memory graph + SQLite FTS5 store + system-prompt assembler (live DB compat verified — 8 nodes load) |
+| M3  | ✅ committed (`7cb65e3`) | LLM types, JSONL session manager, compressor, persona |
+| M4  | ✅ committed (`395a447`) | Agent loop (circuit breaker, streaming, tool registry) + live Ollama smoke tests |
+| M5  | ✅ committed (`7ee15c5`) | Safety stack — approval, confirm, netguard, attachments, gated tools |
+| M6  | ✅ committed (`14b976d`) | Ratatui chat TUI (streaming, menus, slash commands, confirm bridge, live model switching) + config bootstrap |
+| M7  | ✅ committed (`6240e53`) | Explicit `chat` subcommand; final polish |
+| M8  | ✅ committed (`8152283`, `61ae322`) | Leafcutter provider (local GGUF) + OCR module (unlimited-ocr via Ollama with multi-model fallback chain) |
+| M9  | ✅ committed (this commit) | Install scripts (`install.sh` + `install_release.sh`) + docs |
+
+### What's running
+
+- **LLM providers**: Ollama (default), OpenAI/Anthropic-compatible (OpenAI-compat SSE), leafcutter (local GGUF, OpenAI-compat wire + graceful non-streaming fallback when leafcutter's native-streaming engine panics).
+- **OCR (document analysis)**: Configured chain — `frob/unlimited-ocr:q8_0` first, then `llava`, `llama3.2-vision`, `moondream`. Each is tried in order; the first non-empty transcription wins. Failure is non-fatal — the original image attachment remains for any multimodal provider that can see it.
+- **Install**: one-command bootstrap (`scripts/install.sh`) for source installs; `scripts/install_release.sh` for local builds.
+
+### Tests
+
+- 64 unit tests in `cynapse-core` (incl. 5 OCR).
+- 3 dendrite compat tests against the live `data/dendrite.db`.
+- 6 unit tests in `cynapse-tui`.
+- 8 live `#[ignore]`d smoke tests in `crates/cynapse-core/tests/agent_live.rs` (run with `-- --ignored --nocapture`).
+
 End of plan.
