@@ -8,8 +8,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cynapse_core::agent::Agent;
+use cynapse_core::approval;
 use cynapse_core::config::Config;
 use cynapse_core::llm::new as new_client;
+use cynapse_core::netguard;
 use cynapse_core::persona::Persona;
 use cynapse_core::session::Manager;
 use cynapse_core::tools::build_profile;
@@ -41,7 +43,15 @@ fn live_setup(tag: &str) -> (Arc<Agent>, std::path::PathBuf) {
     );
     let sessions = Arc::new(Manager::new_with_mode(&cfg.memory.sessions_path, 0o644).unwrap());
     let client = new_client(&cfg.llm).unwrap();
-    let tools = build_profile("minimal", &cfg.tools.work_dir, 30, persona.clone());
+    let tools = build_profile(
+        "minimal",
+        &cfg.tools.work_dir,
+        30,
+        persona.clone(),
+        approval::trust_local_policy(),
+        netguard::local_dev_policy(),
+        None,
+    );
 
     let agent = Arc::new(Agent::new("live-test".to_string(), client, persona, sessions, tools, cfg));
     (agent, tmp)
@@ -139,7 +149,15 @@ async fn live_circuit_breaker_recovers() {
     );
     let sessions = Arc::new(Manager::new_with_mode(&cfg.memory.sessions_path, 0o644).unwrap());
     let client = new_client(&cfg.llm).unwrap();
-    let tools = build_profile("minimal", &cfg.tools.work_dir, 30, persona.clone());
+    let tools = build_profile(
+        "minimal",
+        &cfg.tools.work_dir,
+        30,
+        persona.clone(),
+        approval::trust_local_policy(),
+        netguard::local_dev_policy(),
+        None,
+    );
     let agent = Arc::new(Agent::new("live-cb".to_string(), client, persona, sessions, tools, cfg));
 
     // maxFailures=3: three consecutive failed chats open the breaker.

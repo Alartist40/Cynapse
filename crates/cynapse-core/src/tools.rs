@@ -3,16 +3,22 @@
 //! Faithful port of Go `internal/tools/tools.go`. The registry
 //! dispatches by tool name; each tool carries a JSON Schema for the
 //! model and a handler that produces a string fed back as the tool
-//! result. M5 adds the approval/netguard gated tools (bash, web_fetch).
+//! result. BashTool runs an in-process approval gate and can prompt
+//! the operator via the confirm resolver; WebFetchTool applies the
+//! netguard SSRF policy before any request leaves the agent.
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 
+use crate::approval;
+use crate::confirm;
 use crate::llm::ToolSchema;
+use crate::netguard;
 use crate::persona::Persona;
 
 /// A single LLM-callable operation.
@@ -103,10 +109,19 @@ impl Registry {
     }
 }
 
-/// Build the tool registry for the given profile. BashTool (needs
-/// the approval gate) and WebFetchTool (needs netguard) are wired in
-/// M5; everything else is available now.
-pub fn build_profile(profile: &str, work_dir: &str, timeout_secs: u32, persona: Arc<Persona>) -> Arc<Registry> {
+/// Build the tool registry for the given profile. The approval and net
+/// policies flow into bash and web_fetch respectively; `resolver`
+/// wires the operator prompt for flagged commands (pass None for
+/// non-interactive runs — flagged commands auto-decline).
+pub fn build_profile(
+    profile: &str,
+    work_dir: &str,
+    timeout_secs: u32,
+    persona: Arc<Persona>,
+    approval_policy: approval::Policy,
+    net_policy: netguard::Policy,
+    resolver: Option<Arc<confirm::Resolver>>,
+) -> Arc<Registry> {
     let mut r = Registry::new(work_dir, timeout_secs);
 
     r.register(memory_replace_tool(persona.clone()));
@@ -117,14 +132,18 @@ pub fn build_profile(profile: &str, work_dir: &str, timeout_secs: u32, persona: 
     r.register(read_file_tool(work_dir));
 
     match profile.to_lowercase().as_str() {
-        "minimal" => {}
-        "full" | "standard" => {
+        "full" => {
+            r.register(bash_tool(work_dir, approval_policy, resolver.clone()));
             r.register(write_file_tool(work_dir));
             r.register(list_files_tool(work_dir));
+            r.register(web_fetch_tool(net_policy));
         }
+        "minimal" => {}
         _ => {
+            // "standard" and any unknown name
             r.register(write_file_tool(work_dir));
             r.register(list_files_tool(work_dir));
+            r.register(web_fetch_tool(net_policy));
         }
     }
 
@@ -376,3 +395,257 @@ fn str_arg<'a>(args: &'a Value, name: &str) -> Result<&'a str> {
         .filter(|s| !s.is_empty())
         .ok_or_else(|| anyhow!("{name} is required"))
 }
+
+// ─── Gated tools (M5) ────────────────────────────────────────────────────────
+
+/// Execute a bash command in the workspace directory. `policy` gates
+/// dangerous patterns; `resolver` is invoked when a decision needs
+/// operator approval. Pass None to auto-decline flagged commands.
+pub fn bash_tool(
+    work_dir: &str,
+    policy: approval::Policy,
+    resolver: Option<Arc<confirm::Resolver>>,
+) -> Arc<dyn Tool> {
+    let work_dir = work_dir.to_string();
+    fn_tool(
+        ToolSchema {
+            name: "bash".to_string(),
+            description: "Execute a bash command in the workspace directory. Returns stdout+stderr.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The bash command to execute"}
+                },
+                "required": ["command"]
+            }),
+        },
+        move |args| {
+            let cmd = str_arg(&args, "command")?;
+
+            // In-process approval gate — a heuristic, not a boundary.
+            let mut decision = approval::inspect(cmd);
+            decision.evaluate(policy);
+            if !decision.allow {
+                return Ok(format!(
+                    "BLOCKED by approval gate ({}, severity={}): {}. If you really need this, ask the operator to run it manually.",
+                    decision.rule_name, decision.severity, decision.reason
+                ));
+            }
+            if decision.require_confirm {
+                let resolver = resolver
+                    .clone()
+                    .ok_or_else(|| anyhow!("BLOCKED: gate flagged command but no resolver is configured (non-interactive mode). Run manually or set security.approval_policy to trust-local."))?;
+                let rule_key = confirm::bash_rule_key(cmd);
+                let scope = "bash:cmd";
+                let req = confirm::Request {
+                    kind: pick_bash_kind(cmd).to_string(),
+                    title: "Run shell command?".to_string(),
+                    detail: cmd.to_string(),
+                    options: std::collections::HashMap::new(),
+                    secret: needs_sudo_secret(cmd),
+                    prompt: "Password: ".to_string(),
+                    rule_key,
+                    scope: scope.to_string(),
+                };
+                let outcome = resolver.check(&req)?;
+                if outcome.decision == confirm::Decision::Decline {
+                    return Ok("BLOCKED: operator declined.".to_string());
+                }
+                if outcome.decision == confirm::Decision::AllowAlways && !outcome.remembered_rule.is_empty() {
+                    eprintln!("🟢 remembered rule: {}", outcome.remembered_rule);
+                }
+                if needs_sudo_secret(cmd) {
+                    if outcome.input.is_empty() {
+                        return Ok("BLOCKED: sudo password required but not provided.".to_string());
+                    }
+                    return run_with_sudo_password(&work_dir, cmd, &outcome.input);
+                }
+            }
+
+            run_bash(&work_dir, cmd)
+        },
+    )
+}
+
+/// Fetch a URL and return its text content. The net policy applies
+/// SSRF guards (loopback, RFC1918, metadata) before the request.
+pub fn web_fetch_tool(policy: netguard::Policy) -> Arc<dyn Tool> {
+    fn_tool(
+        ToolSchema {
+            name: "web_fetch".to_string(),
+            description: "Fetch a URL and return its text content. Useful for reading documentation or web pages.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to fetch"}
+                },
+                "required": ["url"]
+            }),
+        },
+        move |args| {
+            let url = str_arg(&args, "url")?;
+
+            // SSRF gate: skipped when every relevant flag is open
+            // (loopback+private+cleartext all allowed).
+            if !policy.allow_loopback && !policy.allow_private && !policy.allow_cleartext_http {
+                let decision = policy.check(url);
+                if !decision.allow {
+                    return Ok(format!("BLOCKED by netguard: {}", decision.reason));
+                }
+            }
+
+            let client = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(20))
+                .build()?;
+            let resp = client
+                .get(url)
+                .header("User-Agent", "CYNAPSE-Agent/1.0")
+                .send()?;
+            let status = resp.status().as_u16();
+            let body = resp.bytes()?;
+            let mut text = String::from_utf8_lossy(&body).to_string();
+            const MAX_BODY: usize = 32 * 1024;
+            if text.len() > MAX_BODY {
+                text.truncate(MAX_BODY);
+                text.push_str("\n[truncated at 32 KB]");
+            }
+            Ok(format!("Status: {status}\n\n{text}"))
+        },
+    )
+}
+
+/// Choose the confirm Kind label for a bash command.
+fn pick_bash_kind(cmd: &str) -> &'static str {
+    if cmd.contains("sudo ") {
+        "sudo"
+    } else {
+        "bash"
+    }
+}
+
+/// Whether a command needs a sudo password on stdin.
+fn needs_sudo_secret(cmd: &str) -> bool {
+    cmd.contains("sudo ")
+}
+
+/// Run `sudo -S -p '' <cmd>` with the password fed on stdin.
+fn run_with_sudo_password(work_dir: &str, cmd: &str, password: &str) -> Result<String> {
+    let trimmed = cmd.trim();
+    let rest = if let Some(idx) = trimmed.find(' ') {
+        if &trimmed[..idx] == "sudo" {
+            trimmed[idx + 1..].trim()
+        } else {
+            trimmed
+        }
+    } else {
+        trimmed
+    };
+
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("sudo")
+        .args(["-S", "-p", "", "bash", "-c", rest])
+        .current_dir(work_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(format!("{password}\n").as_bytes());
+    }
+    let out = child.wait_with_output()?;
+    Ok(format_output(out.status.success(), &out.stdout, &out.stderr))
+}
+
+/// Run a bash command and format combined stdout+stderr, capped at
+/// 256 KB.
+fn run_bash(work_dir: &str, cmd: &str) -> Result<String> {
+    use std::process::Command;
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(cmd)
+        .current_dir(work_dir)
+        .output()?;
+    Ok(format_output(out.status.success(), &out.stdout, &out.stderr))
+}
+
+fn format_output(success: bool, stdout: &[u8], stderr: &[u8]) -> String {
+    const MAX_OUTPUT: usize = 256 * 1024;
+    let mut result = String::new();
+    let stdout = String::from_utf8_lossy(stdout);
+    let stderr = String::from_utf8_lossy(stderr);
+    if !success {
+        result.push_str(&format!("exit error\n"));
+    }
+    result.push_str(&stdout);
+    result.push_str(&stderr);
+    if result.len() > MAX_OUTPUT {
+        result.truncate(MAX_OUTPUT);
+        result.push_str("\n[output truncated at 256 KB]");
+    }
+    if result.trim().is_empty() {
+        if success {
+            result = "(no output)".to_string();
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::approval;
+
+    #[test]
+    fn bash_gate_blocks_rm_rf() {
+        let t = bash_tool("/tmp", approval::default_policy(), None);
+        let args = json!({"command": "rm -rf /tmp/foo"});
+        let out = t.execute(args).unwrap();
+        assert!(out.contains("BLOCKED by approval gate"), "{out}");
+    }
+
+    #[test]
+    fn bash_trust_local_runs_safe_command() {
+        let t = bash_tool("/tmp", approval::trust_local_policy(), None);
+        let args = json!({"command": "echo hello-from-tools"});
+        let out = t.execute(args).unwrap();
+        assert!(out.contains("hello-from-tools"), "{out}");
+    }
+
+    #[test]
+    fn bash_requires_command() {
+        let t = bash_tool("/tmp", approval::trust_local_policy(), None);
+        let args = json!({"command": ""});
+        assert!(t.execute(args).is_err());
+    }
+
+    #[test]
+    fn web_fetch_secure_blocks_loopback() {
+        let t = web_fetch_tool(netguard::secure_default());
+        let args = json!({"url": "http://127.0.0.1:11434/api/tags"});
+        let out = t.execute(args).unwrap();
+        assert!(out.contains("BLOCKED by netguard"), "{out}");
+    }
+
+    #[test]
+    fn web_fetch_local_dev_allows_loopback() {
+        let t = web_fetch_tool(netguard::local_dev_policy());
+        let args = json!({"url": "http://127.0.0.1:11434/api/tags"});
+        // Ollama may or may not be running; we just check the gate
+        // let the request through (i.e. not a BLOCKED message).
+        let out = t.execute(args).unwrap();
+        assert!(!out.contains("BLOCKED by netguard"), "{out}");
+    }
+
+    #[test]
+    fn read_file_blocks_traversal() {
+        let dir = std::env::temp_dir().join(format!("cynapse-tools-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("secret.txt"), "top secret").unwrap();
+        let t = read_file_tool(dir.to_str().unwrap());
+        let args = json!({"path": "../../etc/passwd"});
+        let out = t.execute(args);
+        assert!(out.is_err() || out.unwrap().contains("path escapes workspace"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+

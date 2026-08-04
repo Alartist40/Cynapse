@@ -5,10 +5,14 @@
 //! structured to match the original so that behaviour stays byte-compatible.
 
 pub mod agent;
+pub mod approval;
+pub mod attachments;
 pub mod compressor;
 pub mod config;
+pub mod confirm;
 pub mod dendrite;
 pub mod llm;
+pub mod netguard;
 pub mod persona;
 pub mod redact;
 pub mod session;
