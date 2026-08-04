@@ -7,7 +7,7 @@
 //! JSON-encoded `[]ToolCall` chunk arrives as a control message.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context as _, Result};
@@ -34,6 +34,13 @@ pub trait LlmClient: Send + Sync {
     async fn chat(&self, req: &Request) -> Result<Response>;
     fn chat_stream(&self, req: &Request, cancelled: Cancelled) -> StreamHandle;
     fn provider(&self) -> &'static str;
+    /// Switch the model used for subsequent requests. No-op for
+    /// providers that bake the model in at construction time.
+    fn set_model(&self, _model: &str) {}
+    /// The model in use, for the TUI status bar.
+    fn current_model(&self) -> String {
+        String::new()
+    }
 }
 
 /// Build the provider configured in `cfg`.
@@ -57,7 +64,7 @@ pub fn new(cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
             Ok(Arc::new(OllamaClient {
                 base,
                 base_url,
-                model: cfg.model.clone(),
+                model: Mutex::new(cfg.model.clone()),
             }))
         }
         "openai" => {
@@ -73,7 +80,7 @@ pub fn new(cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
                 base,
                 api_key: cfg.openai_key.clone(),
                 base_url,
-                model: cfg.model.clone(),
+                model: Mutex::new(cfg.model.clone()),
             }))
         }
         "anthropic" => {
@@ -198,7 +205,7 @@ impl BaseClient {
 pub struct OllamaClient {
     base: BaseClient,
     base_url: String,
-    model: String,
+    model: Mutex<String>,
 }
 
 #[derive(Deserialize)]
@@ -235,7 +242,8 @@ struct OllamaResponseFunction {
 #[async_trait]
 impl LlmClient for OllamaClient {
     async fn chat(&self, req: &Request) -> Result<Response> {
-        let api_req = build_ollama_request(self.model.clone(), req, false);
+        let model = self.model.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let api_req = build_ollama_request(model, req, false);
         let url = format!("{}/api/chat", self.base_url);
         let data = self
             .base
@@ -264,7 +272,8 @@ impl LlmClient for OllamaClient {
     fn chat_stream(&self, req: &Request, cancelled: Cancelled) -> StreamHandle {
         let (chunks_tx, chunks) = mpsc::unbounded_channel();
         let (errors_tx, errors) = mpsc::unbounded_channel();
-        let api_req = build_ollama_request(self.model.clone(), req, true);
+        let model = self.model.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let api_req = build_ollama_request(model, req, true);
         let url = format!("{}/api/chat", self.base_url);
         let http = self.base.http.clone();
 
@@ -332,6 +341,14 @@ impl LlmClient for OllamaClient {
 
     fn provider(&self) -> &'static str {
         "ollama"
+    }
+
+    fn set_model(&self, model: &str) {
+        *self.model.lock().unwrap_or_else(|e| e.into_inner()) = model.to_string();
+    }
+
+    fn current_model(&self) -> String {
+        self.model.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -449,7 +466,7 @@ pub struct OpenAiClient {
     base: BaseClient,
     api_key: String,
     base_url: String,
-    model: String,
+    model: Mutex<String>,
 }
 
 #[derive(Deserialize)]
@@ -499,7 +516,8 @@ struct OpenAiUsage {
 #[async_trait]
 impl LlmClient for OpenAiClient {
     async fn chat(&self, req: &Request) -> Result<Response> {
-        let api_req = build_openai_request(self.model.clone(), req, false);
+        let model = self.model.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let api_req = build_openai_request(model, req, false);
         let url = format!("{}/chat/completions", self.base_url);
         let headers = vec![("Authorization", format!("Bearer {}", self.api_key))];
         let data = self
@@ -533,7 +551,8 @@ impl LlmClient for OpenAiClient {
     fn chat_stream(&self, req: &Request, cancelled: Cancelled) -> StreamHandle {
         let (chunks_tx, chunks) = mpsc::unbounded_channel();
         let (errors_tx, errors) = mpsc::unbounded_channel();
-        let api_req = build_openai_request(self.model.clone(), req, true);
+        let model = self.model.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let api_req = build_openai_request(model, req, true);
         let url = format!("{}/chat/completions", self.base_url);
         let http = self.base.http.clone();
         let api_key = self.api_key.clone();
@@ -620,6 +639,14 @@ impl LlmClient for OpenAiClient {
 
     fn provider(&self) -> &'static str {
         "openai"
+    }
+
+    fn set_model(&self, model: &str) {
+        *self.model.lock().unwrap_or_else(|e| e.into_inner()) = model.to_string();
+    }
+
+    fn current_model(&self) -> String {
+        self.model.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 

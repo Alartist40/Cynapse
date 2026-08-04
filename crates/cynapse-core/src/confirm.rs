@@ -511,7 +511,6 @@ fn write_mode_0600(path: &str, data: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     struct ScriptedPrompter {

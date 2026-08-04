@@ -1,0 +1,54 @@
+# Cynapse (Rust port) local config for live-data development.
+#
+# Loaded from the working directory (falling back to ~/.cynapse/config.yaml,
+# then built-in defaults). Paths are resolved relative to the current working
+# directory — run the binary from this repo root to operate on the live Go
+# data in ../cynapse/data, so sessions/persona/DENDRITE stay byte-compatible.
+gateway:
+    address: 0.0.0.0:8080
+    auth_token: ""
+llm:
+    provider: ollama
+    model: qwen-bench:latest
+    anthropic_key: ""
+    openai_key: ""
+    gemini_key: ""
+    openai_base_url: ""
+    ollama_base_url: http://localhost:11434
+    llama_server_path: ""
+    leafcutter_path: ""
+    local_gpu_layers: 0
+    local_context_size: 8192
+    local_threads: 0
+    models_dir: ""
+    max_tokens: 1024
+    temperature: 0.7
+    max_retries: 3
+memory:
+    persona_path: ../cynapse/data/persona
+    sessions_path: ../cynapse/data/sessions
+    db_path: ../cynapse/data/memory.db
+    dendrite_db_path: ../cynapse/data/dendrite.db
+    defaults_path: ../cynapse/persona/defaults
+    heartbeat_interval_hours: 6
+    max_session_messages: 100
+tools:
+    profile: standard
+    allow: []
+    deny: []
+    work_dir: ./workspace
+    timeout_seconds: 60
+mcp:
+    enabled: false
+    servers: []
+models:
+    models_dir: ./models
+    use_ollama: true
+    use_llama_server: false
+    hf_token: ""
+security:
+    mode: standard
+    redact_secrets: ~
+    net_policy: local-dev
+    approval_policy: balanced
+backup_keep: 5

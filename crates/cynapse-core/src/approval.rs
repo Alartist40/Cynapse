@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn rm_rf_is_danger() {
-        let mut d = inspect("rm -rf /tmp/foo");
+        let d = inspect("rm -rf /tmp/foo");
         assert!(!d.allow);
         assert_eq!(d.severity, Severity::Danger);
         assert_eq!(d.rule_name, "rm-rf");
