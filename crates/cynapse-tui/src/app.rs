@@ -42,10 +42,10 @@ use cynapse_core::tools::build_profile;
 
 // ─── Palette (matches the Go lipgloss styles) ────────────────────────────────
 
-const PURPLE: Color = Color::Rgb(0x9b, 0x59, 0xb6);
-const ORANGE: Color = Color::Rgb(0xe6, 0x7e, 0x22);
-const DIM: Color = Color::Rgb(0x4a, 0x55, 0x68);
-const BRIGHT: Color = Color::Rgb(0xe4, 0xe7, 0xeb);
+const GOLD: Color = Color::Rgb(0xcb, 0x9b, 0x4e);
+const PURPLE_ACCENT: Color = Color::Rgb(0x9b, 0x6b, 0xc6);
+const DIM: Color = Color::Rgb(0x73, 0x64, 0x4e);
+const BRIGHT: Color = Color::Rgb(0xe8, 0xdc, 0xc8);
 
 const HERO: &str = include_str!("../../../assets/ascii-art.txt");
 
@@ -53,7 +53,10 @@ const SPINNER: [&str; 10] = ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"]
 
 /// Slash commands shown in the dropdown when the user types `/`.
 const SLASH_COMMANDS: &[(&str, &str)] = &[
-    ("/help", "Show help text"),
+    ("/help", "Show help text and all commands"),
+    ("/models", "List and switch between Ollama models"),
+    ("/provider", "Show current LLM provider"),
+    ("/key", "Manage API keys (list, add, remove)"),
     ("/clear", "Clear chat to idle screen"),
     ("/attach <file>", "Attach a file from workspace"),
     ("/attachments", "List pending attachments"),
@@ -423,11 +426,13 @@ impl App {
                     if n > 0 && self.slash_cursor > 0 {
                         self.slash_cursor -= 1;
                     }
+                    return Ok(());
                 }
                 KeyCode::Down | KeyCode::Char('j') if key.modifiers.is_empty() => {
                     if n > 0 && self.slash_cursor + 1 < n {
                         self.slash_cursor += 1;
                     }
+                    return Ok(());
                 }
                 KeyCode::Enter => {
                     self.show_slash_menu = false;
@@ -436,14 +441,15 @@ impl App {
                         self.cursor = self.input.chars().count();
                     }
                     self.submit().await;
+                    return Ok(());
                 }
                 KeyCode::Esc => {
                     self.show_slash_menu = false;
                     self.slash_cursor = 0;
+                    return Ok(());
                 }
-                _ => {}
+                _ => {} // fall through so that typing characters still work
             }
-            return Ok(());
         }
 
         if self.menu_open {
@@ -747,6 +753,28 @@ impl App {
                 self.follow = true;
                 self.messages.push(UiMsg::System("Chat cleared.".to_string()));
             }
+            "/models" => {
+                let prev = self.menu_items.clone();
+                self.restore_main_menu();
+                // Trigger the Models menu action programmatically.
+                let models_action = MenuItem {
+                    label: "Models".into(),
+                    action: MenuAction::Models,
+                };
+                self.menu_items = vec![models_action];
+                self.menu_cursor = 0;
+                self.run_menu_action().await;
+                self.menu_items = prev;
+            }
+            "/provider" => {
+                let msg = format!(
+                    "Provider: {} | Model: {}",
+                    self.cfg.llm.provider,
+                    self.current_model()
+                );
+                self.messages.push(UiMsg::System(msg));
+            }
+            _ if trimmed.starts_with("/key") => self.handle_key_command(trimmed).await,
             _ if trimmed.starts_with("/allowed") => self.handle_allowed(trimmed),
             _ if trimmed.starts_with("/memory") => self.handle_memory(trimmed),
             _ => {
@@ -858,6 +886,124 @@ impl App {
                 Err(e) => self.messages.push(UiMsg::System(format!("! Search failed: {e}"))),
             },
             Err(e) => self.messages.push(UiMsg::System(format!("! Cannot open DENDRITE: {e}"))),
+        }
+    }
+
+    fn keyring_path(&self) -> String {
+        let home = std::env::var("HOME").unwrap_or_default();
+        format!("{home}/.cynapse/apikeys")
+    }
+
+    fn load_keyring(&self) -> std::collections::HashMap<String, String> {
+        let path = self.keyring_path();
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => return std::collections::HashMap::new(),
+        };
+        let mut keys = std::collections::HashMap::new();
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some(eq) = line.find('=') {
+                let name = line[..eq].trim().to_lowercase();
+                let value = line[eq + 1..].trim().to_string();
+                if !name.is_empty() && !value.is_empty() {
+                    keys.insert(name, value);
+                }
+            }
+        }
+        keys
+    }
+
+    fn save_keyring(&self, keys: &std::collections::HashMap<String, String>) -> Result<()> {
+        let path = self.keyring_path();
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| anyhow!("create ~/.cynapse: {e}"))?;
+        }
+        let mut lines: Vec<String> = keys
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        lines.sort();
+        let content = format!(
+            "# cynapse API keys — one per line, name=value\n# Supported names:\n#   openai    -> OPENAI_API_KEY\n#   anthropic -> ANTHROPIC_API_KEY\n#   gemini    -> GEMINI_API_KEY\n\n{}\n",
+            lines.join("\n")
+        );
+        std::fs::write(&path, &content)
+            .map_err(|e| anyhow!("write keyring: {e}"))?;
+        Ok(())
+    }
+
+    async fn handle_key_command(&mut self, input: &str) {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() < 2 {
+            let keys = self.load_keyring();
+            if keys.is_empty() {
+                self.messages
+                    .push(UiMsg::System("No API keys stored. Usage: /key add <name> <value>".into()));
+            } else {
+                let mut msg = "Stored keys:\n".to_string();
+                let mut sorted: Vec<&String> = keys.keys().collect();
+                sorted.sort();
+                for name in sorted {
+                    let val = &keys[name];
+                    let masked = if val.len() > 8 {
+                        format!("{}...{}", &val[..4], &val[val.len() - 4..])
+                    } else {
+                        "**".into()
+                    };
+                    msg.push_str(&format!("    {name}: {masked}\n"));
+                }
+                msg.push_str("\nUsage: /key add <name> <value>  |  /key remove <name>");
+                self.messages.push(UiMsg::System(msg));
+            }
+            return;
+        }
+        match parts[1] {
+            "add" => {
+                if parts.len() < 4 {
+                    self.messages
+                        .push(UiMsg::System("Usage: /key add <name> <key_value>".into()));
+                    return;
+                }
+                let name = parts[2].to_lowercase();
+                let value = parts[3..].join(" ");
+                let mut keys = self.load_keyring();
+                keys.insert(name.clone(), value);
+                match self.save_keyring(&keys) {
+                    Ok(_) => {
+                        self.messages.push(UiMsg::System(format!(
+                            "Key '{name}' saved to ~/.cynapse/apikeys. Restart here for it to take effect."
+                        )));
+                    }
+                    Err(e) => self.messages.push(UiMsg::System(format!("! Key save failed: {e}"))),
+                }
+            }
+            "remove" | "rm" => {
+                if parts.len() < 3 {
+                    self.messages
+                        .push(UiMsg::System("Usage: /key remove <name>".into()));
+                    return;
+                }
+                let name = parts[2].to_lowercase();
+                let mut keys = self.load_keyring();
+                if keys.remove(&name).is_some() {
+                    match self.save_keyring(&keys) {
+                        Ok(_) => self.messages.push(UiMsg::System(format!("Removed key '{name}'."))),
+                        Err(e) => self.messages.push(UiMsg::System(format!("! Key save failed: {e}"))),
+                    }
+                } else {
+                    self.messages
+                        .push(UiMsg::System(format!("No key named '{name}'.")));
+                }
+            }
+            _ => {
+                self.messages
+                    .push(UiMsg::System("Usage: /key [list|add <name> <value>|remove <name>]".into()));
+            }
         }
     }
 
@@ -1045,7 +1191,7 @@ impl App {
             .unwrap_or(0);
 
         let hero = Paragraph::new(Text::from(visible.join("\n")))
-            .style(Style::default().fg(PURPLE).add_modifier(Modifier::BOLD))
+            .style(Style::default().fg(GOLD).add_modifier(Modifier::BOLD))
             .alignment(Alignment::Center);
         let hero_h = (take as u16).min(hero_area.height);
         let hero_y = hero_area
@@ -1059,7 +1205,7 @@ impl App {
         let word = Paragraph::new(Line::from(Span::styled(
             "C Y N A P S E",
             Style::default()
-                .fg(ORANGE)
+                .fg(GOLD)
                 .add_modifier(Modifier::BOLD),
         )))
         .alignment(Alignment::Center);
@@ -1088,7 +1234,7 @@ impl App {
 
         let logo = Paragraph::new(Line::from(Span::styled(
             " CYNAPSE",
-            Style::default().fg(PURPLE).add_modifier(Modifier::BOLD),
+            Style::default().fg(PURPLE_ACCENT).add_modifier(Modifier::BOLD),
         )));
         f.render_widget(logo, layout[0]);
 
@@ -1166,7 +1312,7 @@ impl App {
         }
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(PURPLE))
+            .border_style(Style::default().fg(GOLD))
             .title(" commands ");
         let dropdown = Paragraph::new(lines).block(block);
         f.render_widget(dropdown, area);
@@ -1188,7 +1334,7 @@ impl App {
             if i == self.menu_cursor {
                 lines.push(Line::from(Span::styled(
                     format!("▸ {}", item.label),
-                    Style::default().fg(PURPLE).add_modifier(Modifier::BOLD),
+                    Style::default().fg(GOLD).add_modifier(Modifier::BOLD),
                 )));
             } else {
                 lines.push(Line::from(Span::styled(
@@ -1198,7 +1344,7 @@ impl App {
             }
         }
         let menu = Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(PURPLE)));
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(GOLD)));
         f.render_widget(menu, box_area);
     }
 
@@ -1250,7 +1396,7 @@ impl App {
         shown.push('█');
         shown.push_str(&self.input[byte_idx..]);
         let input = Paragraph::new(Line::from(Span::raw(shown)))
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(PURPLE)));
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(GOLD)));
         f.render_widget(input, area);
     }
 
@@ -1261,9 +1407,9 @@ impl App {
         let mut lines: Vec<Line<'static>> = Vec::new();
         let user_p = Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD);
         let asst_p = Style::default().fg(BRIGHT);
-        let tool_p = Style::default().fg(ORANGE);
+        let tool_p = Style::default().fg(GOLD);
         let toolres_p = Style::default().fg(DIM);
-        let sys_p = Style::default().fg(ORANGE);
+        let sys_p = Style::default().fg(GOLD);
 
         for m in &self.messages {
             let (prefix, style): (&str, Style) = match m {
@@ -1315,7 +1461,7 @@ impl App {
                 let frame = SPINNER[self.spinner % SPINNER.len()];
                 lines.push(Line::from(Span::styled(
                     format!("  {frame} thinking..."),
-                    Style::default().fg(ORANGE),
+                    Style::default().fg(GOLD),
                 )));
             }
             lines.push(Line::from(""));

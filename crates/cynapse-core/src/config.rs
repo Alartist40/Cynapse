@@ -381,7 +381,38 @@ pub fn load(path: &Path) -> Result<Config> {
         Err(e) => return Err(e).context("reading config"),
     }
     apply_env(&mut cfg);
+    load_keyring(&mut cfg);
     Ok(cfg)
+}
+
+fn load_keyring(cfg: &mut Config) {
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => return,
+    };
+    let path = format!("{home}/.cynapse/apikeys");
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(eq) = line.find('=') {
+            let name = line[..eq].trim();
+            let value = line[eq + 1..].trim();
+            if !name.is_empty() && !value.is_empty() {
+                match name.to_lowercase().as_str() {
+                    "openai" if cfg.llm.openai_key.is_empty() => cfg.llm.openai_key = value.to_string(),
+                    "anthropic" if cfg.llm.anthropic_key.is_empty() => cfg.llm.anthropic_key = value.to_string(),
+                    "gemini" if cfg.llm.gemini_key.is_empty() => cfg.llm.gemini_key = value.to_string(),
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
 fn apply_env(cfg: &mut Config) {
