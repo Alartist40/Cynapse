@@ -25,7 +25,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::{Frame, Terminal};
 use unicode_width::UnicodeWidthStr;
 
@@ -47,15 +47,36 @@ const ORANGE: Color = Color::Rgb(0xe6, 0x7e, 0x22);
 const DIM: Color = Color::Rgb(0x4a, 0x55, 0x68);
 const BRIGHT: Color = Color::Rgb(0xe4, 0xe7, 0xeb);
 
-const HERO: &str = "\
-  ██████╗██╗   ██╗███╗   ██╗ █████╗ ██████╗ ███████╗███████╗\n\
- ██╔════╝╚██╗ ██╔╝████╗  ██║██╔══██╗██╔══██╗██╔════╝██╔════╝\n\
- ██║      ╚████╔╝ ██╔██╗ ██║███████║██████╔╝███████╗█████╗  \n\
- ██║       ╚██╔╝  ██║╚██╗██║██╔══██║██╔═══╝ ╚════██║██╔══╝  \n\
- ╚██████╗   ██║   ██║ ╚████║██║  ██║██║     ███████║███████╗\n\
-  ╚═════╝   ╚═╝   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚══════╝╚══════╝";
+const HERO: &str = include_str!("../../../assets/ascii-art.txt");
 
-const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER: [&str; 10] = ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"];
+
+/// Slash commands shown in the dropdown when the user types `/`.
+const SLASH_COMMANDS: &[(&str, &str)] = &[
+    ("/help", "Show help text"),
+    ("/clear", "Clear chat to idle screen"),
+    ("/attach <file>", "Attach a file from workspace"),
+    ("/attachments", "List pending attachments"),
+    ("/clear-attach", "Clear all attachments"),
+    ("/compress", "Force compression to DENDRITE"),
+    ("/memory <query>", "Full-text search DENDRITE"),
+    ("/allowed list", "Show allowlist rules"),
+    ("/allowed forget <r>", "Remove an allowlist rule"),
+    ("/allowed clear", "Remove all allowlist rules"),
+];
+
+/// Filter the slash-command list by a query (the current input). When the
+/// query is empty or just `/`, every command is returned.
+fn filtered_slash(query: &str) -> Vec<&'static (&'static str, &'static str)> {
+    let q = query.trim_start().to_lowercase();
+    if q.is_empty() || q == "/" {
+        return SLASH_COMMANDS.iter().collect();
+    }
+    SLASH_COMMANDS
+        .iter()
+        .filter(|(cmd, _)| cmd.to_lowercase().starts_with(&q))
+        .collect()
+}
 
 // ─── Chat messages ───────────────────────────────────────────────────────────
 
@@ -113,7 +134,7 @@ impl confirm::Prompter for TuiPrompter {
 
 /// Format the in-chat confirmation card, mirroring the Go TUI.
 fn format_confirm_card(r: &confirm::Request) -> String {
-    let mut b = format!("\n⚠  {}\n", r.title);
+    let mut b = format!("\n!  {}\n", r.title);
     for line in r.detail.lines() {
         b.push_str(&format!("    {line}\n"));
     }
@@ -243,7 +264,7 @@ Allowlist:
 
 Confirmation prompt (in-chat, automatic):
   When the agent wants to run a flagged command the chat shows
-  ⚠  Run shell command?  with [D) Decline / O) Allow once /
+  !  Run shell command?  with [D) Decline / O) Allow once /
   S) Allow this section / A) Always allow].  Press the letter.
 
 Type naturally to chat with the agent."
@@ -304,6 +325,8 @@ struct App {
     chat_scroll: usize,
     follow: bool,
     width: u16,
+    show_slash_menu: bool,
+    slash_cursor: usize,
     height: u16,
 }
 
@@ -344,6 +367,8 @@ impl App {
             confirm_rx,
             chat_scroll: 0,
             follow: true,
+            show_slash_menu: false,
+            slash_cursor: 0,
             width: 0,
             height: 0,
         }
@@ -390,6 +415,37 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        if self.show_slash_menu {
+            let matches = filtered_slash(&self.input);
+            let n = matches.len();
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') if key.modifiers.is_empty() => {
+                    if n > 0 && self.slash_cursor > 0 {
+                        self.slash_cursor -= 1;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') if key.modifiers.is_empty() => {
+                    if n > 0 && self.slash_cursor + 1 < n {
+                        self.slash_cursor += 1;
+                    }
+                }
+                KeyCode::Enter => {
+                    self.show_slash_menu = false;
+                    if let Some((cmd, _)) = matches.get(self.slash_cursor) {
+                        self.input = (*cmd).to_string();
+                        self.cursor = self.input.chars().count();
+                    }
+                    self.submit().await;
+                }
+                KeyCode::Esc => {
+                    self.show_slash_menu = false;
+                    self.slash_cursor = 0;
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         if self.menu_open {
             match key.code {
                 KeyCode::Up | KeyCode::Char('k') if key.modifiers.is_empty() => {
@@ -455,6 +511,10 @@ impl App {
                     .unwrap_or(self.input.len());
                 self.input.insert(byte_idx, c);
                 self.cursor += 1;
+                if self.input.starts_with('/') {
+                    self.show_slash_menu = true;
+                    self.slash_cursor = 0;
+                }
             }
             _ => {}
         }
@@ -475,6 +535,10 @@ impl App {
         self.cursor -= 1;
         if self.input.is_empty() {
             self.close_menu();
+        }
+        if !self.input.starts_with('/') {
+            self.show_slash_menu = false;
+            self.slash_cursor = 0;
         }
     }
 
@@ -589,7 +653,7 @@ impl App {
                 .iter()
                 .map(|a| format!("{} ({})", a.filename, a.kind))
                 .collect();
-            display = format!("{input} 📎[{}]", names.join(", "));
+            display = format!("{input} [attach][{}]", names.join(", "));
         }
         self.messages.push(UiMsg::User(display));
         self.input.clear();
@@ -626,16 +690,16 @@ impl App {
                             content: att.content.clone(),
                         });
                         self.messages.push(UiMsg::System(format!(
-                            "📎 Attached: {} ({})",
+                            "[attach] Attached: {} ({})",
                             att.filename,
                             att.kind.as_str()
                         )));
                     }
                     Err(e) => self
                         .messages
-                        .push(UiMsg::System(format!("⚠ Failed to load attachment: {e}"))),
+                        .push(UiMsg::System(format!("! Failed to load attachment: {e}"))),
                 },
-                Err(e) => self.messages.push(UiMsg::System(format!("⚠ Cannot attach: {e}"))),
+                Err(e) => self.messages.push(UiMsg::System(format!("! Cannot attach: {e}"))),
             }
             self.input.clear();
             self.cursor = 0;
@@ -645,11 +709,11 @@ impl App {
         match trimmed {
             "/clear-attach" => {
                 self.pending_attachments.clear();
-                self.messages.push(UiMsg::System("📎 Cleared all attachments".to_string()));
+                self.messages.push(UiMsg::System("[attach] Cleared all attachments".to_string()));
             }
             "/attachments" => {
                 if self.pending_attachments.is_empty() {
-                    self.messages.push(UiMsg::System("📎 No pending attachments".to_string()));
+                    self.messages.push(UiMsg::System("[attach] No pending attachments".to_string()));
                 } else {
                     let names: Vec<String> = self
                         .pending_attachments
@@ -657,23 +721,23 @@ impl App {
                         .map(|a| format!("{} ({})", a.filename, a.kind))
                         .collect();
                     self.messages
-                        .push(UiMsg::System(format!("📎 Pending: {}", names.join(", "))));
+                        .push(UiMsg::System(format!("[attach] Pending: {}", names.join(", "))));
                 }
             }
             "/compress" => match self.agent.compress_now() {
                 Ok((turns, saved)) => {
                     if turns == 0 && saved == 0 {
                         self.messages.push(UiMsg::System(
-                            "🗜  Nothing to compress — session is already below threshold."
+                            "[compress]  Nothing to compress — session is already below threshold."
                                 .to_string(),
                         ));
                     } else {
                         self.messages.push(UiMsg::System(format!(
-                            "🗜  Compressed {turns} turn(s) into DENDRITE, saved ~{saved} tokens."
+                            "[compress]  Compressed {turns} turn(s) into DENDRITE, saved ~{saved} tokens."
                         )));
                     }
                 }
-                Err(e) => self.messages.push(UiMsg::System(format!("⚠ Compress: {e}"))),
+                Err(e) => self.messages.push(UiMsg::System(format!("! Compress: {e}"))),
             },
             "/help" => {
                 self.messages.push(UiMsg::System(help_text().to_string()));
@@ -728,7 +792,7 @@ impl App {
                     Ok(_) => self.messages.push(UiMsg::System(format!("🗑  Removed rule: {key}"))),
                     Err(e) => self
                         .messages
-                        .push(UiMsg::System(format!("⚠ Forget failed: {e}"))),
+                        .push(UiMsg::System(format!("! Forget failed: {e}"))),
                 }
             }
             "clear" => {
@@ -737,7 +801,7 @@ impl App {
                 for r in &rules {
                     if let Err(e) = self.allowlist.forget(r) {
                         self.messages
-                            .push(UiMsg::System(format!("⚠ Forget failed on {r}: {e}")));
+                            .push(UiMsg::System(format!("! Forget failed on {r}: {e}")));
                         return;
                     }
                 }
@@ -791,9 +855,9 @@ impl App {
                     }
                     self.messages.push(UiMsg::System(msg));
                 }
-                Err(e) => self.messages.push(UiMsg::System(format!("⚠ Search failed: {e}"))),
+                Err(e) => self.messages.push(UiMsg::System(format!("! Search failed: {e}"))),
             },
-            Err(e) => self.messages.push(UiMsg::System(format!("⚠ Cannot open DENDRITE: {e}"))),
+            Err(e) => self.messages.push(UiMsg::System(format!("! Cannot open DENDRITE: {e}"))),
         }
     }
 
@@ -948,6 +1012,9 @@ impl App {
 
     fn render_idle(&mut self, f: &mut Frame, area: Rect) {
         let menu_h = if self.menu_open { self.menu_height() } else { 0 };
+        // Reserve space for the bottom UI: hint (1), status (1), input (3) +
+        // optional menu overlay above the status.
+        let reserved_below = 1 + 1 + 3;
         let layout = Layout::vertical([
             Constraint::Min(6),
             Constraint::Length(menu_h),
@@ -956,25 +1023,55 @@ impl App {
         ])
         .split(area);
 
-        let hero_y = layout[0]
-            .y
-            .saturating_add(layout[0].height.saturating_sub(6) / 2)
-            .saturating_sub(2);
-        let hero = Paragraph::new(Text::from(HERO))
+        let hero_area = Rect {
+            x: area.x,
+            y: layout[0].y,
+            width: area.width,
+            height: area.height.saturating_sub(reserved_below + menu_h),
+        };
+
+        // Compute the slice of HERO that fits in the hero_area, plus the
+        // widest visible line for horizontal centering.
+        let art_lines: Vec<&str> = HERO.lines().collect();
+        let total = art_lines.len();
+        let max_h = hero_area.height as usize;
+        let skip = if total > max_h { (total - max_h) / 2 } else { 0 };
+        let take = total.min(max_h);
+        let visible: Vec<&str> = art_lines.iter().skip(skip).take(take).copied().collect();
+        let widest = visible
+            .iter()
+            .map(|l| UnicodeWidthStr::width(*l))
+            .max()
+            .unwrap_or(0);
+
+        let hero = Paragraph::new(Text::from(visible.join("\n")))
             .style(Style::default().fg(PURPLE).add_modifier(Modifier::BOLD))
             .alignment(Alignment::Center);
-        f.render_widget(hero, Rect::new(area.x, hero_y, area.width, 6));
+        let hero_h = (take as u16).min(hero_area.height);
+        let hero_y = hero_area
+            .y
+            .saturating_add(hero_area.height.saturating_sub(hero_h) / 2);
+        f.render_widget(hero, Rect::new(area.x, hero_y, area.width, hero_h));
 
-        let hint = Paragraph::new(Line::from(Span::styled(
-            "Type Ctrl+K to open menu, or start typing to chat",
-            Style::default().fg(DIM),
+        // Wordmark + hint sit just below the art (or under the hero area
+        // when the art was truncated).
+        let hint_y = hero_y.saturating_add(hero_h).min(layout[2].y);
+        let word = Paragraph::new(Line::from(Span::styled(
+            "C Y N A P S E",
+            Style::default()
+                .fg(ORANGE)
+                .add_modifier(Modifier::BOLD),
         )))
         .alignment(Alignment::Center);
-        f.render_widget(hint, Rect::new(area.x, hero_y.saturating_add(7), area.width, 1));
+        f.render_widget(word, Rect::new(area.x, hint_y, area.width, 1));
 
         self.render_menu_overlay(f, layout[1]);
         self.render_status_bar(f, layout[2]);
         self.render_input(f, layout[3]);
+        self.render_slash_dropdown(f, layout[3]);
+
+        // Last-ditch centering info, used to debug terminal sizing.
+        let _ = widest;
     }
 
     fn render_active(&mut self, f: &mut Frame, area: Rect) {
@@ -1019,10 +1116,60 @@ impl App {
         self.render_menu_overlay(f, layout[3]);
         self.render_status_bar(f, layout[4]);
         self.render_input(f, layout[5]);
+        self.render_slash_dropdown(f, layout[5]);
     }
 
     fn menu_height(&self) -> u16 {
         (self.menu_items.len() as u16).min(24).saturating_add(2)
+    }
+
+    fn render_slash_dropdown(&mut self, f: &mut Frame, input_area: Rect) {
+        if !self.show_slash_menu {
+            return;
+        }
+        let matches = filtered_slash(&self.input);
+        if matches.is_empty() {
+            return;
+        }
+        let visible = matches.len().min(8);
+        // Anchor the dropdown above the input line; fall back to in-place
+        // when there's no room.
+        let height = visible as u16 + 2;
+        let width = 48u16.min(input_area.width.saturating_sub(2));
+        let x = input_area.x + 2;
+        let y = if input_area.y >= height {
+            input_area.y.saturating_sub(height)
+        } else {
+            input_area.y
+        };
+        let area = Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        f.render_widget(Clear, area);
+        let mut lines = Vec::with_capacity(matches.len());
+        for (i, (cmd, desc)) in matches.iter().enumerate() {
+            let style = if i == self.slash_cursor {
+                Style::default()
+                    .fg(BRIGHT)
+                    .bg(Color::Rgb(60, 30, 80))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(DIM)
+            };
+            lines.push(Line::from(Span::styled(
+                format!(" {cmd:<22} {desc}"),
+                style,
+            )));
+        }
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(PURPLE))
+            .title(" commands ");
+        let dropdown = Paragraph::new(lines).block(block);
+        f.render_widget(dropdown, area);
     }
 
     fn render_menu_overlay(&mut self, f: &mut Frame, area: Rect) {
@@ -1059,9 +1206,9 @@ impl App {
         let left = format!("Model: {}", self.current_model());
         let mut right = String::new();
         if let Some(elapsed) = self.last_elapsed {
-            right = format!("⏱ {}ms", elapsed.as_millis());
+            right = format!("t: {}ms", elapsed.as_millis());
             if self.last_tokens > 0 {
-                right.push_str(&format!(" | 🪙 {} tokens", self.last_tokens));
+                right.push_str(&format!(" | tok: {} tokens", self.last_tokens));
             }
         }
         if let Some(cs) = &self.confirm {
