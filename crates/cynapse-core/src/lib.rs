@@ -11,6 +11,7 @@ pub mod compressor;
 pub mod config;
 pub mod confirm;
 pub mod dendrite;
+pub mod gateway;
 pub mod llm;
 pub mod netguard;
 pub mod ocr;

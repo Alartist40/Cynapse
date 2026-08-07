@@ -18,10 +18,22 @@ pub enum Command {
     Version,
     /// Launch the interactive chat TUI.
     Chat,
+    /// Serve the local web gateway (camera stream + chat UI).
+    Serve(ServeCmd),
     /// Inspect and validate the YAML configuration.
     Config(ConfigCmd),
     /// Query the DENDRITE graph memory.
     Memory(MemoryCmd),
+}
+
+#[derive(Debug, Args)]
+pub struct ServeCmd {
+    /// Path to the configuration file.
+    #[arg(long, default_value = "config.yaml")]
+    pub config: String,
+    /// Override the bind address (gateway.address).
+    #[arg(long)]
+    pub address: Option<String>,
 }
 
 #[derive(Debug, Args)]

@@ -23,6 +23,9 @@ async-trait = "0.1"
 sha2 = "0.10"
 base64 = "0.22"
 url = "2"
+axum = { version = "0.7", features = ["multipart"] }
+tower = "0.4"
+async-stream = "0.3"
 
 [features]
 default = []
