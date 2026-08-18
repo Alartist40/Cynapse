@@ -11,7 +11,7 @@ Inspired by [jcode](../reference/jcode/)'s layered crate architecture.
 One-command bootstrap from source (Linux / macOS):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nex/cynapse-rs/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/scripts/install.sh | bash
 ```
 
 This builds the binary, places it in `~/.cynapse/builds/versions/<hash>/cynapse`,

@@ -5,3 +5,5 @@
 *.db
 *.db-wal
 *.db-shm
+/persona/devices/**/logs/
+examples_connect_tmp.rs

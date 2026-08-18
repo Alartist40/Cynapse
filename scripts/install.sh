@@ -4,7 +4,7 @@ set -euo pipefail
 # cynapse one-command bootstrap installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/xander/cynapse-rs/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/scripts/install.sh | bash
 #
 # This script builds cynapse from source (Rust/Cargo required) and installs it
 # to ~/.cynapse/builds/versions/<git-hash>/cynapse with ~/.local/bin/cynapse as
@@ -28,8 +28,8 @@ command -v cargo >/dev/null 2>&1 || err "cargo and Rust are required (https://ru
 
 # ─── build from development source ────────────────────────────────────────────
 
-REPO_URL="${CYNAPSE_REPO:-https://github.com/nex/cynapse-rs.git}"
-BRANCH="${CYNAPSE_BRANCH:-master}"
+REPO_URL="${CYNAPSE_REPO:-https://github.com/Alartist40/cynapse.git}"
+BRANCH="${CYNAPSE_BRANCH:-main}"
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
