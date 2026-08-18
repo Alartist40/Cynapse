@@ -8,16 +8,28 @@ Inspired by [jcode](../reference/jcode/)'s layered crate architecture.
 
 ## Install
 
-One-command bootstrap from source (Linux / macOS):
+One-command install (Linux / macOS / SBCs like Orange Pi):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/scripts/install.sh | bash
 ```
 
-This builds the binary, places it in `~/.cynapse/builds/versions/<hash>/cynapse`,
-creates `~/.local/bin/cynapse` as the launcher, and (idempotently) adds the
-launcher directory to `PATH` in `~/.zshenv`, `~/.bashrc`, `~/.profile`, and
-fish config.
+This downloads the prebuilt `cynapse` binary for your OS/CPU (x86_64 and
+aarch64 published on the GitHub releases page), so no Rust toolchain is needed.
+If no prebuilt exists for your platform, it falls back to building from source.
+Either way the binary lands in `~/.cynapse/builds/versions/<hash>/cynapse`,
+`~/.local/bin/cynapse` is created as the launcher, and (idempotently) the
+launcher directory is added to `PATH` in `~/.zshenv`, `~/.bashrc`,
+`~/.profile`, and fish config — so `cynapse` works from any directory.
+
+Update to the latest version:
+
+```bash
+cynapse update
+```
+
+`cynapse update` pulls the latest code from GitHub, rebuilds it, and re-points
+the launcher — like `opencode upgrade` / `hermes update`.
 
 For local development builds (no GitHub):
 
