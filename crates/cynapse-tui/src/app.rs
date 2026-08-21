@@ -591,43 +591,101 @@ impl App {
                 self.messages.push(UiMsg::System(msg));
             }
             MenuAction::Models => {
-                if !self.cfg.llm.provider.eq_ignore_ascii_case("ollama") {
-                    self.messages
-                        .push(UiMsg::System("Model switching only available for Ollama".to_string()));
-                    return;
-                }
-                self.menu_items = vec![MenuItem {
-                    label: "Loading models…".into(),
-                    action: MenuAction::Back,
-                }];
-                self.menu_cursor = 0;
-                self.menu_open = true;
-                match llm::list_ollama_models(&self.cfg.llm.ollama_base_url).await {
-                    Ok(models) => {
+                let provider = self.cfg.llm.provider.to_lowercase();
+                if provider == "leafcutter" {
+                    self.menu_items = vec![MenuItem {
+                        label: "Scanning Leafcutter models…".into(),
+                        action: MenuAction::Back,
+                    }];
+                    self.menu_cursor = 0;
+                    self.menu_open = true;
+
+                    let mut models = Vec::new();
+                    let home = std::env::var("HOME").unwrap_or_default();
+                    let dirs = vec![
+                        std::path::PathBuf::from("./models"),
+                        std::path::PathBuf::from(format!("{home}/Downloads/models")),
+                        std::path::PathBuf::from(format!("{home}/models")),
+                    ];
+                    for dir in dirs {
+                        if let Ok(entries) = std::fs::read_dir(dir) {
+                            for ent in entries.flatten() {
+                                let p = ent.path();
+                                if p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("gguf") {
+                                    if let Some(path_str) = p.to_str() {
+                                        models.push(path_str.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    models.sort();
+                    models.dedup();
+
+                    if models.is_empty() {
+                        self.menu_open = false;
+                        self.messages.push(UiMsg::System("No .gguf models found in ./models or ~/Downloads/models".to_string()));
+                        self.restore_main_menu();
+                    } else {
                         let mut items: Vec<MenuItem> = models
                             .into_iter()
-                            .map(|m| MenuItem {
-                                label: m.clone(),
-                                action: MenuAction::SelectModel(m),
+                            .map(|m| {
+                                let stem = std::path::Path::new(&m)
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or(&m)
+                                    .to_string();
+                                MenuItem {
+                                    label: stem,
+                                    action: MenuAction::SelectModel(m),
+                                }
                             })
                             .collect();
                         items.push(MenuItem { label: "← Back".into(), action: MenuAction::Back });
                         self.menu_items = items;
                         self.menu_cursor = 0;
                     }
-                    Err(e) => {
-                        self.menu_open = false;
-                        self.messages
-                            .push(UiMsg::System(format!("Failed to load models: {e}")));
-                        self.restore_main_menu();
+                } else if provider == "ollama" {
+                    self.menu_items = vec![MenuItem {
+                        label: "Loading models…".into(),
+                        action: MenuAction::Back,
+                    }];
+                    self.menu_cursor = 0;
+                    self.menu_open = true;
+                    match llm::list_ollama_models(&self.cfg.llm.ollama_base_url).await {
+                        Ok(models) => {
+                            let mut items: Vec<MenuItem> = models
+                                .into_iter()
+                                .map(|m| MenuItem {
+                                    label: m.clone(),
+                                    action: MenuAction::SelectModel(m),
+                                })
+                                .collect();
+                            items.push(MenuItem { label: "← Back".into(), action: MenuAction::Back });
+                            self.menu_items = items;
+                            self.menu_cursor = 0;
+                        }
+                        Err(e) => {
+                            self.menu_open = false;
+                            self.messages
+                                .push(UiMsg::System(format!("Failed to load models: {e}")));
+                            self.restore_main_menu();
+                        }
                     }
+                } else {
+                    self.messages
+                        .push(UiMsg::System(format!("Model switching not implemented for provider '{provider}'")));
                 }
             }
             MenuAction::SelectModel(name) => {
                 self.llm_client.set_model(&name);
                 self.cfg.llm.model = name.clone();
+                let stem = std::path::Path::new(&name)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&name);
                 self.messages
-                    .push(UiMsg::System(format!("Switched to Ollama model: {name}")));
+                    .push(UiMsg::System(format!("Switched model to: {stem}")));
                 self.restore_main_menu();
             }
             MenuAction::Clear => {

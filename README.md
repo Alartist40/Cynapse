@@ -52,6 +52,8 @@ cynapse memory get <id>
 cynapse memory search <query>
 cynapse memory stats
 cynapse memory export
+cynapse doctor         # run full system diagnostic health check
+cynapse update         # update to latest release from GitHub
 ```
 
 In the TUI: `/help` lists slash commands (`/attach`, `/clear`, `/compress`,

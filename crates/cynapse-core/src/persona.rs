@@ -85,9 +85,11 @@ impl Persona {
         let mut seeded = 0;
         for (file, id, title, node_type) in SEED_FILES {
             let path = self.defaults_path.join(file);
-            let Ok(data) = fs::read_to_string(&path) else {
-                eprintln!("WARNING: seed file {file} not found");
-                continue;
+            let data = match fs::read_to_string(&path) {
+                Ok(d) => d,
+                Err(_) => {
+                    format!("# {}\nDefault {} for Cynapse AI agent.\n", title, title)
+                }
             };
             self.graph.upsert(id, title, &data, node_type, None);
             seeded += 1;

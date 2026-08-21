@@ -24,6 +24,8 @@ pub enum Command {
     Config(ConfigCmd),
     /// Query the DENDRITE graph memory.
     Memory(MemoryCmd),
+    /// Run full system diagnostic health check.
+    Doctor,
     /// Update cynapse to the latest version from GitHub.
     Update,
 }

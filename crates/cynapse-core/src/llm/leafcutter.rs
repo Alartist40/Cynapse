@@ -45,7 +45,9 @@ pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient
     let base_url = format!("http://127.0.0.1:{port}");
 
     let mut cmd = std::process::Command::new(&bin);
-    cmd.args(["server", "--model", &model_path, "--port", &port.to_string()]);
+    cmd.args(["serve", "--model", &model_path, "--port", &port.to_string()]);
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
 
     // LD_LIBRARY_PATH for llama.cpp shared libs when installed via install.sh.
     if let Some(home) = dirs::home_dir() {
@@ -160,41 +162,44 @@ impl LlmClient for LeafcutterClient {
                 return;
             }
 
-            // Leafcutter's native-streaming engine does not always honour
-            // `stream: true` (and may close the connection abruptly), so read
-            // the whole body, then handle SSE or fall back to a plain JSON
-            // completion.
-            let body = match resp.text().await {
-                Ok(b) => b,
-                Err(e) => {
-                    send_err(&errors_tx, anyhow!("reading leafcutter response: {e}"));
+            use futures_util::StreamExt;
+            let mut stream = resp.bytes_stream();
+            let mut buffer = String::new();
+            let mut sse_seen = false;
+
+            while let Some(chunk_res) = stream.next().await {
+                if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
                     return;
                 }
-            };
-            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                return;
-            }
-
-            let mut sse_seen = false;
-            for line in body.lines() {
-                if !line.starts_with("data: ") {
-                    continue;
-                }
-                sse_seen = true;
-                let data = line.trim_start_matches("data: ");
-                if data == "[DONE]" {
-                    break;
-                }
-                let parsed: Value = match serde_json::from_str(data) {
-                    Ok(v) => v,
-                    Err(_) => continue,
+                let bytes = match chunk_res {
+                    Ok(b) => b,
+                    Err(e) => {
+                        send_err(&errors_tx, anyhow!("reading stream chunk: {e}"));
+                        return;
+                    }
                 };
-                if let Some(content) = parsed
-                    .pointer("/choices/0/delta/content")
-                    .and_then(|c| c.as_str())
-                {
-                    if !content.is_empty() {
-                        let _ = chunks_tx.send(content.to_string());
+                buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+                while let Some(pos) = buffer.find('\n') {
+                    let line = buffer[..pos].trim_end_matches('\r').to_string();
+                    buffer = buffer[pos + 1..].to_string();
+
+                    if line.starts_with("data: ") {
+                        sse_seen = true;
+                        let data = line.trim_start_matches("data: ").trim();
+                        if data == "[DONE]" {
+                            return;
+                        }
+                        if let Ok(parsed) = serde_json::from_str::<Value>(data) {
+                            if let Some(content) = parsed
+                                .pointer("/choices/0/delta/content")
+                                .and_then(|c| c.as_str())
+                            {
+                                if !content.is_empty() {
+                                    let _ = chunks_tx.send(content.to_string());
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -202,7 +207,7 @@ impl LlmClient for LeafcutterClient {
             if !sse_seen {
                 // Non-SSE body: either a single chat.completion JSON or a
                 // non-streaming fallback. Emit its content as one chunk.
-                if let Some(content) = serde_json::from_str::<Value>(&body)
+                if let Some(content) = serde_json::from_str::<Value>(&buffer)
                     .ok()
                     .and_then(|v| v.pointer("/choices/0/message/content").and_then(|c| c.as_str()).map(|s| s.to_string()))
                 {
@@ -275,6 +280,12 @@ impl LlmClient for LeafcutterClient {
 
     fn current_model(&self) -> String {
         self.model.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn set_model(&self, model: &str) {
+        if let Ok(mut m) = self.model.lock() {
+            *m = model.to_string();
+        }
     }
 }
 
