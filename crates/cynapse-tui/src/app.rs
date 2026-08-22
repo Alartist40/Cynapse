@@ -1081,21 +1081,36 @@ impl App {
 
     fn on_chunk(&mut self, chunk: &str) {
         self.dirty = true;
-        let t = chunk.trim();
-        if let Some(rest) = t.strip_prefix("[tool result]") {
+        let mut text = chunk;
+
+        // Check for special prefix markers with whitespace tolerance
+        let trimmed = text.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("[tool result]") {
             self.messages.push(UiMsg::ToolResult(rest.trim().to_string()));
             return;
         }
-        if let Some(rest) = t.strip_prefix("[tool]") {
+        if let Some(rest) = trimmed.strip_prefix("[tool]") {
             self.messages.push(UiMsg::Tool(rest.trim().to_string()));
             return;
         }
-        if let Some(rest) = chunk.strip_prefix("[thinking]") {
+
+        // Handle Ollama/Provider [thinking] prefix (with leading whitespace/newline tolerance)
+        if let Some(rest) = trimmed.strip_prefix("[thinking]") {
             self.streaming_thinking.push_str(rest);
             return;
         }
 
-        let mut text = chunk;
+        // Handle inline [thinking] markers if present in chunk
+        if text.contains("[thinking]") {
+            for part in text.split("[thinking]") {
+                if !part.is_empty() {
+                    self.streaming_thinking.push_str(part);
+                }
+            }
+            return;
+        }
+
+        // Handle ChatML / DeepSeek <think>...</think> tags
         if text.contains("<think>") {
             self.in_think_block = true;
             let parts: Vec<&str> = text.splitn(2, "<think>").collect();
