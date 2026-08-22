@@ -174,7 +174,10 @@ impl LlmClient for LeafcutterClient {
                 let bytes = match chunk_res {
                     Ok(b) => b,
                     Err(e) => {
-                        send_err(&errors_tx, anyhow!("reading stream chunk: {e}"));
+                        send_err(
+                            &errors_tx,
+                            anyhow!("Leafcutter backend connection lost: {e}. Run 'leaf doctor' to verify backend status."),
+                        );
                         return;
                     }
                 };
