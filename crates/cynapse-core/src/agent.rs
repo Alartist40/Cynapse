@@ -171,6 +171,12 @@ impl Agent {
         Ok((res.turns_moved, res.original_tokens.saturating_sub(res.compressed_tokens)))
     }
 
+    /// Clear all stored session entries for this device.
+    pub fn clear_session(&self) -> Result<()> {
+        let sess = self.sessions.get(&self.device_id)?;
+        sess.clear()
+    }
+
     /// Handle one user turn; returns the final text response.
     pub async fn process_message(&self, user_msg: &str, attachments: Vec<llm::Attachment>) -> Result<String> {
         let sess = self.sessions.get(&self.device_id)?;

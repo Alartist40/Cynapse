@@ -692,6 +692,7 @@ impl App {
             }
             MenuAction::Clear => {
                 self.messages.clear();
+                let _ = self.agent.clear_session();
                 self.active = false;
                 self.follow = true;
             }
@@ -818,6 +819,7 @@ impl App {
             }
             "/clear" => {
                 self.messages.clear();
+                let _ = self.agent.clear_session();
                 self.follow = true;
                 self.messages.push(UiMsg::System("Chat cleared.".to_string()));
             }

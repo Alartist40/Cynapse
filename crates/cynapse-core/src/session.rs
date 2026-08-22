@@ -139,6 +139,11 @@ impl Session {
         drop(entries);
         write_jsonl_atomic(&self.file_path, ".compacting", &snapshot)
     }
+
+    /// Clear all session entries from memory and disk.
+    pub fn clear(&self) -> Result<()> {
+        self.replace(Vec::new())
+    }
 }
 
 /// Write entries to a temp file then atomically rename over the target.
