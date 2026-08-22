@@ -1092,7 +1092,37 @@ impl App {
             self.streaming_thinking.push_str(rest);
             return;
         }
-        self.streaming.push_str(chunk);
+
+        let mut text = chunk;
+        if text.contains("<think>") {
+            self.in_think_block = true;
+            let parts: Vec<&str> = text.splitn(2, "<think>").collect();
+            if !parts[0].is_empty() {
+                self.streaming.push_str(parts[0]);
+            }
+            if parts.len() > 1 {
+                text = parts[1];
+            } else {
+                return;
+            }
+        }
+
+        if self.in_think_block {
+            if let Some(pos) = text.find("</think>") {
+                let thinking_part = &text[..pos];
+                let response_part = &text[pos + 8..];
+                self.streaming_thinking.push_str(thinking_part);
+                self.in_think_block = false;
+                if !response_part.is_empty() {
+                    self.streaming.push_str(response_part);
+                }
+            } else {
+                self.streaming_thinking.push_str(text);
+            }
+            return;
+        }
+
+        self.streaming.push_str(text);
     }
 
     fn finalize_stream(&mut self) {
