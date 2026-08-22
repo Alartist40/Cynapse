@@ -302,9 +302,10 @@ fn build_leafcutter_request(model: String, req: &Request, stream: bool) -> Value
     for m in &req.messages {
         messages.push(json!({"role": m.role.as_str(), "content": m.content}));
     }
+    let max_tokens = if req.max_tokens == 0 { 512 } else { req.max_tokens };
     json!({
         "model": model,
-        "max_tokens": req.max_tokens,
+        "max_tokens": max_tokens,
         "temperature": req.temperature,
         "messages": messages,
         "stream": stream,
