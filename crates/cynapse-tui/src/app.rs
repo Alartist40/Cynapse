@@ -301,6 +301,7 @@ struct App {
     llm_client: Arc<dyn llm::LlmClient>,
 
     messages: Vec<UiMsg>,
+    in_think_block: bool,
     input: String,
     cursor: usize,
     active: bool,
@@ -351,6 +352,7 @@ impl App {
             allowlist,
             llm_client,
             messages: Vec::new(),
+            in_think_block: false,
             input: String::new(),
             cursor: 0,
             active: false,
