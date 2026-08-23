@@ -19,20 +19,26 @@ fn tag_pattern() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"#([A-Za-z0-9_-]+)").unwrap())
 }
 
-/// Classifies what kind of knowledge a node holds.
+/// Classifies what kind of knowledge a node holds across the 4-tier memory model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeType {
-    /// Core self / agent persona
+    /// Core self / agent persona (L3)
     Identity,
-    /// A real person (user, contact)
+    /// A real person (user, contact) (L1 / L3)
     Person,
-    /// Abstract idea or skill
+    /// Abstract concept or topic (L2)
     Concept,
-    /// A project or task
+    /// A project or task (L2)
     Project,
-    /// Something that happened
+    /// Procedural skill or workflow (L2)
+    Procedure,
+    /// Something that happened / event (L1)
     Event,
-    /// Episodic memory entry
+    /// Atomic fact or preference (L1)
+    AtomicFact,
+    /// Raw chat turn log (L0)
+    TurnLog,
+    /// Episodic memory entry (L1)
     Memory,
     /// User-defined
     Custom,
@@ -45,7 +51,10 @@ impl NodeType {
             NodeType::Person => "person",
             NodeType::Concept => "concept",
             NodeType::Project => "project",
+            NodeType::Procedure => "procedure",
             NodeType::Event => "event",
+            NodeType::AtomicFact => "atomic_fact",
+            NodeType::TurnLog => "turn_log",
             NodeType::Memory => "memory",
             NodeType::Custom => "custom",
         }
@@ -55,13 +64,26 @@ impl NodeType {
         self.as_str()
     }
 
+    pub fn tier(&self) -> u8 {
+        match self {
+            NodeType::TurnLog => 0,
+            NodeType::AtomicFact | NodeType::Memory | NodeType::Event | NodeType::Person => 1,
+            NodeType::Procedure | NodeType::Project | NodeType::Concept => 2,
+            NodeType::Identity => 3,
+            NodeType::Custom => 1,
+        }
+    }
+
     pub fn from_str(s: &str) -> NodeType {
         match s {
             "identity" => NodeType::Identity,
             "person" => NodeType::Person,
             "concept" => NodeType::Concept,
             "project" => NodeType::Project,
+            "procedure" => NodeType::Procedure,
             "event" => NodeType::Event,
+            "atomic_fact" => NodeType::AtomicFact,
+            "turn_log" => NodeType::TurnLog,
             "memory" => NodeType::Memory,
             _ => NodeType::Custom,
         }
@@ -267,6 +289,75 @@ impl Dendrite {
         let mut nodes: Vec<Node> = inner.nodes.values().cloned().collect();
         nodes.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         nodes
+    }
+
+    /// Return all nodes belonging to a specific memory tier (0..3).
+    pub fn by_tier(&self, tier: u8) -> Vec<Node> {
+        let inner = lock_inner(&self.inner);
+        let mut nodes: Vec<Node> = inner
+            .nodes
+            .values()
+            .filter(|n| n.node_type.tier() == tier)
+            .cloned()
+            .collect();
+        nodes.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        nodes
+    }
+
+    /// Fast in-memory BM25 term relevance search.
+    pub fn search_bm25(&self, query: &str, limit: usize) -> Vec<(Node, f32)> {
+        let inner = lock_inner(&self.inner);
+        let query_tokens: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|s| s.len() >= 2)
+            .map(|s| s.to_string())
+            .collect();
+
+        if query_tokens.is_empty() {
+            return Vec::new();
+        }
+
+        let total_docs = inner.nodes.len() as f32;
+        if total_docs == 0.0 {
+            return Vec::new();
+        }
+
+        let mut scored: Vec<(Node, f32)> = Vec::new();
+        let k1 = 1.2f32;
+        let b = 0.75f32;
+
+        let avg_len = inner
+            .nodes
+            .values()
+            .map(|n| (n.title.len() + n.content.len()) as f32)
+            .sum::<f32>()
+            / total_docs.max(1.0);
+
+        for node in inner.nodes.values() {
+            let doc_text = format!("{} {} {}", node.title, node.content, node.tags.join(" ")).to_lowercase();
+            let doc_len = doc_text.len() as f32;
+            let mut score = 0.0f32;
+
+            for token in &query_tokens {
+                let count = doc_text.matches(token).count() as f32;
+                if count > 0.0 {
+                    let idf = ((total_docs + 1.0) / (1.0 + count)).ln();
+                    let tf = (count * (k1 + 1.0)) / (count + k1 * (1.0 - b + b * (doc_len / avg_len.max(1.0))));
+                    score += idf * tf;
+                }
+            }
+
+            if score > 0.0 {
+                scored.push((node.clone(), score));
+            }
+        }
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        if limit > 0 && scored.len() > limit {
+            scored.truncate(limit);
+        }
+        scored
     }
 
     /// 1-hop neighborhood (links + backlinks combined).

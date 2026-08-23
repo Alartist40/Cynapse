@@ -1089,6 +1089,10 @@ impl App {
             self.messages.push(UiMsg::ToolResult(rest.trim().to_string()));
             return;
         }
+        if let Some(rest) = trimmed.strip_prefix("[tool:parallel]") {
+            self.messages.push(UiMsg::Tool(format!("⚡ parallel: {}", rest.trim())));
+            return;
+        }
         if let Some(rest) = trimmed.strip_prefix("[tool]") {
             self.messages.push(UiMsg::Tool(rest.trim().to_string()));
             return;

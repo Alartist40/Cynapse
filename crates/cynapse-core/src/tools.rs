@@ -21,11 +21,25 @@ use crate::llm::ToolSchema;
 use crate::netguard;
 use crate::persona::Persona;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceClass {
+    ReadOnly,
+    Mutating,
+}
+
 /// A single LLM-callable operation.
 pub trait Tool: Send + Sync {
     fn schema(&self) -> &ToolSchema;
     /// Execute with parsed arguments, returning a display string.
     fn execute(&self, args: Value) -> Result<String>;
+    /// Classifies whether this tool is read-only or mutating.
+    fn resource_class(&self) -> ResourceClass {
+        let name = self.schema().name.as_str();
+        match name {
+            "read_file" | "file_read" | "dir_list" | "grep" | "search" | "web_fetch" | "web_search" | "dendrite_search" => ResourceClass::ReadOnly,
+            _ => ResourceClass::Mutating,
+        }
+    }
 }
 
 /// Concrete tool backed by a plain closure. Handlers are run inside
@@ -83,6 +97,16 @@ impl Registry {
 
     pub fn schemas(&self) -> Vec<ToolSchema> {
         self.tools.values().map(|t| t.schema().clone()).collect()
+    }
+
+    pub fn resource_class(&self, name: &str) -> ResourceClass {
+        self.tools
+            .get(name)
+            .map(|t| t.resource_class())
+            .unwrap_or_else(|| match name {
+                "read_file" | "file_read" | "dir_list" | "grep" | "search" | "web_fetch" | "web_search" | "dendrite_search" => ResourceClass::ReadOnly,
+                _ => ResourceClass::Mutating,
+            })
     }
 
     pub async fn execute(&self, name: &str, args: Value) -> Result<String> {

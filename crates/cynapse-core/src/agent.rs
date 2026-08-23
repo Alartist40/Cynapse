@@ -421,27 +421,63 @@ impl Agent {
                                         let _ = errors_tx.send(e);
                                         return;
                                     }
-                                    for tc in &tcs {
-                                        let _ = chunks_tx.send(format!("\n[tool] {}\n", tc.name));
-                                        let result = agent.execute_tool(tc).await;
-                                        let content = match result {
-                                            Ok(c) => c,
-                                            Err(e) => format!("Error: {e}"),
-                                        };
-                                        let content = if agent.redact { redact::redact(&content) } else { content };
-                                        if let Err(e) = sess.append(Entry {
-                                            role: Role::Tool,
-                                            content: content.clone(),
-                                            tool_call_id: Some(tc.id.clone()),
-                                            tool_calls: Vec::new(),
-                                            images: Vec::new(),
-                                            attachments: Vec::new(),
-                                            ts: 0,
-                                        }) {
-                                            let _ = errors_tx.send(e);
-                                            return;
+                                    let is_all_readonly = tcs.iter().all(|tc| agent.tools.resource_class(&tc.name) == crate::tools::ResourceClass::ReadOnly);
+                                    if is_all_readonly && tcs.len() > 1 {
+                                        for tc in &tcs {
+                                            let _ = chunks_tx.send(format!("\n[tool:parallel] {}\n", tc.name));
                                         }
-                                        let _ = chunks_tx.send(format!("[tool result] {}\n", tc.name));
+                                        let futures = tcs.iter().map(|tc| {
+                                            let tc = tc.clone();
+                                            let agent = agent.clone();
+                                            async move {
+                                                let res = agent.execute_tool(&tc).await;
+                                                (tc, res)
+                                            }
+                                        });
+                                        let results = futures_util::future::join_all(futures).await;
+                                        for (tc, result) in results {
+                                            let content = match result {
+                                                Ok(c) => c,
+                                                Err(e) => format!("Error: {e}"),
+                                            };
+                                            let content = if agent.redact { redact::redact(&content) } else { content };
+                                            if let Err(e) = sess.append(Entry {
+                                                role: Role::Tool,
+                                                content: content.clone(),
+                                                tool_call_id: Some(tc.id.clone()),
+                                                tool_calls: Vec::new(),
+                                                images: Vec::new(),
+                                                attachments: Vec::new(),
+                                                ts: 0,
+                                            }) {
+                                                let _ = errors_tx.send(e);
+                                                return;
+                                            }
+                                            let _ = chunks_tx.send(format!("[tool result] {}\n", tc.name));
+                                        }
+                                    } else {
+                                        for tc in &tcs {
+                                            let _ = chunks_tx.send(format!("\n[tool] {}\n", tc.name));
+                                            let result = agent.execute_tool(tc).await;
+                                            let content = match result {
+                                                Ok(c) => c,
+                                                Err(e) => format!("Error: {e}"),
+                                            };
+                                            let content = if agent.redact { redact::redact(&content) } else { content };
+                                            if let Err(e) = sess.append(Entry {
+                                                role: Role::Tool,
+                                                content: content.clone(),
+                                                tool_call_id: Some(tc.id.clone()),
+                                                tool_calls: Vec::new(),
+                                                images: Vec::new(),
+                                                attachments: Vec::new(),
+                                                ts: 0,
+                                            }) {
+                                                let _ = errors_tx.send(e);
+                                                return;
+                                            }
+                                            let _ = chunks_tx.send(format!("[tool result] {}\n", tc.name));
+                                        }
                                     }
                                 } else {
                                     full_response.push_str(&chunk);
