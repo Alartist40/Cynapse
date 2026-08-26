@@ -755,8 +755,15 @@ fn strip_thinking_tags(input: &str) -> String {
         if let Some(end) = s[start..].find("</think>") {
             s.replace_range(start..start + end + 8, "");
         } else {
+            s.truncate(start);
             break;
         }
+    }
+    if let Some(pos) = s.find("Thinking Process:") {
+        s.truncate(pos);
+    }
+    if let Some(pos) = s.find("Thinking:") {
+        s.truncate(pos);
     }
     s.trim().to_string()
 }
