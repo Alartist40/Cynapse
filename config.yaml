@@ -7,8 +7,8 @@ gateway:
     address: 0.0.0.0:8080
     auth_token: ""
 llm:
-    provider: ollama
-    model: ministral-3:3b
+    provider: leafcutter
+    model: ornith-1.0-9b-Q4_K_M.gguf
     anthropic_key: ""
     openai_key: ""
     gemini_key: ""
