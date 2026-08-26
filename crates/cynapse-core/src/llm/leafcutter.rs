@@ -318,10 +318,14 @@ impl LlmClient for LeafcutterClient {
 /// tools, matching the Go client).
 fn build_leafcutter_request(model: String, req: &Request, stream: bool) -> Value {
     let mut messages: Vec<Value> = Vec::new();
-    if !req.system_prompt.is_empty() {
+    let has_system_in_messages = req.messages.iter().any(|m| m.role.as_str() == "system");
+    if !req.system_prompt.is_empty() && !has_system_in_messages {
         messages.push(json!({"role": "system", "content": req.system_prompt}));
     }
     for m in &req.messages {
+        if m.role.as_str() == "system" && !req.system_prompt.is_empty() {
+            continue;
+        }
         messages.push(json!({"role": m.role.as_str(), "content": m.content}));
     }
     let max_tokens = if req.max_tokens == 0 { 512 } else { req.max_tokens };
