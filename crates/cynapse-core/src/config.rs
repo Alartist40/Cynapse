@@ -194,7 +194,7 @@ impl Default for LlmConfig {
     fn default() -> Self {
         LlmConfig {
             provider: "ollama".to_string(),
-            model: "qwen2.5".to_string(),
+            model: "ministral-3:3b".to_string(),
             anthropic_key: String::new(),
             openai_key: String::new(),
             gemini_key: String::new(),
@@ -382,6 +382,23 @@ pub fn load(path: &Path) -> Result<Config> {
     }
     apply_env(&mut cfg);
     load_keyring(&mut cfg);
+
+    // If defaults_path or persona_path relative paths don't exist in CWD, fallback to ~/.cynapse/
+    if let Some(home) = dirs::home_dir() {
+        if !Path::new(&cfg.memory.defaults_path).exists() {
+            let alt = home.join(".cynapse/persona/defaults");
+            if alt.exists() {
+                cfg.memory.defaults_path = alt.to_string_lossy().to_string();
+            }
+        }
+        if !Path::new(&cfg.memory.persona_path).exists() {
+            let alt = home.join(".cynapse/persona/devices");
+            if alt.exists() {
+                cfg.memory.persona_path = alt.to_string_lossy().to_string();
+            }
+        }
+    }
+
     Ok(cfg)
 }
 

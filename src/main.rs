@@ -108,9 +108,10 @@ fn run_doctor() -> anyhow::Result<()> {
     println!("{}", purple("  🎭 Persona Seed Files:"));
     let seeds = ["IDENTITY.md", "SOUL.md", "AGENTS.md", "USER.md", "TOOLS.md", "MEMORY.md", "HEARTBEAT.md"];
     let persona_dir = std::path::Path::new(&cfg.memory.persona_path);
+    let defaults_dir = std::path::Path::new(&cfg.memory.defaults_path);
     let mut missing = 0;
     for s in seeds {
-        if persona_dir.join(s).exists() {
+        if defaults_dir.join(s).exists() || persona_dir.join(s).exists() {
             println!("     • {:<15} FOUND", s.green());
         } else {
             println!("     • {:<15} MISSING (Using internal default)", s.yellow());
@@ -118,7 +119,7 @@ fn run_doctor() -> anyhow::Result<()> {
         }
     }
     if missing > 0 {
-        println!("     💡 Custom persona templates can be placed in: {}", persona_dir.display());
+        println!("     💡 Custom persona templates can be placed in: {}", defaults_dir.display());
     }
     println!();
 

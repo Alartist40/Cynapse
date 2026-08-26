@@ -500,10 +500,11 @@ impl Agent {
                 agent.cb.record_success();
 
                 if !saw_tool_calls {
-                    if !full_response.is_empty() {
+                    let clean_resp = strip_thinking_tags(&full_response);
+                    if !clean_resp.is_empty() {
                         if let Err(e) = sess.append(Entry {
                             role: Role::Assistant,
-                            content: full_response.clone(),
+                            content: clean_resp.clone(),
                             tool_call_id: None,
                             tool_calls: Vec::new(),
                             images: Vec::new(),
@@ -513,7 +514,7 @@ impl Agent {
                             let _ = errors_tx.send(e);
                             return;
                         }
-                        agent.spawn_self_improve(&user_msg, &full_response);
+                        agent.spawn_self_improve(&user_msg, &clean_resp);
                     }
                     return;
                 }
@@ -734,4 +735,23 @@ mod tests {
         assert_eq!(extract_json(r#"xx {"a": {"b": 1}} yy"#).unwrap(), r#"{"a": {"b": 1}}"#);
         assert!(extract_json("no braces").is_none());
     }
+}
+
+fn strip_thinking_tags(input: &str) -> String {
+    let mut s = input.to_string();
+    while let Some(pos) = s.find("[thinking]") {
+        if let Some(end) = s[pos..].find('\n') {
+            s.replace_range(pos..pos + end + 1, "");
+        } else {
+            s.replace_range(pos..pos + 10, "");
+        }
+    }
+    while let Some(start) = s.find("<think>") {
+        if let Some(end) = s[start..].find("</think>") {
+            s.replace_range(start..start + end + 8, "");
+        } else {
+            break;
+        }
+    }
+    s.trim().to_string()
 }
