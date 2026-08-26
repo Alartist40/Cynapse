@@ -25,6 +25,25 @@ pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient
     let model_id = cfg.model.clone();
     let model_path = resolve_model_path(&model_id, &cfg.models_dir)?;
 
+    // 1. Check if a leafcutter daemon is ALREADY running on port 11434
+    let daemon_url = "http://127.0.0.1:11434";
+    if let Ok(resp) = reqwest::blocking::Client::new()
+        .get(format!("{daemon_url}/health"))
+        .timeout(Duration::from_millis(500))
+        .send()
+    {
+        if resp.status().is_success() {
+            println!("🌿 Cynapse connected to active Leafcutter server at {daemon_url}");
+            let instance = LeafcutterClient {
+                base,
+                base_url: daemon_url.to_string(),
+                model: Mutex::new(model_id),
+                child: Mutex::new(None),
+            };
+            return Ok(Arc::new(instance));
+        }
+    }
+
     let bin = if cfg.leafcutter_path.is_empty() {
         find_leafcutter()
     } else {
@@ -49,7 +68,6 @@ pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::null());
 
-    // LD_LIBRARY_PATH for llama.cpp shared libs when installed via install.sh.
     if let Some(home) = dirs::home_dir() {
         let lib = home.join(".leafcutter/llama.cpp/build/bin");
         if lib.exists() {
@@ -58,11 +76,12 @@ pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient
         }
     }
 
-    let mut child = cmd
+    let child = cmd
         .spawn()
         .with_context(|| format!("starting leafcutter server: {bin}"))?;
 
     if let Err(e) = wait_for_server(&base_url, Duration::from_secs(30)) {
+        let mut child = child;
         let _ = child.kill();
         let _ = child.wait();
         return Err(e.context("leafcutter server failed to start"));
@@ -72,25 +91,26 @@ pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient
         base,
         base_url,
         model: Mutex::new(model_id),
-        // Wrapped in a Mutex so `std::process::Child` satisfies `Sync`.
-        child: Mutex::new(child),
+        child: Mutex::new(Some(child)),
     };
     Ok(Arc::new(instance))
 }
 
-/// A `leafcutter server` client. Dropping the last handle kills the child.
+/// A `leafcutter server` client. Dropping the last handle kills the child if spawned locally.
 pub struct LeafcutterClient {
     base: BaseClient,
     base_url: String,
     model: Mutex<String>,
-    child: Mutex<std::process::Child>,
+    child: Mutex<Option<std::process::Child>>,
 }
 
 impl Drop for LeafcutterClient {
     fn drop(&mut self) {
         if let Ok(mut child) = self.child.lock() {
-            let _ = child.kill();
-            let _ = child.wait();
+            if let Some(mut c) = child.take() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
         }
     }
 }
