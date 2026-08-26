@@ -735,12 +735,7 @@ impl App {
         self.busy = true;
         self.streaming.clear();
         self.streaming_thinking.clear();
-        let current = self.current_model().to_lowercase();
-        if current.contains("ornith") || current.contains("deepseek") || current.contains("qwen3") {
-            self.in_think_block = true;
-        } else {
-            self.in_think_block = false;
-        }
+        self.in_think_block = false;
         self.stream_start = Instant::now();
         self.spinner = 0;
         self.follow = true;
