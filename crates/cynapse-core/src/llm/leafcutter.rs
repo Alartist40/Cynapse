@@ -23,26 +23,28 @@ use crate::llm::{Request, Response, Usage};
 /// Spawn a `leafcutter server` subprocess and return a client for it.
 pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
     let model_id = cfg.model.clone();
-    let model_path = resolve_model_path(&model_id, &cfg.models_dir)?;
 
-    // 1. Check if a leafcutter daemon is ALREADY running on port 11434
-    let daemon_url = "http://127.0.0.1:11434";
-    if let Ok(resp) = reqwest::blocking::Client::new()
-        .get(format!("{daemon_url}/health"))
-        .timeout(Duration::from_millis(500))
-        .send()
-    {
-        if resp.status().is_success() {
-            println!("🌿 Cynapse connected to active Leafcutter server at {daemon_url}");
-            let instance = LeafcutterClient {
-                base,
-                base_url: daemon_url.to_string(),
-                model: Mutex::new(model_id),
-                child: Mutex::new(None),
-            };
-            return Ok(Arc::new(instance));
+    // 1. Check if a leafcutter daemon is ALREADY running on port 11435 or 11434
+    for port in [11435, 11434] {
+        let daemon_url = format!("http://127.0.0.1:{port}");
+        if let Ok(resp) = reqwest::blocking::Client::new()
+            .get(format!("{daemon_url}/health"))
+            .timeout(Duration::from_millis(300))
+            .send()
+        {
+            if resp.status().is_success() {
+                let instance = LeafcutterClient {
+                    base,
+                    base_url: daemon_url,
+                    model: Mutex::new(model_id),
+                    child: Mutex::new(None),
+                };
+                return Ok(Arc::new(instance));
+            }
         }
     }
+
+    let model_path = resolve_model_path(&model_id, &cfg.models_dir)?;
 
     let bin = if cfg.leafcutter_path.is_empty() {
         find_leafcutter()
