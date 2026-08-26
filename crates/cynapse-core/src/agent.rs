@@ -220,7 +220,7 @@ impl Agent {
 
         let mut req = Request {
             system_prompt: self.persona.compile_system_prompt(user_msg),
-            messages: sess.recent(60),
+            messages: sess.recent(12),
             tools: all_tools,
             max_tokens: self.cfg.llm.max_tokens,
             temperature: self.cfg.llm.temperature,
@@ -393,7 +393,7 @@ impl Agent {
 
                 let req = Request {
                     system_prompt: agent.persona.compile_system_prompt(&user_msg),
-                    messages: sess.recent(60),
+                    messages: sess.recent(12),
                     tools: all_tools.clone(),
                     max_tokens: agent.cfg.llm.max_tokens,
                     temperature: agent.cfg.llm.temperature,
