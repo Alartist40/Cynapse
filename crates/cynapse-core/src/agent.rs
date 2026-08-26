@@ -565,6 +565,10 @@ impl Agent {
     /// Post-turn background memory curation: asks the LLM whether
     /// anything worth saving happened.
     fn spawn_self_improve(&self, user_msg: &str, agent_response: &str) {
+        // Skip background curation for short casual turns under 25 chars (e.g. "hey there")
+        if user_msg.trim().len() < 25 {
+            return;
+        }
         let persona = self.persona.clone();
         let llm = self.llm.clone();
         let device_id = self.device_id.clone();
@@ -572,6 +576,7 @@ impl Agent {
         let agent_response = agent_response.to_string();
 
         tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(3)).await;
             let prompt = format!(
                 "Review this conversation turn.\n\nUser: {user_msg}\n\nAssistant: {agent_response}\n\nDecide:\n1. Is there a fact worth saving to long-term memory? If yes, provide it.\n2. Should the USER.md profile be updated?\n3. What is a good one-line summary for the daily log?\n\nRespond in JSON only:\n{{\"save_fact\":\"\",\"save_fact_tags\":\"\",\"update_user\":false,\"daily_log\":\"\"}}"
             );

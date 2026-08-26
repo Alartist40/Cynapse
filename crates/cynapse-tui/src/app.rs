@@ -1480,7 +1480,7 @@ impl App {
     }
 
     fn render_status_bar(&mut self, f: &mut Frame, area: Rect) {
-        let left = format!("Model: {}", self.current_model());
+        let left = format!("Engine: {} | Model: {}", self.cfg.llm.provider, self.current_model());
         let mut right = String::new();
         if let Some(elapsed) = self.last_elapsed {
             right = format!("t: {}ms", elapsed.as_millis());
@@ -1526,7 +1526,8 @@ impl App {
         shown.push_str(&self.input[..byte_idx]);
         shown.push('█');
         shown.push_str(&self.input[byte_idx..]);
-        let input = Paragraph::new(Line::from(Span::raw(shown)))
+        let input = Paragraph::new(Text::raw(shown))
+            .wrap(ratatui::widgets::Wrap { trim: false })
             .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(GOLD)));
         f.render_widget(input, area);
     }
@@ -1832,17 +1833,19 @@ async fn run_loop<B: ratatui::backend::Backend>(
     }
 
     let mut app = App::new(agent, cfg, allowlist, llm_client, events_rx, confirm_rx);
-    // Spinner ticks at 80ms when streaming, otherwise the loop just idles
-    // until a state-changing event arrives.
-    let mut tick = tokio::time::interval(Duration::from_millis(80));
+    let mut tick = tokio::time::interval(Duration::from_millis(50));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    let mut last_render = Instant::now();
+
     loop {
-        if app.dirty {
+        let now = Instant::now();
+        if app.dirty && now.duration_since(last_render) >= Duration::from_millis(33) {
             terminal
                 .draw(|f| app.draw(f))
                 .map_err(|e| anyhow!("draw failed: {e}"))?;
             app.dirty = false;
+            last_render = now;
         }
         if app.quit {
             break;
