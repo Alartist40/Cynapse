@@ -1147,17 +1147,20 @@ impl App {
             return;
         }
 
-        // Handle ChatML / DeepSeek <think>...</think> tags
-        if text.contains("<think>") {
+        // Handle ChatML / DeepSeek <think>...</think> tags and Thinking Process: headers
+        let text_lower = text.to_lowercase();
+        if !self.in_think_block && self.streaming.is_empty() && (text.contains("<think>") || text_lower.contains("thinking process:") || text_lower.contains("thinking:")) {
             self.in_think_block = true;
-            let parts: Vec<&str> = text.splitn(2, "<think>").collect();
-            if !parts[0].is_empty() {
-                self.streaming.push_str(parts[0]);
-            }
-            if parts.len() > 1 {
-                text = parts[1];
-            } else {
-                return;
+            if text.contains("<think>") {
+                let parts: Vec<&str> = text.splitn(2, "<think>").collect();
+                if !parts[0].is_empty() {
+                    self.streaming.push_str(parts[0]);
+                }
+                if parts.len() > 1 {
+                    text = parts[1];
+                } else {
+                    return;
+                }
             }
         }
 
@@ -1169,6 +1172,17 @@ impl App {
                 self.in_think_block = false;
                 if !response_part.is_empty() {
                     self.streaming.push_str(response_part);
+                }
+            } else if self.streaming_thinking.to_lowercase().contains("thinking process:") && text.contains("\n\n") && self.streaming_thinking.len() > 60 {
+                self.in_think_block = false;
+                if let Some(pos) = text.find("\n\n") {
+                    self.streaming_thinking.push_str(&text[..pos]);
+                    let response_part = &text[pos + 2..];
+                    if !response_part.is_empty() {
+                        self.streaming.push_str(response_part);
+                    }
+                } else {
+                    self.streaming_thinking.push_str(text);
                 }
             } else {
                 self.streaming_thinking.push_str(text);

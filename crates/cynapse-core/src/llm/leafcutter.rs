@@ -169,19 +169,31 @@ impl LlmClient for LeafcutterClient {
             }
         };
 
-        // Extract history turns from req.messages (cap to last 4 messages for fast CPU prefill)
-        let mut raw_history: Vec<(String, String)> = Vec::new();
+        // Extract user message and history turns from req.messages
+        let mut history: Vec<(String, String)> = Vec::new();
+        let mut user_msg = String::new();
+
         for m in &req.messages {
-            if m.role.as_str() != "system" {
-                raw_history.push((m.role.as_str().to_string(), m.content.clone()));
+            if m.role.as_str() == "user" {
+                if !user_msg.is_empty() {
+                    history.push(("user".to_string(), user_msg));
+                }
+                user_msg = m.content.clone();
+            } else if m.role.as_str() == "assistant" {
+                history.push(("assistant".to_string(), m.content.clone()));
             }
         }
-        let history: Vec<(String, String)> = if raw_history.len() > 4 {
-            raw_history[raw_history.len() - 4..].to_vec()
-        } else {
-            raw_history
-        };
-        let system_prompt = req.system_prompt.clone();
+
+        if user_msg.is_empty() {
+            if let Some(last) = req.messages.last() {
+                user_msg = last.content.clone();
+            }
+        }
+
+        if history.len() > 4 {
+            history = history[history.len() - 4..].to_vec();
+        }
+
         let requested_max = if req.max_tokens == 0 { 1024 } else { req.max_tokens } as usize;
         let temperature = req.temperature as f32;
 
@@ -222,7 +234,7 @@ impl LlmClient for LeafcutterClient {
                 None,
             );
 
-            let prompt_text = render_chat_prompt(&profile, &system_prompt, &history);
+            let prompt_text = render_chat_prompt(&profile, &user_msg, &history);
             let tok = GgufBpeTokenizer::from_gguf(&engine.gguf_path);
             let tokens = tok
                 .as_ref()
