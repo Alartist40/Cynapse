@@ -353,8 +353,9 @@ fn execute_native_turn(
     let stop_token_ids: Vec<usize> = profile.stop_tokens.iter().map(|s| s.0).collect();
 
     let mut is_thinking = profile.opens_with_thinking;
+    let mut header_classified = false;
+    let mut header_buffer = String::new();
     let mut rolling_window = String::new();
-    let mut answer_started = false;
 
     println!();
     let generated_ids = engine.generate_streaming_with_stops(
@@ -366,59 +367,79 @@ fn execute_native_turn(
         |_id, chunk| {
             rolling_window.push_str(chunk);
 
-            // Detect start of thinking if not already flagged
-            if !is_thinking && !answer_started {
-                if rolling_window.contains("<think>")
-                    || rolling_window.contains("Thinking Process:")
-                    || rolling_window.starts_with("Thinking")
+            if !header_classified {
+                header_buffer.push_str(chunk);
+                let lower = header_buffer.to_lowercase();
+                if lower.contains("<think>")
+                    || lower.contains("thinking process:")
+                    || lower.contains("thinking:")
                 {
                     is_thinking = true;
-                }
-            }
-
-            // Detect end of thinking block
-            if is_thinking {
-                if rolling_window.contains("</think>") {
-                    is_thinking = false;
-                    answer_started = true;
-                    if thinking_mode == ThinkingMode::Hide {
-                        print!("🧠 ");
+                    header_classified = true;
+                    if thinking_mode == ThinkingMode::Dim {
+                        print!("{}", dim_purple(&header_buffer));
                         let _ = io::stdout().flush();
                     }
-                } else if rolling_window.contains("\n\n") && rolling_window.contains("Thinking Process:") {
-                    if let Some(idx) = rolling_window.find("\n\n") {
-                        if idx > 20 {
-                            is_thinking = false;
-                            answer_started = true;
-                        }
-                    }
+                    header_buffer.clear();
+                    return true;
+                } else if header_buffer.len() >= 35 {
+                    is_thinking = false;
+                    header_classified = true;
+                    print!("{}", gold(&header_buffer));
+                    let _ = io::stdout().flush();
+                    generated_text.push_str(&header_buffer);
+                    header_buffer.clear();
+                    return true;
+                } else {
+                    return true;
                 }
             }
 
             if is_thinking {
-                if thinking_mode == ThinkingMode::Dim {
+                let window_lower = rolling_window.to_lowercase();
+                let ended = window_lower.contains("</think>")
+                    || (window_lower.contains("thinking process:")
+                        && rolling_window.contains("\n\n")
+                        && rolling_window.len() > 80
+                        && (rolling_window.ends_with("\n\n")
+                            || rolling_window.contains("ot\n\n")
+                            || rolling_window.contains("\n\nhey")
+                            || rolling_window.contains("\n\nhello")
+                            || rolling_window.contains("\n\nhi")));
+
+                if ended {
+                    is_thinking = false;
+                    println!();
+                    if thinking_mode == ThinkingMode::Hide {
+                        println!("{}", dim_purple("🧠 [Thinking process completed]"));
+                    }
+                    print!("{}", gold(chunk));
+                    let _ = io::stdout().flush();
+                    generated_text.push_str(chunk);
+                } else if thinking_mode == ThinkingMode::Dim {
                     print!("{}", dim_purple(chunk));
                     let _ = io::stdout().flush();
                 }
             } else {
-                if !answer_started {
-                    answer_started = true;
-                }
-                // Print final answer tokens in gold/yellow
                 print!("{}", gold(chunk));
                 let _ = io::stdout().flush();
                 generated_text.push_str(chunk);
             }
 
-            // Keep rolling window reasonable
-            if rolling_window.len() > 500 {
-                let keep_idx = floor_char_boundary(&rolling_window, rolling_window.len() - 200);
+            if rolling_window.len() > 600 {
+                let keep_idx = floor_char_boundary(&rolling_window, rolling_window.len() - 300);
                 rolling_window = rolling_window[keep_idx..].to_string();
             }
 
             true
         },
     );
+
+    if !header_classified && !header_buffer.is_empty() {
+        print!("{}", gold(&header_buffer));
+        let _ = io::stdout().flush();
+        generated_text.push_str(&header_buffer);
+    }
 
     let gen_elapsed = gen_start.elapsed();
     let gen_tokens = generated_ids.len();
