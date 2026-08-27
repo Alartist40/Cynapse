@@ -12,6 +12,7 @@ pub mod config;
 pub mod confirm;
 pub mod dendrite;
 pub mod gateway;
+pub mod hf;
 pub mod llm;
 pub mod netguard;
 pub mod ocr;

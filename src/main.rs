@@ -28,6 +28,11 @@ fn run(args: cli::Cli) -> anyhow::Result<()> {
         }
         Some(cli::Command::Doctor) => run_doctor(),
         Some(cli::Command::Update) => run_update(),
+        Some(cli::Command::Get(cmd)) => run_get(cmd),
+        Some(cli::Command::Load(cmd)) => run_load(cmd),
+        Some(cli::Command::Unload) => run_unload(),
+        Some(cli::Command::Ps) => run_ps(),
+        Some(cli::Command::Ls) => run_ls(),
         None => run_chat(),
     }
 }
@@ -259,5 +264,64 @@ fn run_update() -> anyhow::Result<()> {
     println!();
     println!("✅ cynapse ({}) updated. Restart cynapse to use it.", version_hash);
     println!("   Version: {} -> {}", cynapse_core::VERSION, version_hash);
+    Ok(())
+}
+
+fn run_get(cmd: cli::GetCmd) -> anyhow::Result<()> {
+    use colored::Colorize;
+    println!("{}", format!("🔍 Resolving HuggingFace model: {}", cmd.model).cyan().bold());
+    let path = cynapse_core::hf::download_hf_model(&cmd.model)?;
+    println!("{}", format!("✨ Model ready at: {}", path.display()).green().bold());
+    Ok(())
+}
+
+fn run_load(cmd: cli::LoadCmd) -> anyhow::Result<()> {
+    use colored::Colorize;
+    let cfg = cynapse_core::config::load(std::path::Path::new("config.yaml")).unwrap_or_default();
+    println!("{}", format!("⚡ Pre-loading model into RAM: {}", cmd.model).cyan().bold());
+    let status = cynapse_core::llm::load_engine_model(&cmd.model, &cfg.llm.models_dir)?;
+    if status.loaded {
+        println!("{}", format!("✅ Model successfully loaded in RAM: {}", status.path.unwrap_or_default()).green().bold());
+    }
+    Ok(())
+}
+
+fn run_unload() -> anyhow::Result<()> {
+    use colored::Colorize;
+    let evicted = cynapse_core::llm::unload_engine_model();
+    if evicted {
+        println!("{}", "✅ Model unloaded from RAM.".green().bold());
+    } else {
+        println!("{}", "ℹ️  No model was currently loaded in RAM.".yellow());
+    }
+    Ok(())
+}
+
+fn run_ps() -> anyhow::Result<()> {
+    use colored::Colorize;
+    let status = cynapse_core::llm::get_engine_status();
+    println!("{}", "📊 Cynapse Model Memory Status (ps):".purple().bold());
+    if status.loaded {
+        println!("  • Status:  {}", "LOADED (In RAM/Mmap Cache)".green().bold());
+        println!("  • Model:   {}", status.path.unwrap_or_default().yellow());
+    } else {
+        println!("  • Status:  {}", "EMPTY (No model in RAM)".yellow());
+    }
+    Ok(())
+}
+
+fn run_ls() -> anyhow::Result<()> {
+    use colored::Colorize;
+    let cfg = cynapse_core::config::load(std::path::Path::new("config.yaml")).unwrap_or_default();
+    let models = cynapse_core::llm::list_cached_models(&cfg.llm.models_dir);
+    println!("{}", "📦 Cached Local GGUF Models (ls):".purple().bold());
+    if models.is_empty() {
+        println!("  (No .gguf models cached. Run 'cynapse get hf:org/repo@quant' to download)");
+    } else {
+        for (name, size) in models {
+            let size_mb = size / (1024 * 1024);
+            println!("  • {:<50} {:>6} MB", name.cyan(), size_mb);
+        }
+    }
     Ok(())
 }

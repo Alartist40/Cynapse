@@ -28,6 +28,28 @@ pub enum Command {
     Doctor,
     /// Update cynapse to the latest version from GitHub.
     Update,
+    /// Download a GGUF model from HuggingFace (e.g. cynapse get hf:Qwen/Qwen2.5-Coder-7B-Instruct-GGUF).
+    Get(GetCmd),
+    /// Pre-load a model file or HuggingFace ID into RAM memory.
+    Load(LoadCmd),
+    /// Unload and free the currently loaded engine model from RAM.
+    Unload,
+    /// Display currently loaded model and memory footprint status.
+    Ps,
+    /// List cached GGUF models in local model directories.
+    Ls,
+}
+
+#[derive(Debug, Args)]
+pub struct GetCmd {
+    /// Model identifier or HuggingFace URI (e.g. hf:org/repo@quant)
+    pub model: String,
+}
+
+#[derive(Debug, Args)]
+pub struct LoadCmd {
+    /// Model file path or HuggingFace URI to pre-load
+    pub model: String,
 }
 
 #[derive(Debug, Args)]

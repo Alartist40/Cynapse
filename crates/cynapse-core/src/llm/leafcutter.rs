@@ -46,6 +46,88 @@ pub fn prewarm_leafcutter_engine(cfg: &LlmConfig) {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ModelStatus {
+    pub loaded: bool,
+    pub path: Option<String>,
+}
+
+/// Explicitly load a model file or HuggingFace ID into RAM memory cache.
+pub fn load_engine_model(target: &str, models_dir: &str) -> Result<ModelStatus> {
+    let resolved_path = resolve_model_path(target, models_dir)?;
+    let cache_mutex = get_engine_cache();
+    let mut guard = cache_mutex.lock().unwrap_or_else(|e| e.into_inner());
+
+    if let Some((ref loaded_path, _)) = *guard {
+        if loaded_path == &resolved_path {
+            return Ok(ModelStatus {
+                loaded: true,
+                path: Some(resolved_path),
+            });
+        }
+    }
+
+    let new_eng = Engine::load(&resolved_path).map_err(|e| anyhow!("{e}"))?;
+    *guard = Some((resolved_path.clone(), new_eng));
+
+    Ok(ModelStatus {
+        loaded: true,
+        path: Some(resolved_path),
+    })
+}
+
+/// Unload and free any loaded model from RAM.
+pub fn unload_engine_model() -> bool {
+    let cache_mutex = get_engine_cache();
+    let mut guard = cache_mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let had_model = guard.is_some();
+    *guard = None;
+    had_model
+}
+
+/// Get current loaded engine memory status.
+pub fn get_engine_status() -> ModelStatus {
+    let cache_mutex = get_engine_cache();
+    let guard = cache_mutex.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((ref path, _)) = *guard {
+        ModelStatus {
+            loaded: true,
+            path: Some(path.clone()),
+        }
+    } else {
+        ModelStatus {
+            loaded: false,
+            path: None,
+        }
+    }
+}
+
+/// List cached models in local model directories (`~/.cache/cynapse/models/` and configured models_dir).
+pub fn list_cached_models(models_dir: &str) -> Vec<(String, u64)> {
+    let mut results = Vec::new();
+    let mut dirs_to_check = vec![PathBuf::from(models_dir)];
+    if let Some(user_cache) = dirs::cache_dir() {
+        dirs_to_check.push(user_cache.join("cynapse").join("models"));
+    }
+
+    for dir in dirs_to_check {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("gguf") {
+                    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    results.push((name, size));
+                }
+            }
+        }
+    }
+
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+    results.dedup_by(|a, b| a.0 == b.0);
+    results
+}
+
 pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
     let instance = LeafcutterClient {
         base,
@@ -197,6 +279,14 @@ fn resolve_model_path(model_id: &str, models_dir: &str) -> Result<String> {
             "no local model path specified. Set model to a local model ID or absolute GGUF path"
         );
     }
+
+    // Direct HuggingFace URI or repo@quant identifier
+    if model_id.starts_with("hf:") || (model_id.contains('/') && !model_id.starts_with('.')) {
+        if let Ok(path) = crate::hf::download_hf_model(model_id) {
+            return Ok(path.to_string_lossy().into_owned());
+        }
+    }
+
     let rel = model_id.starts_with("hf:") || !std::path::Path::new(model_id).is_absolute();
     if !rel {
         let p = std::path::Path::new(model_id);

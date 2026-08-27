@@ -11,7 +11,10 @@ pub mod leafcutter;
 #[cfg(feature = "anthropic")]
 pub mod anthropic;
 
-pub use leafcutter::prewarm_leafcutter_engine;
+pub use leafcutter::{
+    get_engine_status, list_cached_models, load_engine_model, prewarm_leafcutter_engine,
+    unload_engine_model, ModelStatus,
+};
 pub use providers::{new, list_ollama_models, Cancelled, LlmClient, StreamHandle};
 
 use serde::{Deserialize, Serialize};
