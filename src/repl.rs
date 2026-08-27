@@ -370,6 +370,7 @@ fn execute_native_turn(
     let stop_token_ids: Vec<usize> = profile.stop_tokens.iter().map(|s| s.0).collect();
 
     let mut in_thinking = profile.opens_with_thinking;
+    let mut checked_initial_thinking = false;
     let mut thinking_prefix_shown = false;
     let mut thinking_tail = String::new();
 
@@ -382,7 +383,25 @@ fn execute_native_turn(
         &stop_token_ids,
         |_id, chunk| {
             thinking_tail.push_str(chunk);
-            thinking_tail = strip_thinking_headers(&thinking_tail);
+
+            // Dynamically inspect initial stream buffer (25 chars) to determine if model actually outputted thinking steps
+            if !checked_initial_thinking {
+                if thinking_tail.len() >= 25 || thinking_tail.contains('\n') || thinking_tail.contains("<think>") {
+                    checked_initial_thinking = true;
+                    let lower = thinking_tail.to_lowercase();
+                    if lower.contains("<think>") || lower.contains("thinking process:") || lower.contains("thinking:") {
+                        in_thinking = true;
+                    } else {
+                        in_thinking = false;
+                    }
+                } else {
+                    return true;
+                }
+            }
+
+            if in_thinking {
+                thinking_tail = strip_thinking_headers(&thinking_tail);
+            }
 
             // HIDE Mode: Discard thinking scratchpad silently, output answer only
             if thinking_mode == ThinkingMode::Hide {
