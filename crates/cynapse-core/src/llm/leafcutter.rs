@@ -87,11 +87,22 @@ impl LlmClient for LeafcutterClient {
                 }
             };
 
-            let mut engine = match Engine::load(path_str) {
-                Ok(e) => e,
-                Err(e) => {
-                    send_err(&errors_tx, anyhow!("failed to load embedded leafcutter engine: {e}"));
-                    return;
+            static ENGINE_CACHE: std::sync::OnceLock<Mutex<Option<(String, Engine)>>> = std::sync::OnceLock::new();
+            let cache_mutex = ENGINE_CACHE.get_or_init(|| Mutex::new(None));
+            let mut guard = cache_mutex.lock().unwrap_or_else(|e| e.into_inner());
+
+            let engine = match guard.as_mut() {
+                Some((loaded_path, eng)) if loaded_path == path_str => eng,
+                _ => {
+                    let new_eng = match Engine::load(path_str) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            send_err(&errors_tx, anyhow!("failed to load embedded leafcutter engine: {e}"));
+                            return;
+                        }
+                    };
+                    *guard = Some((path_str.to_string(), new_eng));
+                    &mut guard.as_mut().unwrap().1
                 }
             };
 
