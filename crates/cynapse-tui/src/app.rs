@@ -54,7 +54,10 @@ const SPINNER: [&str; 10] = ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"]
 /// Slash commands shown in the dropdown when the user types `/`.
 const SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/help", "Show help text and all commands"),
-    ("/models", "List and switch between Ollama models"),
+    ("/models", "List and switch between available models"),
+    ("/model <n|id>", "Hot-swap active GGUF model live in-session"),
+    ("/think <dim|hide>", "Toggle thinking scratchpad visibility in chat"),
+    ("/ps", "Display live memory RSS footprint vs peak RAM"),
     ("/provider", "Show current LLM provider"),
     ("/key", "Manage API keys (list, add, remove)"),
     ("/clear", "Clear chat to idle screen"),
@@ -844,6 +847,35 @@ impl App {
                     self.current_model()
                 );
                 self.messages.push(UiMsg::System(msg));
+            }
+            _ if trimmed.starts_with("/model ") => {
+                let target = trimmed.strip_prefix("/model ").unwrap_or("").trim();
+                self.llm_client.set_model(target);
+                self.cfg.llm.model = target.to_string();
+                self.messages.push(UiMsg::System(format!("✨ Swapped active model to: {target}")));
+            }
+            _ if trimmed.starts_with("/think") => {
+                let arg = trimmed.strip_prefix("/think").unwrap_or("").trim().to_lowercase();
+                match arg.as_str() {
+                    "hide" | "off" => {
+                        self.messages.push(UiMsg::System("[thinking mode = HIDE (scratchpad output suppressed)]".to_string()));
+                    }
+                    "dim" | "on" | "show" | "" => {
+                        self.messages.push(UiMsg::System("[thinking mode = DIM (thinking in purple, response in gold)]".to_string()));
+                    }
+                    _ => {
+                        self.messages.push(UiMsg::System("Usage: /think dim or /think hide".to_string()));
+                    }
+                }
+            }
+            "/ps" => {
+                let cur_rss = get_current_rss_mb();
+                let peak_rss = get_peak_rss_mb();
+                self.messages.push(UiMsg::System(format!(
+                    "📊 Engine RAM footprint: {} (peak {})",
+                    format_rss(cur_rss),
+                    format_rss(peak_rss)
+                )));
             }
             _ if trimmed.starts_with("/key") => self.handle_key_command(trimmed).await,
             _ if trimmed.starts_with("/allowed") => self.handle_allowed(trimmed),
@@ -1882,6 +1914,46 @@ async fn run_loop<B: ratatui::backend::Backend>(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
+
+fn get_peak_rss_mb() -> u64 {
+    if let Ok(contents) = std::fs::read_to_string("/proc/self/status") {
+        for line in contents.lines() {
+            if line.starts_with("VmHWM:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let Ok(kb) = parts[1].parse::<u64>() {
+                        return (kb * 1024) / (1024 * 1024);
+                    }
+                }
+            }
+        }
+    }
+    0
+}
+
+fn get_current_rss_mb() -> u64 {
+    if let Ok(contents) = std::fs::read_to_string("/proc/self/status") {
+        for line in contents.lines() {
+            if line.starts_with("VmRSS:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let Ok(kb) = parts[1].parse::<u64>() {
+                        return (kb * 1024) / (1024 * 1024);
+                    }
+                }
+            }
+        }
+    }
+    0
+}
+
+fn format_rss(mb: u64) -> String {
+    if mb >= 1024 {
+        format!("{:.1} GB", mb as f64 / 1024.0)
+    } else {
+        format!("{} MB", mb)
+    }
+}
 
 #[cfg(test)]
 mod tests {

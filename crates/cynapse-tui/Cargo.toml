@@ -7,6 +7,7 @@ license = "MIT"
 
 [dependencies]
 cynapse-core = { path = "../cynapse-core" }
+leafcutter = { path = "../../leafcutter" }
 ratatui = "0.30"
 crossterm = "0.29"
 unicode-width = "0.2"
