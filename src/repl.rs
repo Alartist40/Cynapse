@@ -583,20 +583,46 @@ fn print_available_models(cfg: &Config) {
 }
 
 fn list_available_models(cfg: &Config) -> Vec<(String, String, f64)> {
-    let search_dirs = [
-        &cfg.llm.models_dir,
-        "./models",
-        "../models",
-        "~/.leafcutter/models",
-        "~/.cache/cynapse/models",
-        "~/.cynapse/models",
+    let mut search_dirs = vec![
+        cfg.models.models_dir.clone(),
+        cfg.llm.models_dir.clone(),
+        "./models".into(),
+        "../models".into(),
+        "../../models".into(),
+        "~/Downloads/models".into(),
+        "~/Downloads".into(),
+        "~/models".into(),
+        "~/.leafcutter/models".into(),
+        "~/.cache/cynapse/models".into(),
+        "~/.cynapse/models".into(),
     ];
+
+    let model_p = Path::new(&cfg.llm.model);
+    if let Some(parent) = model_p.parent() {
+        if !parent.as_os_str().is_empty() {
+            search_dirs.push(parent.to_string_lossy().to_string());
+        }
+    }
 
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
+    if let Ok(active_path) = resolve_gguf_path(cfg) {
+        let p = Path::new(&active_path);
+        if p.exists() && p.extension().and_then(|s| s.to_str()) == Some("gguf") {
+            let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+            seen.insert(name.clone());
+            let bytes = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+            let mb = bytes as f64 / (1024.0 * 1024.0);
+            out.push((name, active_path.clone(), mb));
+        }
+    }
+
     for dir_str in search_dirs {
-        let expanded = shellexpand_tilde(dir_str);
+        if dir_str.trim().is_empty() {
+            continue;
+        }
+        let expanded = shellexpand_tilde(&dir_str);
         let dir = Path::new(&expanded);
         if dir.exists() {
             if let Ok(entries) = std::fs::read_dir(dir) {
