@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/cynapse-core", "crates/cynapse-tui"]
+members = ["crates/cynapse-core", "crates/cynapse-tui", "leafcutter"]
 
 [package]
 name = "cynapse"

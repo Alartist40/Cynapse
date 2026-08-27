@@ -1,299 +1,135 @@
-//! Leafcutter provider — spawns `leafcutter server` locally and talks to its
-//! OpenAI-compatible HTTP API.
-//!
-//! Faithful Rust port of Go `internal/llm/leafcutter.go`: the binary is
-//! auto-detected from PATH (or `LlmConfig::leafcutter_path`), a free port is
-//! chosen, the model is passed by absolute path, and a `/health` probe waits
-//! for readiness. Chat + streaming reuse the OpenAI `chat/completions` wire
-//! format (with the `/v1` prefix) but, like the Go port, send only plain
-//! role/content messages (no tools — leafcutter is a raw inference server).
-
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context as _, Result};
 use async_trait::async_trait;
-use serde_json::{json, Value};
 use tokio::sync::mpsc;
+
+use leafcutter::inference::engine::Engine;
+use leafcutter::model::gguf::GGUFile;
+use leafcutter::profiles::{render_chat_prompt, resolve_profile};
+use leafcutter::tokenizer::gguf::GgufBpeTokenizer;
 
 use crate::config::LlmConfig;
 use crate::llm::providers::{BaseClient, Cancelled, LlmClient, StreamHandle};
 use crate::llm::{Request, Response, Usage};
 
-/// Spawn a `leafcutter server` subprocess and return a client for it.
-pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
-    let model_id = cfg.model.clone();
-
-    // 1. Check if a leafcutter daemon is ALREADY running on port 11435 or 11434
-    for port in [11435, 11434] {
-        let daemon_url = format!("http://127.0.0.1:{port}");
-        if let Ok(resp) = reqwest::blocking::Client::new()
-            .get(format!("{daemon_url}/health"))
-            .timeout(Duration::from_millis(300))
-            .send()
-        {
-            if resp.status().is_success() {
-                let instance = LeafcutterClient {
-                    base,
-                    base_url: daemon_url,
-                    model: Mutex::new(model_id),
-                    child: Mutex::new(None),
-                };
-                return Ok(Arc::new(instance));
-            }
-        }
-    }
-
-    let model_path = resolve_model_path(&model_id, &cfg.models_dir)?;
-
-    let bin = if cfg.leafcutter_path.is_empty() {
-        find_leafcutter()
-    } else {
-        let p = cfg.leafcutter_path.clone();
-        if std::path::Path::new(&p).exists() {
-            p
-        } else {
-            anyhow::bail!("leafcutter binary not found at configured path: {p}");
-        }
-    };
-    if bin.is_empty() {
-        anyhow::bail!(
-            "leafcutter binary not found in PATH. Install from https://github.com/Alartist40/LeafcutterLLM"
-        );
-    }
-
-    let port = find_free_port().context("finding a free port for leafcutter")?;
-    let base_url = format!("http://127.0.0.1:{port}");
-
-    let mut cmd = std::process::Command::new(&bin);
-    cmd.args(["serve", "--model", &model_path, "--port", &port.to_string()]);
-    cmd.stdout(std::process::Stdio::null());
-    cmd.stderr(std::process::Stdio::null());
-
-    if let Some(home) = dirs::home_dir() {
-        let lib = home.join(".leafcutter/llama.cpp/build/bin");
-        if lib.exists() {
-            let prev = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-            cmd.env("LD_LIBRARY_PATH", format!("{}:{}", lib.display(), prev));
-        }
-    }
-
-    let child = cmd
-        .spawn()
-        .with_context(|| format!("starting leafcutter server: {bin}"))?;
-
-    if let Err(e) = wait_for_server(&base_url, Duration::from_secs(30)) {
-        let mut child = child;
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(e.context("leafcutter server failed to start"));
-    }
-
-    let instance = LeafcutterClient {
-        base,
-        base_url,
-        model: Mutex::new(model_id),
-        child: Mutex::new(Some(child)),
-    };
-    Ok(Arc::new(instance))
-}
-
-/// A `leafcutter server` client. Dropping the last handle kills the child if spawned locally.
+/// Embedded native Leafcutter engine client (in-process).
 pub struct LeafcutterClient {
     base: BaseClient,
-    base_url: String,
-    model: Mutex<String>,
-    child: Mutex<Option<std::process::Child>>,
+    models_dir: String,
+    model_name: Mutex<String>,
 }
 
-impl Drop for LeafcutterClient {
-    fn drop(&mut self) {
-        if let Ok(mut child) = self.child.lock() {
-            if let Some(mut c) = child.take() {
-                let _ = c.kill();
-                let _ = c.wait();
-            }
-        }
-    }
+pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
+    let instance = LeafcutterClient {
+        base,
+        models_dir: cfg.models_dir.clone(),
+        model_name: Mutex::new(cfg.model.clone()),
+    };
+    Ok(Arc::new(instance))
 }
 
 #[async_trait]
 impl LlmClient for LeafcutterClient {
     async fn chat(&self, req: &Request) -> Result<Response> {
-        let model = self.model.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let body = build_leafcutter_request(model, req, false);
-        let url = format!("{}/v1/chat/completions", self.base_url);
-        let data = self.base.do_request("POST", &url, &[], Some(&body)).await?;
-        let parsed: Value = serde_json::from_slice(&data).context("parsing leafcutter response")?;
-
-        let mut result = Response {
+        let stream = self.chat_stream(req, Cancelled::default());
+        let mut full_text = String::new();
+        let mut rx = stream.chunks;
+        while let Some(chunk) = rx.recv().await {
+            full_text.push_str(&chunk);
+        }
+        Ok(Response {
+            content: full_text,
+            thinking: String::new(),
             usage: Usage::default(),
-            ..Default::default()
-        };
-        if let Some(usage) = parsed.get("usage") {
-            result.usage.input_tokens =
-                usage.get("prompt_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
-            result.usage.output_tokens =
-                usage.get("completion_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
-        }
-        if let Some(choices) = parsed.get("choices").and_then(|c| c.as_array()) {
-            if let Some(first) = choices.first() {
-                if let Some(content) = first.pointer("/message/content").and_then(|c| c.as_str()) {
-                    result.content = content.to_string();
-                }
-            }
-        }
-        Ok(result)
+            tool_calls: Vec::new(),
+        })
     }
 
     fn chat_stream(&self, req: &Request, cancelled: Cancelled) -> StreamHandle {
         let (chunks_tx, chunks) = mpsc::unbounded_channel();
         let (errors_tx, errors) = mpsc::unbounded_channel();
-        let model = self.model.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let body = build_leafcutter_request(model.clone(), req, true);
-        let url = format!("{}/v1/chat/completions", self.base_url);
-        let http = self.base.http.clone();
-        // Clone the request pieces for the non-streaming fallback.
-        let fallback_req = req.clone();
 
-        tokio::spawn(async move {
+        let model_id = self.model_name.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let models_dir = self.models_dir.clone();
+
+        let model_path = match resolve_model_path(&model_id, &models_dir) {
+            Ok(p) => PathBuf::from(p),
+            Err(e) => {
+                let _ = errors_tx.send(e);
+                return StreamHandle { chunks, errors };
+            }
+        };
+
+        // Extract history turns from req.messages
+        let mut history: Vec<(String, String)> = Vec::new();
+        for m in &req.messages {
+            if m.role.as_str() != "system" {
+                history.push((m.role.as_str().to_string(), m.content.clone()));
+            }
+        }
+        let system_prompt = req.system_prompt.clone();
+        let requested_max = if req.max_tokens == 0 { 1024 } else { req.max_tokens } as usize;
+        let temperature = req.temperature as f32;
+
+        tokio::task::spawn_blocking(move || {
             let send_err = |tx: &mpsc::UnboundedSender<anyhow::Error>, e: anyhow::Error| {
                 let _ = tx.send(e);
             };
-            let resp = match http
-                .post(&url)
-                .header(reqwest::header::CONTENT_TYPE, "application/json")
-                .header("Accept", "text/event-stream")
-                .json(&body)
-                .send()
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    send_err(&errors_tx, anyhow!("leafcutter request failed: {e}"));
+
+            let path_str = match model_path.to_str() {
+                Some(p) => p,
+                None => {
+                    send_err(&errors_tx, anyhow!("invalid model path: {}", model_path.display()));
                     return;
                 }
             };
-            if !resp.status().is_success() {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                send_err(
-                    &errors_tx,
-                    anyhow!("leafcutter HTTP {status}: {}", truncate(&body, 300)),
-                );
+
+            let mut engine = match Engine::load(path_str) {
+                Ok(e) => e,
+                Err(e) => {
+                    send_err(&errors_tx, anyhow!("failed to load embedded leafcutter engine: {e}"));
+                    return;
+                }
+            };
+
+            let gguf = GGUFile::open(path_str).ok();
+            let profile = resolve_profile(
+                &gguf.as_ref().map(|f| &f.metadata).cloned().unwrap_or_default(),
+                None,
+            );
+
+            let prompt_text = render_chat_prompt(&profile, &system_prompt, &history);
+            let tok = GgufBpeTokenizer::from_gguf(&engine.gguf_path);
+            let tokens = tok
+                .as_ref()
+                .map(|t| t.encode(&prompt_text))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| engine.tokenize(&prompt_text, true));
+
+            if tokens.is_empty() {
+                send_err(&errors_tx, anyhow!("empty tokenized prompt"));
                 return;
             }
 
-            use futures_util::StreamExt;
-            let mut stream = resp.bytes_stream();
-            let mut buffer = String::new();
-            let mut sse_seen = false;
+            let stop_token_ids: Vec<usize> = profile.stop_tokens.iter().map(|s| s.0).collect();
 
-            while let Some(chunk_res) = stream.next().await {
-                if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                    return;
-                }
-                let bytes = match chunk_res {
-                    Ok(b) => b,
-                    Err(e) => {
-                        send_err(
-                            &errors_tx,
-                            anyhow!("Leafcutter backend connection lost: {e}. Run 'leaf doctor' to verify backend status."),
-                        );
-                        return;
+            engine.generate_streaming_with_stops(
+                &tokens,
+                requested_max,
+                temperature,
+                profile.sampling.top_p,
+                &stop_token_ids,
+                |_id, piece| {
+                    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                        return false;
                     }
-                };
-                buffer.push_str(&String::from_utf8_lossy(&bytes));
-
-                while let Some(pos) = buffer.find('\n') {
-                    let line = buffer[..pos].trim_end_matches('\r').to_string();
-                    buffer = buffer[pos + 1..].to_string();
-
-                    if line.starts_with("data: ") {
-                        sse_seen = true;
-                        let data = line.trim_start_matches("data: ").trim();
-                        if data == "[DONE]" {
-                            return;
-                        }
-                        if let Ok(parsed) = serde_json::from_str::<Value>(data) {
-                            if let Some(content) = parsed
-                                .pointer("/choices/0/delta/content")
-                                .and_then(|c| c.as_str())
-                            {
-                                if !content.is_empty() {
-                                    let _ = chunks_tx.send(content.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !sse_seen {
-                // Non-SSE body: either a single chat.completion JSON or a
-                // non-streaming fallback. Emit its content as one chunk.
-                if let Some(content) = serde_json::from_str::<Value>(&buffer)
-                    .ok()
-                    .and_then(|v| v.pointer("/choices/0/message/content").and_then(|c| c.as_str()).map(|s| s.to_string()))
-                {
-                    if !content.is_empty() {
-                        let _ = chunks_tx.send(content);
-                    }
-                    return;
-                }
-                // Nothing parseable from the stream: do a non-streaming
-                // fallback request so the turn still completes.
-                let fallback_body = build_leafcutter_request(
-                    model.clone(),
-                    &fallback_req,
-                    false,
-                );
-                match http
-                    .post(&url)
-                    .header(reqwest::header::CONTENT_TYPE, "application/json")
-                    .json(&fallback_body)
-                    .send()
-                    .await
-                {
-                    Ok(r) if r.status().is_success() => {
-                        let text = match r.text().await {
-                            Ok(t) => t,
-                            Err(e) => {
-                                send_err(&errors_tx, anyhow!("leafcutter fallback read: {e}"));
-                                return;
-                            }
-                        };
-                        match serde_json::from_str::<Value>(&text)
-                            .ok()
-                            .and_then(|v| v.pointer("/choices/0/message/content").and_then(|c| c.as_str()).map(|s| s.to_string()))
-                        {
-                            Some(content) if !content.is_empty() => {
-                                let _ = chunks_tx.send(content);
-                            }
-                            _ => {
-                                send_err(
-                                    &errors_tx,
-                                    anyhow!(
-                                        "leafcutter stream produced no content: {}",
-                                        truncate(&text, 300)
-                                    ),
-                                );
-                            }
-                        }
-                    }
-                    Ok(r) => {
-                        let status = r.status();
-                        let text = r.text().await.unwrap_or_default();
-                        send_err(
-                            &errors_tx,
-                            anyhow!("leafcutter fallback HTTP {status}: {}", truncate(&text, 300)),
-                        );
-                    }
-                    Err(e) => {
-                        send_err(&errors_tx, anyhow!("leafcutter fallback request failed: {e}"));
-                    }
-                }
-            }
+                    let _ = chunks_tx.send(piece.to_string());
+                    true
+                },
+            );
         });
 
         StreamHandle { chunks, errors }
@@ -304,38 +140,14 @@ impl LlmClient for LeafcutterClient {
     }
 
     fn current_model(&self) -> String {
-        self.model.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.model_name.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn set_model(&self, model: &str) {
-        if let Ok(mut m) = self.model.lock() {
+        if let Ok(mut m) = self.model_name.lock() {
             *m = model.to_string();
         }
     }
-}
-
-/// Minimal OpenAI-shaped leafcutter request (role/content messages only, no
-/// tools, matching the Go client).
-fn build_leafcutter_request(model: String, req: &Request, stream: bool) -> Value {
-    let mut messages: Vec<Value> = Vec::new();
-    let has_system_in_messages = req.messages.iter().any(|m| m.role.as_str() == "system");
-    if !req.system_prompt.is_empty() && !has_system_in_messages {
-        messages.push(json!({"role": "system", "content": req.system_prompt}));
-    }
-    for m in &req.messages {
-        if m.role.as_str() == "system" && !req.system_prompt.is_empty() {
-            continue;
-        }
-        messages.push(json!({"role": m.role.as_str(), "content": m.content}));
-    }
-    let max_tokens = if req.max_tokens == 0 { 512 } else { req.max_tokens };
-    json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "temperature": req.temperature,
-        "messages": messages,
-        "stream": stream,
-    })
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

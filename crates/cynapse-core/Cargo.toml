@@ -26,6 +26,7 @@ url = "2"
 axum = { version = "0.7", features = ["multipart"] }
 tower = "0.4"
 async-stream = "0.3"
+leafcutter = { path = "../../leafcutter" }
 
 [features]
 default = []

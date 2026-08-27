@@ -180,6 +180,17 @@ fn run_update() -> anyhow::Result<()> {
         anyhow::bail!("`git clone` failed. Is git installed and the network up?");
     }
 
+    // Sync local LeafcutterLLM engine code into the build directory if available
+    let local_leafcutter = format!("{}/Documents/portfolio/LeafcutterLLM/rust", home);
+    let target_leafcutter = tmpdir.join("leafcutter");
+    if std::path::Path::new(&local_leafcutter).exists() {
+        println!("🌿 Syncing latest LeafcutterLLM engine from {} …", local_leafcutter);
+        let _ = Command::new("cp")
+            .args(["-r", &local_leafcutter, target_leafcutter.to_str().unwrap()])
+            .status();
+        let _ = std::fs::remove_dir_all(target_leafcutter.join("target"));
+    }
+
     if !Command::new("cargo")
         .current_dir(&tmpdir)
         .args(["build", "--release"])
