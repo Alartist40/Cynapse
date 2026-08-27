@@ -1725,14 +1725,14 @@ fn wrap_text(s: &str, width: usize) -> Vec<String> {
 /// Resolve the effective config: cwd `config.yaml`, then
 /// `~/.cynapse/config.yaml` (the Go home config), then defaults.
 fn resolve_config() -> Result<Config> {
-    if std::path::Path::new("config.yaml").exists() {
-        return cynapse_core::config::load(std::path::Path::new("config.yaml"));
-    }
     if let Ok(home) = std::env::var("HOME") {
         let go_path = std::path::PathBuf::from(home).join(".cynapse").join("config.yaml");
         if go_path.exists() {
             return cynapse_core::config::load(&go_path);
         }
+    }
+    if std::path::Path::new("config.yaml").exists() {
+        return cynapse_core::config::load(std::path::Path::new("config.yaml"));
     }
     Ok(Config::default())
 }

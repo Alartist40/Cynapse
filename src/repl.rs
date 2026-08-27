@@ -86,8 +86,7 @@ pub enum ThinkingMode {
 // ─── Entry Point ─────────────────────────────────────────────────────────────
 
 pub fn run_repl(cmd: ReplCmd) -> Result<()> {
-    let cfg_path = Path::new(&cmd.config);
-    let cfg = config::load(cfg_path).unwrap_or_default();
+    let cfg = resolve_unified_config(&cmd.config);
 
     if cfg.llm.provider == "leafcutter" {
         run_native_engine_repl(&cfg, cmd)
@@ -95,6 +94,24 @@ pub fn run_repl(cmd: ReplCmd) -> Result<()> {
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async move { run_fallback_repl(&cfg, cmd).await })
     }
+}
+
+fn resolve_unified_config(cmd_cfg: &str) -> Config {
+    if let Ok(home) = std::env::var("HOME") {
+        let home_cfg = std::path::PathBuf::from(&home).join(".cynapse").join("config.yaml");
+        if home_cfg.exists() {
+            if let Ok(c) = config::load(&home_cfg) {
+                return c;
+            }
+        }
+    }
+    let p = Path::new(cmd_cfg);
+    if p.exists() {
+        if let Ok(c) = config::load(p) {
+            return c;
+        }
+    }
+    Config::default()
 }
 
 // ─── Native Leafcutter Engine Direct CLI ────────────────────────────────────
@@ -890,9 +907,14 @@ fn resolve_gguf_path(cfg: &Config) -> Result<String> {
     }
 
     let search_dirs = [
+        &cfg.models.models_dir,
         &cfg.llm.models_dir,
         "./models",
         "../models",
+        "../../models",
+        "~/Downloads/models",
+        "~/Downloads",
+        "~/models",
         "~/.leafcutter/models",
         "~/.cache/cynapse/models",
         "~/.cynapse/models",

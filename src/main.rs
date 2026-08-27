@@ -6,10 +6,7 @@ use std::sync::Arc;
 use clap::Parser;
 
 fn main() {
-    let num_threads = std::thread::available_parallelism()
-        .map(|n| n.get().min(8))
-        .unwrap_or(8);
-    let _ = leafcutter::init::configure_thread_pool(Some(num_threads));
+    let _ = leafcutter::init::configure_thread_pool(None);
     let args = cli::Cli::parse();
     if let Err(e) = run(args) {
         eprintln!("error: {e:#}");

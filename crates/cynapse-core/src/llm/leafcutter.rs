@@ -311,54 +311,58 @@ fn resolve_model_path(model_id: &str, models_dir: &str) -> Result<String> {
         return Ok(model_id.to_string());
     }
 
-    // Relative / HF id: scan `models_dir` for a matching GGUF by file stem or
-    // parent directory name. Full HuggingFace registry is v2 scope.
-    if !models_dir.is_empty() {
-        let root = std::path::Path::new(models_dir);
+    let mut search_dirs = vec![
+        models_dir.to_string(),
+        "./models".into(),
+        "../models".into(),
+        "../../models".into(),
+        "~/Downloads/models".into(),
+        "~/Downloads".into(),
+        "~/models".into(),
+        "~/.leafcutter/models".into(),
+        "~/.cache/cynapse/models".into(),
+        "~/.cynapse/models".into(),
+    ];
+    if let Ok(home) = std::env::var("HOME") {
+        search_dirs.push(format!("{home}/Downloads/models"));
+        search_dirs.push(format!("{home}/Downloads"));
+        search_dirs.push(format!("{home}/models"));
+    }
+
+    let want = model_id.trim_start_matches("hf:").to_lowercase();
+    for dir_str in search_dirs {
+        if dir_str.trim().is_empty() {
+            continue;
+        }
+        let expanded = if let Some(stripped) = dir_str.strip_prefix("~/") {
+            if let Ok(home) = std::env::var("HOME") {
+                format!("{home}/{stripped}")
+            } else {
+                dir_str
+            }
+        } else {
+            dir_str
+        };
+        let root = std::path::Path::new(&expanded);
         if root.is_dir() {
-            let want = model_id
-                .trim_start_matches("hf:")
-                .to_lowercase();
-            let mut found: Option<std::path::PathBuf> = None;
-            if let Ok(mut walk) = std::fs::read_dir(root) {
-                while let Some(Ok(ent)) = walk.next() {
+            let candidate = root.join(model_id);
+            if candidate.exists() && candidate.is_file() {
+                return Ok(candidate.to_string_lossy().into_owned());
+            }
+            if let Ok(entries) = std::fs::read_dir(root) {
+                for ent in entries.flatten() {
                     let p = ent.path();
                     if p.is_file() {
                         let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
-                        if name.ends_with(".gguf")
-                            && (p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase()
-                                .contains(&want)
-                                || name.contains(&want))
-                        {
-                            found = Some(p);
-                            break;
+                        if name.ends_with(".gguf") && (name.contains(&want) || p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase().contains(&want)) {
+                            return Ok(p.to_string_lossy().into_owned());
                         }
-                    } else if p.is_dir() {
-                        let dir = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
-                        if dir.contains(&want) || want.contains(&dir) && !want.is_empty() {
-                            if let Ok(entries) = std::fs::read_dir(&p) {
-                                for e in entries.flatten() {
-                                    let fp = e.path();
-                                    if fp.is_file()
-                                        && fp.extension().and_then(|x| x.to_str()) == Some("gguf")
-                                    {
-                                        found = Some(fp);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if found.is_some() {
-                        break;
                     }
                 }
             }
-            if let Some(p) = found {
-                return Ok(p.to_string_lossy().into_owned());
-            }
         }
     }
+
     anyhow::bail!("model file not found: {model_id}")
 }
 
