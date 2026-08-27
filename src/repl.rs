@@ -352,10 +352,9 @@ fn execute_native_turn(
     let mut generated_text = String::new();
     let stop_token_ids: Vec<usize> = profile.stop_tokens.iter().map(|s| s.0).collect();
 
-    let mut is_thinking = profile.opens_with_thinking;
-    let mut header_classified = false;
-    let mut header_buffer = String::new();
-    let mut rolling_window = String::new();
+    let mut in_thinking = profile.opens_with_thinking;
+    let mut thinking_prefix_shown = false;
+    let mut thinking_tail = String::new();
 
     println!();
     let generated_ids = engine.generate_streaming_with_stops(
@@ -365,81 +364,82 @@ fn execute_native_turn(
         top_p,
         &stop_token_ids,
         |_id, chunk| {
-            rolling_window.push_str(chunk);
-
-            if !header_classified {
-                header_buffer.push_str(chunk);
-                let lower = header_buffer.to_lowercase();
-                if lower.contains("<think>")
-                    || lower.contains("thinking process:")
-                    || lower.contains("thinking:")
-                {
-                    is_thinking = true;
-                    header_classified = true;
-                    if thinking_mode == ThinkingMode::Dim {
-                        print!("{}", dim_purple(&header_buffer));
-                        let _ = io::stdout().flush();
-                    }
-                    header_buffer.clear();
-                    return true;
-                } else if header_buffer.len() >= 35 {
-                    is_thinking = false;
-                    header_classified = true;
-                    print!("{}", gold(&header_buffer));
-                    let _ = io::stdout().flush();
-                    generated_text.push_str(&header_buffer);
-                    header_buffer.clear();
-                    return true;
-                } else {
-                    return true;
-                }
+            // Check for explicit "Thinking Process:" header
+            if !in_thinking && (chunk.contains("Thinking Process:") || chunk.contains("Thinking:")) {
+                in_thinking = true;
             }
 
-            if is_thinking {
-                let window_lower = rolling_window.to_lowercase();
-                let ended = window_lower.contains("</think>")
-                    || (window_lower.contains("thinking process:")
-                        && rolling_window.contains("\n\n")
-                        && rolling_window.len() > 80
-                        && (rolling_window.ends_with("\n\n")
-                            || rolling_window.contains("ot\n\n")
-                            || rolling_window.contains("\n\nhey")
-                            || rolling_window.contains("\n\nhello")
-                            || rolling_window.contains("\n\nhi")));
-
-                if ended {
-                    is_thinking = false;
-                    println!();
+            if in_thinking {
+                thinking_tail.push_str(chunk);
+                if let Some(pos) = thinking_tail.find("</think>") {
+                    let (pre, rest) = thinking_tail.split_at(pos);
+                    if !pre.is_empty() && thinking_mode == ThinkingMode::Dim {
+                        if !thinking_prefix_shown {
+                            print!("{}", dim_purple("💭 "));
+                            thinking_prefix_shown = true;
+                        }
+                        print!("{}", dim_purple(pre));
+                    }
+                    thinking_tail = rest["</think>".len()..].to_string();
+                    in_thinking = false;
                     if thinking_mode == ThinkingMode::Hide {
                         println!("{}", dim_purple("🧠 [Thinking process completed]"));
+                    } else {
+                        println!();
                     }
-                    print!("{}", gold(chunk));
                     let _ = io::stdout().flush();
-                    generated_text.push_str(chunk);
-                } else if thinking_mode == ThinkingMode::Dim {
-                    print!("{}", dim_purple(chunk));
-                    let _ = io::stdout().flush();
+                } else if thinking_tail.contains("\n\n") && (thinking_tail.contains("Thinking Process:") || thinking_tail.contains("Thinking:")) && thinking_tail.len() > 60 {
+                    if let Some(pos) = thinking_tail.find("\n\n") {
+                        if pos > 20 {
+                            let (pre, rest) = thinking_tail.split_at(pos);
+                            if !pre.is_empty() && thinking_mode == ThinkingMode::Dim {
+                                if !thinking_prefix_shown {
+                                    print!("{}", dim_purple("💭 "));
+                                    thinking_prefix_shown = true;
+                                }
+                                print!("{}", dim_purple(pre));
+                            }
+                            thinking_tail = rest[2..].to_string();
+                            in_thinking = false;
+                            if thinking_mode == ThinkingMode::Hide {
+                                println!("{}", dim_purple("🧠 [Thinking process completed]"));
+                            } else {
+                                println!();
+                            }
+                            let _ = io::stdout().flush();
+                        }
+                    }
+                } else {
+                    let keep = floor_char_boundary(&thinking_tail, thinking_tail.len().saturating_sub(7));
+                    if keep > 0 {
+                        let (emit, rest) = thinking_tail.split_at(keep);
+                        if thinking_mode == ThinkingMode::Dim {
+                            if !thinking_prefix_shown {
+                                print!("{}", dim_purple("💭 "));
+                                thinking_prefix_shown = true;
+                            }
+                            print!("{}", dim_purple(emit));
+                        }
+                        thinking_tail = rest.to_string();
+                    }
                 }
-            } else {
-                print!("{}", gold(chunk));
                 let _ = io::stdout().flush();
-                generated_text.push_str(chunk);
+                return true;
             }
 
-            if rolling_window.len() > 600 {
-                let keep_idx = floor_char_boundary(&rolling_window, rolling_window.len() - 300);
-                rolling_window = rolling_window[keep_idx..].to_string();
+            if !thinking_tail.is_empty() {
+                if thinking_mode == ThinkingMode::Dim {
+                    print!("{}", dim_purple(&thinking_tail));
+                }
+                thinking_tail.clear();
             }
 
+            print!("{}", gold(chunk));
+            let _ = io::stdout().flush();
+            generated_text.push_str(chunk);
             true
         },
     );
-
-    if !header_classified && !header_buffer.is_empty() {
-        print!("{}", gold(&header_buffer));
-        let _ = io::stdout().flush();
-        generated_text.push_str(&header_buffer);
-    }
 
     let gen_elapsed = gen_start.elapsed();
     let gen_tokens = generated_ids.len();
