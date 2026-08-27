@@ -2,11 +2,11 @@
 //!
 //! Powered directly by Leafcutter's native LLM inference engine (`leafcutter::inference::engine::Engine`)
 //! with zero wrapper overhead. Features dynamic greetings/farewells, in-session model hot-swapping (`/model`),
-//! slash command menu (`/help`), and color-graded reasoning vs response streaming.
+//! slash command menu (`/help`), thinking mode toggle (`/think`), and color-graded reasoning vs response streaming.
 //!
 //! ### Customizing Greetings & Farewells
-//! - To add or edit greetings: Modify the [`CYNAPSE_GREETINGS`] array below in [`src/repl.rs`](file:///home/orangepi/Documents/portfolio/cynapse/src/repl.rs#L35).
-//! - To add or edit farewells: Modify the [`CYNAPSE_FAREWELLS`] array below in [`src/repl.rs`](file:///home/orangepi/Documents/portfolio/cynapse/src/repl.rs#L50).
+//! - To add or edit greetings: Modify the [`CYNAPSE_GREETINGS`] array below in [`src/repl.rs`](file:///home/orangepi/Documents/portfolio/cynapse/src/repl.rs#L38).
+//! - To add or edit farewells: Modify the [`CYNAPSE_FAREWELLS`] array below in [`src/repl.rs`](file:///home/orangepi/Documents/portfolio/cynapse/src/repl.rs#L53).
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -34,8 +34,6 @@ use leafcutter::profiles::{render_chat_prompt, resolve_profile, ModelProfile};
 use crate::cli::ReplCmd;
 
 // ─── Custom Greetings & Farewells Configuration ──────────────────────────────
-// File: src/repl.rs
-// Edit these constant string slices to add or modify dynamic greetings/goodbyes.
 
 pub const CYNAPSE_GREETINGS: &[&str] = &[
     "Greetings! I am right here beside you. How may I serve and support your work today?",
@@ -75,6 +73,14 @@ pub fn get_random_farewell() -> &'static str {
         .map(|d| d.as_nanos() as usize)
         .unwrap_or(0);
     CYNAPSE_FAREWELLS[now % CYNAPSE_FAREWELLS.len()]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkingMode {
+    /// Stream thinking steps in dim purple, response in gold.
+    Dim,
+    /// Hide internal thinking scratchpad output, stream answer in gold.
+    Hide,
 }
 
 // ─── Entry Point ─────────────────────────────────────────────────────────────
@@ -126,6 +132,7 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
     let mut temp = cfg.llm.temperature as f32;
     let top_p = 0.95f32;
     let mut max_tokens = cfg.llm.max_tokens as usize;
+    let mut thinking_mode = ThinkingMode::Dim;
 
     print_native_banner(
         &model_name,
@@ -148,7 +155,7 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
     let mut conversation: Vec<(String, String)> = Vec::new();
 
     if let Some(prompt) = cmd.prompt {
-        execute_native_turn(&mut engine, &profile, &model_name, &prompt, &conversation, temp, top_p, max_tokens)?;
+        execute_native_turn(&mut engine, &profile, &model_name, &prompt, &conversation, temp, top_p, max_tokens, thinking_mode)?;
         return Ok(());
     }
 
@@ -184,6 +191,28 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
                     eprintln!("{}", dim_purple("[context cleared — engine caches flushed]"));
                     continue;
                 }
+                "/think" => {
+                    if parts.len() < 2 {
+                        let status = match thinking_mode {
+                            ThinkingMode::Dim => "dim (stream thinking in dim purple)",
+                            ThinkingMode::Hide => "hide (suppress scratchpad output)",
+                        };
+                        println!("Current thinking mode: {status}. Usage: /think dim or /think hide");
+                    } else {
+                        match parts[1].trim().to_lowercase().as_str() {
+                            "hide" | "off" => {
+                                thinking_mode = ThinkingMode::Hide;
+                                println!("{}", "[thinking mode = HIDE (scratchpad output suppressed)]".green());
+                            }
+                            "dim" | "on" | "show" => {
+                                thinking_mode = ThinkingMode::Dim;
+                                println!("{}", "[thinking mode = DIM (thinking in purple, response in gold)]".green());
+                            }
+                            _ => println!("Usage: /think dim (show in purple) or /think hide (suppress scratchpad)"),
+                        }
+                    }
+                    continue;
+                }
                 "/models" | "/ls" | "/list" => {
                     print_available_models(cfg);
                     continue;
@@ -195,7 +224,7 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
                     } else {
                         let target = parts[1].trim();
                         match reload_model(target, cfg, &hw) {
-                            Ok((new_engine, new_path, new_name, new_profile, new_info, new_mb, new_tier, new_arch)) => {
+                            Ok((new_engine, _new_path, new_name, new_profile, new_info, new_mb, new_tier, new_arch)) => {
                                 engine = new_engine;
                                 model_name = new_name;
                                 profile = new_profile;
@@ -286,6 +315,7 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
             temp,
             top_p,
             max_tokens,
+            thinking_mode,
         ) {
             eprintln!("\n{}", format!("Engine execution error: {e:#}").red());
         }
@@ -305,6 +335,7 @@ fn execute_native_turn(
     temp: f32,
     top_p: f32,
     max_tokens: usize,
+    thinking_mode: ThinkingMode,
 ) -> Result<()> {
     let formatted_prompt = render_chat_prompt(profile, user_msg, history);
     let prompt_tokens = if let Some(tok) = engine.tokenizer_from_model() {
@@ -321,9 +352,9 @@ fn execute_native_turn(
     let mut generated_text = String::new();
     let stop_token_ids: Vec<usize> = profile.stop_tokens.iter().map(|s| s.0).collect();
 
-    let mut in_thinking = profile.opens_with_thinking;
-    let mut thinking_tail = String::new();
-    let mut transition_newline = false;
+    let mut is_thinking = profile.opens_with_thinking;
+    let mut rolling_window = String::new();
+    let mut answer_started = false;
 
     println!();
     let generated_ids = engine.generate_streaming_with_stops(
@@ -333,44 +364,58 @@ fn execute_native_turn(
         top_p,
         &stop_token_ids,
         |_id, chunk| {
-            // Check for explicit "Thinking Process:" text header or <think> block
-            if in_thinking || chunk.contains("Thinking Process:") || chunk.contains("<think>") {
-                thinking_tail.push_str(chunk);
-                if let Some(pos) = thinking_tail.find("</think>") {
-                    let (pre, rest) = thinking_tail.split_at(pos);
-                    if !pre.is_empty() {
-                        print!("{}", dim_purple(pre));
+            rolling_window.push_str(chunk);
+
+            // Detect start of thinking if not already flagged
+            if !is_thinking && !answer_started {
+                if rolling_window.contains("<think>")
+                    || rolling_window.contains("Thinking Process:")
+                    || rolling_window.starts_with("Thinking")
+                {
+                    is_thinking = true;
+                }
+            }
+
+            // Detect end of thinking block
+            if is_thinking {
+                if rolling_window.contains("</think>") {
+                    is_thinking = false;
+                    answer_started = true;
+                    if thinking_mode == ThinkingMode::Hide {
+                        print!("🧠 ");
+                        let _ = io::stdout().flush();
                     }
-                    thinking_tail = rest["</think>".len()..].to_string();
-                    in_thinking = false;
-                    println!();
-                    let _ = io::stdout().flush();
-                } else {
-                    let raw_keep = thinking_tail.len().saturating_sub(7);
-                    let keep = floor_char_boundary(&thinking_tail, raw_keep);
-                    if keep > 0 {
-                        let (emit, rest) = thinking_tail.split_at(keep);
-                        print!("{}", dim_purple(emit));
-                        thinking_tail = rest.to_string();
+                } else if rolling_window.contains("\n\n") && rolling_window.contains("Thinking Process:") {
+                    if let Some(idx) = rolling_window.find("\n\n") {
+                        if idx > 20 {
+                            is_thinking = false;
+                            answer_started = true;
+                        }
                     }
                 }
-                let _ = io::stdout().flush();
-                return true;
             }
 
-            if !thinking_tail.is_empty() {
-                print!("{}", dim_purple(&thinking_tail));
-                thinking_tail.clear();
-                println!();
-            } else if !transition_newline {
-                transition_newline = true;
+            if is_thinking {
+                if thinking_mode == ThinkingMode::Dim {
+                    print!("{}", dim_purple(chunk));
+                    let _ = io::stdout().flush();
+                }
+            } else {
+                if !answer_started {
+                    answer_started = true;
+                }
+                // Print final answer tokens in gold/yellow
+                print!("{}", gold(chunk));
                 let _ = io::stdout().flush();
+                generated_text.push_str(chunk);
             }
 
-            // Answer tokens are formatted in bright gold/yellow
-            print!("{}", gold(chunk));
-            let _ = io::stdout().flush();
-            generated_text.push_str(chunk);
+            // Keep rolling window reasonable
+            if rolling_window.len() > 500 {
+                let keep_idx = floor_char_boundary(&rolling_window, rolling_window.len() - 200);
+                rolling_window = rolling_window[keep_idx..].to_string();
+            }
+
             true
         },
     );
@@ -491,6 +536,7 @@ fn print_help_menu() {
     println!("    {} - Show this command menu & capabilities", purple("/help"));
     println!("    {} - List all available local GGUF models", purple("/models"));
     println!("    {} - Hot-swap active model in-session (by index or name)", purple("/model <n|id>"));
+    println!("    {} - Toggle thinking scratchpad output (/think dim or /think hide)", purple("/think <dim|hide>"));
     println!("    {} - Adjust sampling temperature (e.g. /set temp 0.7)", purple("/set temp <v>"));
     println!("    {} - Adjust max tokens (e.g. /set max 2048)", purple("/set max <v>"));
     println!("    {} - Flush KV/SSM engine state & reset context", purple("/clear"));
