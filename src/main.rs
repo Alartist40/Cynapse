@@ -130,7 +130,13 @@ fn run_doctor() -> anyhow::Result<()> {
 
 fn run_chat() -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(cynapse_tui::app::run(None))
+    rt.block_on(async {
+        let cfg = cynapse_core::config::load(std::path::Path::new("config.yaml")).unwrap_or_default();
+        if cfg.llm.provider == "leafcutter" {
+            cynapse_core::llm::prewarm_leafcutter_engine(&cfg.llm);
+        }
+        cynapse_tui::app::run(None).await
+    })
 }
 
 fn run_serve(cmd: cli::ServeCmd) -> anyhow::Result<()> {

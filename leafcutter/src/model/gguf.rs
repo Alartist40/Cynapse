@@ -123,6 +123,8 @@ impl GGUFile {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, GGUError> {
         let file = File::open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
+        #[cfg(unix)]
+        let _ = mmap.advise(memmap2::Advice::WillNeed);
         let mut reader = GGUFReader::new(&mmap);
 
         let header = reader.read_header()?;

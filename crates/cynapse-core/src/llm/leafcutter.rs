@@ -22,6 +22,30 @@ pub struct LeafcutterClient {
     model_name: Mutex<String>,
 }
 
+static ENGINE_CACHE: std::sync::OnceLock<Mutex<Option<(String, Engine)>>> = std::sync::OnceLock::new();
+
+fn get_engine_cache() -> &'static Mutex<Option<(String, Engine)>> {
+    ENGINE_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// Pre-load and pre-fault the GGUF model in the background at CLI bootup so
+/// prompt 1 token generation starts instantly (<10ms).
+pub fn prewarm_leafcutter_engine(cfg: &LlmConfig) {
+    let model_id = cfg.model.clone();
+    let models_dir = cfg.models_dir.clone();
+    if let Ok(model_path) = resolve_model_path(&model_id, &models_dir) {
+        tokio::task::spawn_blocking(move || {
+            let cache_mutex = get_engine_cache();
+            let mut guard = cache_mutex.lock().unwrap_or_else(|e| e.into_inner());
+            if guard.is_none() {
+                if let Ok(new_eng) = Engine::load(&model_path) {
+                    *guard = Some((model_path, new_eng));
+                }
+            }
+        });
+    }
+}
+
 pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
     let instance = LeafcutterClient {
         base,
@@ -87,8 +111,7 @@ impl LlmClient for LeafcutterClient {
                 }
             };
 
-            static ENGINE_CACHE: std::sync::OnceLock<Mutex<Option<(String, Engine)>>> = std::sync::OnceLock::new();
-            let cache_mutex = ENGINE_CACHE.get_or_init(|| Mutex::new(None));
+            let cache_mutex = get_engine_cache();
             let mut guard = cache_mutex.lock().unwrap_or_else(|e| e.into_inner());
 
             let engine = match guard.as_mut() {
