@@ -364,56 +364,87 @@ fn execute_native_turn(
         top_p,
         &stop_token_ids,
         |_id, chunk| {
-            // Check for explicit "Thinking Process:" header
-            if !in_thinking && (chunk.contains("Thinking Process:") || chunk.contains("Thinking:")) {
-                in_thinking = true;
+            thinking_tail.push_str(chunk);
+
+            // Strip thinking header prefixes as soon as they appear in thinking_tail
+            while thinking_tail.starts_with("<think>")
+                || thinking_tail.starts_with("Thinking Process:")
+                || thinking_tail.starts_with("Thinking process:")
+                || thinking_tail.starts_with("Thinking:")
+                || (thinking_tail.starts_with('\n') && in_thinking && !thinking_prefix_shown)
+            {
+                if let Some(rest) = thinking_tail.strip_prefix("<think>") {
+                    thinking_tail = rest.to_string();
+                } else if let Some(rest) = thinking_tail.strip_prefix("Thinking Process:") {
+                    thinking_tail = rest.to_string();
+                } else if let Some(rest) = thinking_tail.strip_prefix("Thinking process:") {
+                    thinking_tail = rest.to_string();
+                } else if let Some(rest) = thinking_tail.strip_prefix("Thinking:") {
+                    thinking_tail = rest.to_string();
+                } else if let Some(rest) = thinking_tail.strip_prefix('\n') {
+                    thinking_tail = rest.to_string();
+                }
             }
 
+            // HIDE Mode: Discard thinking scratchpad silently, output answer only
+            if thinking_mode == ThinkingMode::Hide {
+                if in_thinking {
+                    if thinking_tail.contains("</think>") {
+                        if let Some(pos) = thinking_tail.find("</think>") {
+                            thinking_tail = thinking_tail[pos + 8..].to_string();
+                        }
+                        in_thinking = false;
+                    } else if thinking_tail.contains("\n\n") && thinking_tail.len() > 60 {
+                        if let Some(pos) = thinking_tail.find("\n\n") {
+                            thinking_tail = thinking_tail[pos + 2..].to_string();
+                        }
+                        in_thinking = false;
+                    } else {
+                        return true;
+                    }
+                }
+                if !thinking_tail.is_empty() {
+                    print!("{}", gold(&thinking_tail));
+                    let _ = io::stdout().flush();
+                    generated_text.push_str(&thinking_tail);
+                    thinking_tail.clear();
+                }
+                return true;
+            }
+
+            // DIM Mode: Stream thinking steps in dim purple, answer in gold
             if in_thinking {
-                thinking_tail.push_str(chunk);
                 if let Some(pos) = thinking_tail.find("</think>") {
                     let (pre, rest) = thinking_tail.split_at(pos);
-                    if !pre.is_empty() && thinking_mode == ThinkingMode::Dim {
+                    if !pre.trim().is_empty() {
                         if !thinking_prefix_shown {
                             print!("{}", dim_purple("💭 "));
                             thinking_prefix_shown = true;
                         }
-                        print!("{}", dim_purple(pre));
+                        print!("{}", dim_purple(pre.trim_start()));
                     }
-                    thinking_tail = rest["</think>".len()..].to_string();
+                    println!();
+                    thinking_tail = rest[8..].to_string();
                     in_thinking = false;
-                    if thinking_mode == ThinkingMode::Hide {
-                        println!("{}", dim_purple("🧠 [Thinking process completed]"));
-                    } else {
-                        println!();
-                    }
-                    let _ = io::stdout().flush();
-                } else if thinking_tail.contains("\n\n") && (thinking_tail.contains("Thinking Process:") || thinking_tail.contains("Thinking:")) && thinking_tail.len() > 60 {
+                } else if thinking_tail.contains("\n\n") && thinking_tail.len() > 60 {
                     if let Some(pos) = thinking_tail.find("\n\n") {
-                        if pos > 20 {
-                            let (pre, rest) = thinking_tail.split_at(pos);
-                            if !pre.is_empty() && thinking_mode == ThinkingMode::Dim {
-                                if !thinking_prefix_shown {
-                                    print!("{}", dim_purple("💭 "));
-                                    thinking_prefix_shown = true;
-                                }
-                                print!("{}", dim_purple(pre));
+                        let (pre, rest) = thinking_tail.split_at(pos);
+                        if !pre.trim().is_empty() {
+                            if !thinking_prefix_shown {
+                                print!("{}", dim_purple("💭 "));
+                                thinking_prefix_shown = true;
                             }
-                            thinking_tail = rest[2..].to_string();
-                            in_thinking = false;
-                            if thinking_mode == ThinkingMode::Hide {
-                                println!("{}", dim_purple("🧠 [Thinking process completed]"));
-                            } else {
-                                println!();
-                            }
-                            let _ = io::stdout().flush();
+                            print!("{}", dim_purple(pre.trim_start()));
                         }
+                        println!();
+                        thinking_tail = rest[2..].to_string();
+                        in_thinking = false;
                     }
                 } else {
-                    let keep = floor_char_boundary(&thinking_tail, thinking_tail.len().saturating_sub(7));
+                    let keep = floor_char_boundary(&thinking_tail, thinking_tail.len().saturating_sub(12));
                     if keep > 0 {
                         let (emit, rest) = thinking_tail.split_at(keep);
-                        if thinking_mode == ThinkingMode::Dim {
+                        if !emit.is_empty() {
                             if !thinking_prefix_shown {
                                 print!("{}", dim_purple("💭 "));
                                 thinking_prefix_shown = true;
@@ -428,15 +459,12 @@ fn execute_native_turn(
             }
 
             if !thinking_tail.is_empty() {
-                if thinking_mode == ThinkingMode::Dim {
-                    print!("{}", dim_purple(&thinking_tail));
-                }
+                print!("{}", gold(&thinking_tail));
+                let _ = io::stdout().flush();
+                generated_text.push_str(&thinking_tail);
                 thinking_tail.clear();
             }
 
-            print!("{}", gold(chunk));
-            let _ = io::stdout().flush();
-            generated_text.push_str(chunk);
             true
         },
     );
@@ -649,7 +677,7 @@ fn list_available_models(cfg: &Config) -> Vec<(String, String, f64)> {
 fn reload_model(
     target: &str,
     cfg: &Config,
-    hw: &HardwareInfo,
+    _hw: &HardwareInfo,
 ) -> Result<(Engine, String, String, ModelProfile, leafcutter::model::loader::ModelConfig, f64, leafcutter::detect::Tier, String)> {
     let models = list_available_models(cfg);
     let resolved_path = if let Ok(idx) = target.parse::<usize>() {
@@ -677,9 +705,10 @@ fn reload_model(
     let engine = Engine::load(&resolved_path)
         .map_err(|e| anyhow::anyhow!("failed loading engine model '{resolved_path}': {e}"))?;
 
+    let fresh_hw = HardwareInfo::probe();
     let file_bytes = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
     let file_mb = file_bytes as f64 / (1024.0 * 1024.0);
-    let tier = choose_tier(hw.gpu, hw.ram_available_mb, file_bytes, false);
+    let tier = choose_tier(fresh_hw.gpu, fresh_hw.ram_available_mb, file_bytes, false);
     let profile = resolve_profile(&engine.model.file.metadata, None);
     let info = engine.config.clone();
 
