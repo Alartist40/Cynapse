@@ -382,34 +382,13 @@ fn execute_native_turn(
         &stop_token_ids,
         |_id, chunk| {
             thinking_tail.push_str(chunk);
-
-            // Strip thinking header prefixes as soon as they appear in thinking_tail
-            while thinking_tail.starts_with("<think>")
-                || thinking_tail.starts_with("Thinking Process:")
-                || thinking_tail.starts_with("Thinking process:")
-                || thinking_tail.starts_with("Thinking:")
-                || (thinking_tail.starts_with('\n') && in_thinking && !thinking_prefix_shown)
-            {
-                if let Some(rest) = thinking_tail.strip_prefix("<think>") {
-                    thinking_tail = rest.to_string();
-                } else if let Some(rest) = thinking_tail.strip_prefix("Thinking Process:") {
-                    thinking_tail = rest.to_string();
-                } else if let Some(rest) = thinking_tail.strip_prefix("Thinking process:") {
-                    thinking_tail = rest.to_string();
-                } else if let Some(rest) = thinking_tail.strip_prefix("Thinking:") {
-                    thinking_tail = rest.to_string();
-                } else if let Some(rest) = thinking_tail.strip_prefix('\n') {
-                    thinking_tail = rest.to_string();
-                }
-            }
+            thinking_tail = strip_thinking_headers(&thinking_tail);
 
             // HIDE Mode: Discard thinking scratchpad silently, output answer only
             if thinking_mode == ThinkingMode::Hide {
                 if in_thinking {
-                    if thinking_tail.contains("</think>") {
-                        if let Some(pos) = thinking_tail.find("</think>") {
-                            thinking_tail = thinking_tail[pos + 8..].to_string();
-                        }
+                    if let Some(pos) = thinking_tail.find("</think>") {
+                        thinking_tail = thinking_tail[pos + "</think>".len()..].to_string();
                         in_thinking = false;
                     } else if thinking_tail.contains("\n\n") && thinking_tail.len() > 60 {
                         if let Some(pos) = thinking_tail.find("\n\n") {
@@ -431,42 +410,54 @@ fn execute_native_turn(
 
             // DIM Mode: Stream thinking steps in dim purple, answer in gold
             if in_thinking {
+                // Buffer initial tokens so headers are never partially printed
+                if thinking_tail.len() < 40 && !thinking_tail.contains("</think>") {
+                    return true;
+                }
+
                 if let Some(pos) = thinking_tail.find("</think>") {
                     let (pre, rest) = thinking_tail.split_at(pos);
-                    if !pre.trim().is_empty() {
+                    let clean_pre = strip_thinking_headers(pre);
+                    if !clean_pre.trim().is_empty() {
                         if !thinking_prefix_shown {
                             print!("{}", dim_purple("💭 "));
                             thinking_prefix_shown = true;
                         }
-                        print!("{}", dim_purple(pre.trim_start()));
+                        print!("{}", dim_purple(clean_pre.trim_start()));
                     }
-                    println!();
-                    thinking_tail = rest[8..].to_string();
+                    if thinking_prefix_shown {
+                        println!();
+                    }
+                    thinking_tail = rest["</think>".len()..].to_string();
                     in_thinking = false;
                 } else if thinking_tail.contains("\n\n") && thinking_tail.len() > 60 {
                     if let Some(pos) = thinking_tail.find("\n\n") {
                         let (pre, rest) = thinking_tail.split_at(pos);
-                        if !pre.trim().is_empty() {
+                        let clean_pre = strip_thinking_headers(pre);
+                        if !clean_pre.trim().is_empty() {
                             if !thinking_prefix_shown {
                                 print!("{}", dim_purple("💭 "));
                                 thinking_prefix_shown = true;
                             }
-                            print!("{}", dim_purple(pre.trim_start()));
+                            print!("{}", dim_purple(clean_pre.trim_start()));
                         }
-                        println!();
+                        if thinking_prefix_shown {
+                            println!();
+                        }
                         thinking_tail = rest[2..].to_string();
                         in_thinking = false;
                     }
                 } else {
-                    let keep = floor_char_boundary(&thinking_tail, thinking_tail.len().saturating_sub(12));
+                    let keep = floor_char_boundary(&thinking_tail, thinking_tail.len().saturating_sub(15));
                     if keep > 0 {
                         let (emit, rest) = thinking_tail.split_at(keep);
-                        if !emit.is_empty() {
+                        let clean_emit = strip_thinking_headers(emit);
+                        if !clean_emit.is_empty() {
                             if !thinking_prefix_shown {
                                 print!("{}", dim_purple("💭 "));
                                 thinking_prefix_shown = true;
                             }
-                            print!("{}", dim_purple(emit));
+                            print!("{}", dim_purple(&clean_emit));
                         }
                         thinking_tail = rest.to_string();
                     }
@@ -476,9 +467,10 @@ fn execute_native_turn(
             }
 
             if !thinking_tail.is_empty() {
-                print!("{}", gold(&thinking_tail));
+                let clean_text = strip_thinking_headers(&thinking_tail);
+                print!("{}", gold(&clean_text));
                 let _ = io::stdout().flush();
-                generated_text.push_str(&thinking_tail);
+                generated_text.push_str(&clean_text);
                 thinking_tail.clear();
             }
 
@@ -723,9 +715,11 @@ fn reload_model(
         .map_err(|e| anyhow::anyhow!("failed loading engine model '{resolved_path}': {e}"))?;
 
     let fresh_hw = HardwareInfo::probe();
+    let (mem_total, mem_avail) = leafcutter::detect::meminfo_mb();
+    let effective_ram_mb = mem_avail.max(mem_total.saturating_sub(1024));
     let file_bytes = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
     let file_mb = file_bytes as f64 / (1024.0 * 1024.0);
-    let tier = choose_tier(fresh_hw.gpu, fresh_hw.ram_available_mb, file_bytes, false);
+    let tier = choose_tier(fresh_hw.gpu, effective_ram_mb, file_bytes, false);
     let profile = resolve_profile(&engine.model.file.metadata, None);
     let info = engine.config.clone();
 
@@ -856,6 +850,27 @@ async fn execute_turn_async(agent: &Agent, user_msg: &str) -> Result<()> {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+fn strip_thinking_headers(s: &str) -> String {
+    let mut current = s.to_string();
+    loop {
+        let trimmed = current.trim_start_matches(|c: char| c == '\n' || c == '\r' || c == ' ');
+        if let Some(rest) = trimmed.strip_prefix("<think>") {
+            current = rest.to_string();
+        } else if let Some(rest) = trimmed.strip_prefix("Thinking Process:") {
+            current = rest.to_string();
+        } else if let Some(rest) = trimmed.strip_prefix("Thinking process:") {
+            current = rest.to_string();
+        } else if let Some(rest) = trimmed.strip_prefix("Thinking:") {
+            current = rest.to_string();
+        } else if let Some(rest) = trimmed.strip_prefix("thinking process:") {
+            current = rest.to_string();
+        } else {
+            break;
+        }
+    }
+    current
+}
 
 fn read_line(rl: &mut Option<DefaultEditor>, prompt: &str) -> Result<String, ()> {
     if let Some(ed) = rl {
