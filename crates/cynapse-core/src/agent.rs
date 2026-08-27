@@ -744,19 +744,21 @@ mod tests {
 
 fn strip_thinking_tags(input: &str) -> String {
     let mut s = input.to_string();
+    // 1. If response opens with <think> or Thinking Process, strip through </think> or the end of the block
+    while let Some(start) = s.find("<think>") {
+        if let Some(end) = s[start..].find("</think>") {
+            s.replace_range(start..start + end + 8, "");
+        } else {
+            // Unclosed thinking tag — strip everything inside <think> up to the end or final answer
+            s.truncate(start);
+            break;
+        }
+    }
     while let Some(pos) = s.find("[thinking]") {
         if let Some(end) = s[pos..].find('\n') {
             s.replace_range(pos..pos + end + 1, "");
         } else {
             s.replace_range(pos..pos + 10, "");
-        }
-    }
-    while let Some(start) = s.find("<think>") {
-        if let Some(end) = s[start..].find("</think>") {
-            s.replace_range(start..start + end + 8, "");
-        } else {
-            s.truncate(start);
-            break;
         }
     }
     if let Some(pos) = s.find("Thinking Process:") {

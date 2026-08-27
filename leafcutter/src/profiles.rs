@@ -84,7 +84,7 @@ pub const ORNITH_PROFILE: ModelProfile = ModelProfile {
         StopToken(248046, "<|im_end|>"),       // Qwen 32b ChatML end
         StopToken(248044, "<|endoftext|>"),    // Qwen 32b EOS
     ],
-    opens_with_thinking: true,
+    opens_with_thinking: false,
     raw_continuation: false,
 };
 
