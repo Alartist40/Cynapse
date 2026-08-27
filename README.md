@@ -43,6 +43,8 @@ scripts/install_release.sh --fast # fast release profile (no LTO)
 ```bash
 cynapse                # launch the chat TUI (default)
 cynapse chat           # launch the chat TUI (explicit)
+cynapse cli            # launch direct native engine interactive CLI REPL
+cynapse repl -p "msg"  # execute single prompt in lightweight CLI mode
 cynapse version        # print version string
 cynapse config show    # print resolved YAML config
 cynapse config path    # absolute path to config.yaml
@@ -55,6 +57,12 @@ cynapse memory export
 cynapse doctor         # run full system diagnostic health check
 cynapse update         # update to latest release from GitHub
 ```
+
+In `cynapse cli`:
+- Dynamic greetings & goodbyes on launch and exit.
+- `/model <n|name>` to hot-swap active LLM models live in-session without restarting.
+- `/models` or `/ls` to list all available local GGUF models.
+- `/help` lists interactive CLI commands.
 
 In the TUI: `/help` lists slash commands (`/attach`, `/clear`, `/compress`,
 `/memory`, `/allowed`, `/model`, `/quit`, ...).

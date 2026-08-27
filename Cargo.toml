@@ -23,6 +23,7 @@ serde_yaml = "0.9"
 colored = "2"
 ureq = { version = "2", features = ["json"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+rustyline = "14"
 
 [profile.release]
 opt-level = 1

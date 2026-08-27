@@ -662,6 +662,7 @@ dependencies = [
  "cynapse-core",
  "cynapse-tui",
  "leafcutter",
+ "rustyline",
  "serde_yaml",
  "tokio",
  "ureq",

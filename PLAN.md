@@ -955,7 +955,8 @@ Status as of the current commit (`master` head):
 | M6  | ✅ committed (`14b976d`) | Ratatui chat TUI (streaming, menus, slash commands, confirm bridge, live model switching) + config bootstrap |
 | M7  | ✅ committed (`6240e53`) | Explicit `chat` subcommand; final polish |
 | M8  | ✅ committed (`8152283`, `61ae322`) | Leafcutter provider (local GGUF) + OCR module (unlimited-ocr via Ollama with multi-model fallback chain) |
-| M9  | ✅ committed (this commit) | Install scripts (`install.sh` + `install_release.sh`) + docs |
+| M9  | ✅ committed (`e58838b`) | Install scripts (`install.sh` + `install_release.sh`) + docs |
+| M10 | ✅ completed | Native Leafcutter LLM Engine CLI (`cynapse cli`): dynamic greetings/farewells, `/model` hot-swapping, slash commands menu, color-graded reasoning |
 
 ### What's running
 

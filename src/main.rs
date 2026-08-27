@@ -1,4 +1,5 @@
 mod cli;
+mod repl;
 
 use std::sync::Arc;
 
@@ -23,6 +24,7 @@ fn run(args: cli::Cli) -> anyhow::Result<()> {
             Ok(())
         }
         Some(cli::Command::Chat) => run_chat(),
+        Some(cli::Command::Repl(cmd)) => repl::run_repl(cmd),
         Some(cli::Command::Serve(cmd)) => run_serve(cmd),
         Some(cli::Command::Config(cmd)) => cli::config_dispatch(cmd),
         Some(cli::Command::Memory(cmd)) => {

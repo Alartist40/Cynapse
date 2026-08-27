@@ -18,6 +18,9 @@ pub enum Command {
     Version,
     /// Launch the interactive chat TUI.
     Chat,
+    /// Launch the lightweight interactive CLI REPL (or execute single prompt).
+    #[command(alias = "cli")]
+    Repl(ReplCmd),
     /// Serve the local web gateway (camera stream + chat UI).
     Serve(ServeCmd),
     /// Inspect and validate the YAML configuration.
@@ -38,6 +41,17 @@ pub enum Command {
     Ps,
     /// List cached GGUF models in local model directories.
     Ls,
+}
+
+#[derive(Debug, Args)]
+pub struct ReplCmd {
+    /// Execute a single prompt directly without entering interactive REPL mode
+    #[arg(short, long)]
+    pub prompt: Option<String>,
+
+    /// Path to configuration file
+    #[arg(long, default_value = "config.yaml")]
+    pub config: String,
 }
 
 #[derive(Debug, Args)]

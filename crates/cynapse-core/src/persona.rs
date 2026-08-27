@@ -52,6 +52,10 @@ impl Persona {
         fs::create_dir_all(dir.join("logs").join("heartbeat")).ok();
         fs::create_dir_all(dir.join("skills")).ok();
 
+        if let Some(parent) = db_path.parent() {
+            fs::create_dir_all(parent).ok();
+        }
+
         let graph = Arc::new(Dendrite::new());
         let store = Arc::new(DendriteStore::open(db_path).context("graph store")?);
 

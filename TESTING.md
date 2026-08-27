@@ -74,17 +74,24 @@ cargo test -p cynapse-core --test agent_live -- --ignored --nocapture
 Note: the Ollama and leafcutter tests compete for GPU/memory. Run them
 sequentially if you see timeouts.
 
-## TUI smoke test (headless)
-
-The TUI requires a terminal; it cannot be tested in CI without a pseudoterminal.
-To verify the TUI starts and accepts input:
-
-```bash
-script -qc 'timeout 5 ./target/release/cynapse chat' /dev/null
-```
-
 If you see the CYNAPSE logo and a spinner, the TUI works. Press `Escape` then
 `q` to quit, or `Ctrl+C`.
+
+## Native Engine CLI testing (`cynapse cli`)
+
+Test the direct native LLM engine CLI:
+
+```bash
+cynapse cli
+```
+
+Key features to verify:
+1. Dynamic greeting banner on launch and dynamic farewell on exit (`/bye`, `/quit`).
+2. Hardware diagnostics box showing CPU cores, RAM, dispatch tier, profile, temp, max tokens.
+3. Live streaming with color-graded reasoning (`<think>`) and response text (`gold`).
+4. `/models` to list local GGUF models.
+5. `/model <n|name>` to hot-swap active model live in-session.
+6. `/help` command menu box.
 
 To exercise a real streaming turn in a headless terminal:
 
