@@ -648,6 +648,7 @@ dependencies = [
  "colored",
  "cynapse-core",
  "cynapse-tui",
+ "leafcutter",
  "serde_yaml",
  "tokio",
  "ureq",

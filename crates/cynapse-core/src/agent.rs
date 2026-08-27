@@ -765,10 +765,19 @@ fn strip_thinking_tags(input: &str) -> String {
     if let Some(pos) = s.find("Thinking:") {
         s.truncate(pos);
     }
+    if let Some(pos) = s.find("---##") {
+        s.truncate(pos);
+    }
+    if let Some(pos) = s.find("\n---") {
+        s.truncate(pos);
+    }
     if let Some(pos) = s.find("## Identity") {
         s.truncate(pos);
     }
     if let Some(pos) = s.find("## System Instructions") {
+        s.truncate(pos);
+    }
+    if let Some(pos) = s.find("You've asked me a few questions") {
         s.truncate(pos);
     }
     s.trim().to_string()

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use clap::Parser;
 
 fn main() {
+    let _ = leafcutter::init::configure_thread_pool(Some(4));
     let args = cli::Cli::parse();
     if let Err(e) = run(args) {
         eprintln!("error: {e:#}");

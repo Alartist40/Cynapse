@@ -119,7 +119,13 @@ fn contains_stop_marker(text: &str) -> bool {
         "## System Instructions",
         "\nuser\n",
         "\nUser:",
+        "\nUser ",
         "\nAssistant:",
+        "---##",
+        "\n---",
+        "CYNAPSE:",
+        "\nCYNAPSE:",
+        "You've asked me a few questions",
     ];
     for m in markers {
         if text.contains(m) {
