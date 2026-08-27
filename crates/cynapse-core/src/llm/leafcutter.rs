@@ -87,13 +87,18 @@ impl LlmClient for LeafcutterClient {
             }
         };
 
-        // Extract history turns from req.messages
-        let mut history: Vec<(String, String)> = Vec::new();
+        // Extract history turns from req.messages (cap to last 4 messages for fast CPU prefill)
+        let mut raw_history: Vec<(String, String)> = Vec::new();
         for m in &req.messages {
             if m.role.as_str() != "system" {
-                history.push((m.role.as_str().to_string(), m.content.clone()));
+                raw_history.push((m.role.as_str().to_string(), m.content.clone()));
             }
         }
+        let history: Vec<(String, String)> = if raw_history.len() > 4 {
+            raw_history[raw_history.len() - 4..].to_vec()
+        } else {
+            raw_history
+        };
         let system_prompt = req.system_prompt.clone();
         let requested_max = if req.max_tokens == 0 { 1024 } else { req.max_tokens } as usize;
         let temperature = req.temperature as f32;
