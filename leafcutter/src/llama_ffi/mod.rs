@@ -226,12 +226,17 @@ impl LlamaContext {
 
     /// Run a forward pass for the given tokens and return logits for the last token.
     pub fn forward(&mut self, tokens: &[llama_token]) -> Result<Vec<f32>, String> {
+        self.forward_at_pos(tokens, 0)
+    }
+
+    /// Run a forward pass starting at `start_pos` in the sequence (preserving KV cache state).
+    pub fn forward_at_pos(&mut self, tokens: &[llama_token], start_pos: i32) -> Result<Vec<f32>, String> {
         if tokens.is_empty() {
             return Err("Empty token list".to_string());
         }
 
         let mut batch = LlamaBatch::new(tokens.len() as i32, 1)?;
-        batch.set_tokens(tokens);
+        batch.set_tokens_at_pos(tokens, start_pos);
 
         unsafe {
             let ret = bindings::llama_decode(self.ptr.as_ptr(), batch.inner);
@@ -418,6 +423,11 @@ impl LlamaBatch {
 
     /// Fill the batch with tokens for a single sequence.
     pub fn set_tokens(&mut self, tokens: &[llama_token]) {
+        self.set_tokens_at_pos(tokens, 0);
+    }
+
+    /// Fill the batch with tokens starting at start_pos.
+    pub fn set_tokens_at_pos(&mut self, tokens: &[llama_token], start_pos: i32) {
         assert!(
             tokens.len() <= self.capacity as usize,
             "Batch overflow: {} > {}",
@@ -428,7 +438,7 @@ impl LlamaBatch {
         unsafe {
             for (i, &tok) in tokens.iter().enumerate() {
                 *self.inner.token.add(i) = tok;
-                *self.inner.pos.add(i) = i as llama_pos;
+                *self.inner.pos.add(i) = (start_pos + i as i32) as llama_pos;
                 *self.inner.n_seq_id.add(i) = 1;
                 *(*self.inner.seq_id.add(i)).add(0) = 0;
                 *self.inner.logits.add(i) = if i == tokens.len() - 1 { 1 } else { 0 };
