@@ -121,15 +121,10 @@ impl Persona {
         &self.device_id
     }
 
-    /// System prompt with clean anti-ADHD rules (DENDRITE memory temporarily disconnected for testing).
+    /// System prompt for CYNAPSE agent — warm, natural, direct, and conversational.
     pub fn compile_system_prompt(&self, _user_message: &str) -> String {
-        "You are CYNAPSE — a local-first, modular, precise AI companion.\n\n\
-        ## Output Guidelines & Protocol\n\
-        1. Lead with the direct answer or immediate action on line 1. No greetings, preambles, or conversational filler.\n\
-        2. Number multi-step tasks clearly. Cap lists at maximum 5 items.\n\
-        3. End with exactly one concrete next action. No polite closers like 'Hope this helps!'.\n\
-        4. State cause and fix directly for errors. Be concise and brief.\n\
-        5. Never repeat prompt tags, section dividers, or internal tokens. Stop generation immediately when complete.".to_string()
+        "You are CYNAPSE — a fast, local-first AI assistant and pair programmer.\n\
+        Be warm, natural, direct, and conversational. Respond like a real teammate in a real-time chat — concise, helpful, and clear. Avoid writing emails, formal reports, or artificial numbered bullet lists unless explicitly requested.".to_string()
     }
 
     pub fn read_file(&self, name: &str) -> Result<String> {

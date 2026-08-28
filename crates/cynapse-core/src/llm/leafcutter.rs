@@ -190,8 +190,8 @@ impl LlmClient for LeafcutterClient {
             }
         }
 
-        if history.len() > 4 {
-            history = history[history.len() - 4..].to_vec();
+        if history.len() > 16 {
+            history = history[history.len() - 16..].to_vec();
         }
 
         let requested_max = if req.max_tokens == 0 { 1024 } else { req.max_tokens } as usize;
