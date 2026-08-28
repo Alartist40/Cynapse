@@ -155,7 +155,7 @@ else
 fi
 
 info "Building cynapse (hardware-safe release profile) ..."
-RUSTFLAGS="-C target-cpu=native" cargo build --release --manifest-path "$SRC_DIR/Cargo.toml" || err "cargo build failed"
+RUSTFLAGS="-C target-cpu=native -C opt-level=3 -C target-feature=+neon,+dotprod,+i8mm,+sve2" cargo build --release --manifest-path "$SRC_DIR/Cargo.toml" || err "cargo build failed"
 
 info "Determining version hash ..."
 VERSION_HASH=$(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo "local")

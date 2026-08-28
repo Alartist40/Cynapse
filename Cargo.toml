@@ -16,7 +16,7 @@ path = "src/main.rs"
 [dependencies]
 cynapse-core = { path = "crates/cynapse-core" }
 cynapse-tui = { path = "crates/cynapse-tui" }
-leafcutter = { path = "leafcutter", features = ["llama-ffi"] }
+leafcutter = { path = "leafcutter" }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 serde_yaml = "0.9"

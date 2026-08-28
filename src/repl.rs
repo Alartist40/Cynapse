@@ -644,6 +644,26 @@ fn execute_native_turn(
         },
     );
 
+    if !thinking_tail.is_empty() {
+        let clean_text = strip_thinking_headers(&thinking_tail);
+        let final_text = if focus_mode {
+            cynapse_core::adhd::strip_fluff(&clean_text)
+        } else {
+            clean_text
+        };
+        if in_thinking && thinking_mode == ThinkingMode::Dim {
+            if !thinking_prefix_shown {
+                print!("{}", dim_purple("💭 "));
+            }
+            print!("{}", dim_purple(&final_text));
+        } else {
+            print!("{}", gold(&final_text));
+        }
+        let _ = io::stdout().flush();
+        generated_text.push_str(&final_text);
+        thinking_tail.clear();
+    }
+
     let gen_elapsed = gen_start.elapsed();
     let gen_tokens = generated_ids.len();
     let tok_per_sec = if gen_tokens > 0 && gen_elapsed.as_secs_f64() > 0.0 {

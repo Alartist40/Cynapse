@@ -109,6 +109,7 @@ pub struct Agent {
     comp: Arc<Compactor>,
     redact: bool,
     http: reqwest::Client,
+    focus_mode: AtomicBool,
 }
 
 /// Resolve the model's context length for compression purposes.
@@ -145,7 +146,16 @@ impl Agent {
             comp,
             redact,
             http: reqwest::Client::new(),
+            focus_mode: AtomicBool::new(true),
         }
+    }
+
+    pub fn set_focus_mode(&self, focus: bool) {
+        self.focus_mode.store(focus, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn focus_mode(&self) -> bool {
+        self.focus_mode.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn persona(&self) -> &Arc<Persona> {
@@ -219,7 +229,7 @@ impl Agent {
         let all_tools = self.tools.schemas();
 
         let mut req = Request {
-            system_prompt: self.persona.compile_system_prompt(user_msg),
+            system_prompt: self.persona.compile_system_prompt_with_focus(user_msg, self.focus_mode()),
             messages: sess.recent(12),
             tools: all_tools,
             max_tokens: self.cfg.llm.max_tokens,
@@ -350,6 +360,7 @@ impl Agent {
             comp: self.comp.clone(),
             redact: self.redact,
             http: self.http.clone(),
+            focus_mode: AtomicBool::new(self.focus_mode.load(std::sync::atomic::Ordering::Relaxed)),
         });
 
         let sess_fut = self.sessions.get(&self.device_id);
@@ -392,7 +403,7 @@ impl Agent {
                 }
 
                 let req = Request {
-                    system_prompt: agent.persona.compile_system_prompt(&user_msg),
+                    system_prompt: agent.persona.compile_system_prompt_with_focus(&user_msg, agent.focus_mode()),
                     messages: sess.recent(12),
                     tools: all_tools.clone(),
                     max_tokens: agent.cfg.llm.max_tokens,

@@ -122,9 +122,18 @@ impl Persona {
     }
 
     /// System prompt for CYNAPSE agent — warm, natural, direct, and conversational.
-    pub fn compile_system_prompt(&self, _user_message: &str) -> String {
-        "You are CYNAPSE — a fast, local-first AI assistant and pair programmer.\n\
-        Be warm, natural, direct, and conversational. Respond like a real teammate in a real-time chat — concise, helpful, and clear. Avoid writing emails, formal reports, or artificial numbered bullet lists unless explicitly requested.".to_string()
+    pub fn compile_system_prompt(&self, user_message: &str) -> String {
+        self.compile_system_prompt_with_focus(user_message, true)
+    }
+
+    pub fn compile_system_prompt_with_focus(&self, _user_message: &str, focus: bool) -> String {
+        let base = "You are CYNAPSE — a fast, local-first AI assistant and pair programmer.\n\
+        Be warm, natural, direct, and conversational. Respond like a real teammate in a real-time chat — concise, helpful, and clear. Avoid writing emails, formal reports, or artificial numbered bullet lists unless explicitly requested.";
+        if focus {
+            format!("{}\n\n{}", base, crate::adhd::ADHD_SYSTEM_PROMPT)
+        } else {
+            base.to_string()
+        }
     }
 
     pub fn read_file(&self, name: &str) -> Result<String> {

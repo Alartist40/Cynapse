@@ -905,6 +905,7 @@ impl App {
                     "off" | "disable" | "false" => self.focus_mode = false,
                     _ => self.focus_mode = !self.focus_mode,
                 }
+                self.agent.set_focus_mode(self.focus_mode);
                 let status = if self.focus_mode {
                     "🎯 Focus mode toggled ON (ADHD zero-fluff mode active)"
                 } else {
@@ -2075,14 +2076,14 @@ async fn run_loop<B: ratatui::backend::Backend>(
     }
 
     let mut app = App::new(agent, cfg, allowlist, llm_client, events_rx, confirm_rx);
-    let mut tick = tokio::time::interval(Duration::from_millis(50));
+    let mut tick = tokio::time::interval(Duration::from_millis(33)); // 30 FPS tick rate
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let mut last_render = Instant::now();
 
     loop {
         let now = Instant::now();
-        if app.dirty && now.duration_since(last_render) >= Duration::from_millis(50) {
+        if app.dirty && now.duration_since(last_render) >= Duration::from_millis(33) {
             terminal
                 .draw(|f| app.draw(f))
                 .map_err(|e| anyhow!("draw failed: {e}"))?;
