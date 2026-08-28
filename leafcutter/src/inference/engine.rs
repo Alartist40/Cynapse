@@ -217,7 +217,8 @@ impl Engine {
     fn load_ffi(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let model = LlamaModel::load(Path::new(path), 0)
             .map_err(|e| format!("Failed to load model via FFI: {}", e))?;
-        let context = LlamaContext::new(&model, 4096, 4)
+        let threads = crate::init::effective_thread_count() as i32;
+        let context = LlamaContext::new(&model, 4096, threads)
             .map_err(|e| format!("Failed to create FFI context: {}", e))?;
 
         // Still load GGUFModel for metadata (config, tokenizer info, etc.)
