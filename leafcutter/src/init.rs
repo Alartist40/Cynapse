@@ -62,16 +62,29 @@ pub fn default_thread_count() -> usize {
     let logical = std::thread::available_parallelism()
         .map(|u| u.get())
         .unwrap_or(4);
-    if logical >= 8 {
-        // Target performance core cluster (typically 4 physical performance cores).
-        // Prevents thread synchronization stalls on low-frequency efficiency cores,
-        // eliminating fan spikes, thermal throttling, and high CPU power draw.
-        4
-    } else if logical <= 4 {
-        logical
-    } else {
-        logical.saturating_sub(1)
+
+    // On aarch64 / ARM (e.g. CIX Sky1 / RK3588 / Orange Pi), cores are physical (no SMT hyperthreading).
+    // Use logical - 1 (or all logical cores if <= 4) for maximum parallel GEMV performance.
+    if cfg!(target_arch = "aarch64") {
+        return (logical.saturating_sub(1)).max(2);
     }
+
+    // Try /proc/cpuinfo for x86 physical core detection.
+    if let Ok(s) = std::fs::read_to_string("/proc/cpuinfo") {
+        let mut phys = 0usize;
+        for line in s.lines() {
+            if let Some(rest) = line.strip_prefix("cpu cores\t: ") {
+                if let Ok(v) = rest.trim().parse::<usize>() {
+                    phys = v;
+                }
+            }
+        }
+        if phys > 0 {
+            return (phys.saturating_sub(1)).max(2);
+        }
+    }
+    // Fallback for x86 SMT
+    (logical / 2).max(2)
 }
 
 /// Read the effective rayon thread cap for this process.

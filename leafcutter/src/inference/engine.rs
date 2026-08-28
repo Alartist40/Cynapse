@@ -902,11 +902,7 @@ impl Engine {
         #[cfg(feature = "llama-ffi")]
         if let Some(ctx) = &mut self.ffi_context {
             let tokens_i32: Vec<i32> = tokens.iter().map(|&t| t as i32).collect();
-            let start_pos = if self.seq_offset > 0 && tokens.len() == 1 {
-                self.seq_offset as i32
-            } else {
-                0
-            };
+            let start_pos = self.seq_offset as i32;
             return match ctx.forward_at_pos(&tokens_i32, start_pos) {
                 Ok(v) => v,
                 Err(e) => {

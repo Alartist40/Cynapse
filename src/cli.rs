@@ -17,6 +17,7 @@ pub enum Command {
     /// Print version information.
     Version,
     /// Launch the interactive chat TUI.
+    #[command(alias = "tui")]
     Chat,
     /// Launch the lightweight interactive CLI REPL (or execute single prompt).
     #[command(alias = "cli")]
