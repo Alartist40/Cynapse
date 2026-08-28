@@ -169,24 +169,19 @@ impl LlmClient for LeafcutterClient {
             }
         };
 
-        // Extract user message and history turns from req.messages
+        // Extract user message and history turns from req.messages in exact chronological order
         let mut history: Vec<(String, String)> = Vec::new();
         let mut user_msg = String::new();
 
-        for m in &req.messages {
-            if m.role.as_str() == "user" {
-                if !user_msg.is_empty() {
-                    history.push(("user".to_string(), user_msg));
-                }
-                user_msg = m.content.clone();
-            } else if m.role.as_str() == "assistant" {
-                history.push(("assistant".to_string(), m.content.clone()));
-            }
-        }
-
-        if user_msg.is_empty() {
-            if let Some(last) = req.messages.last() {
-                user_msg = last.content.clone();
+        if let Some(last_msg) = req.messages.last() {
+            user_msg = last_msg.content.clone();
+            for m in &req.messages[..req.messages.len() - 1] {
+                let role = match m.role.as_str() {
+                    "assistant" => "assistant",
+                    "system" => "system",
+                    _ => "user",
+                };
+                history.push((role.to_string(), m.content.clone()));
             }
         }
 
