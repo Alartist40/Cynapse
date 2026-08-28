@@ -443,7 +443,7 @@ pub fn render_chat_prompt(
 
     // Open the assistant turn for the model to continue.
     out.push_str(&format!("{}{}", turn_open, role_assistant));
-    if profile.opens_with_thinking && history.is_empty() {
+    if profile.opens_with_thinking {
         out.push_str("\n<think>\n");
     } else {
         out.push_str("\n");
