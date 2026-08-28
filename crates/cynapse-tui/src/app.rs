@@ -898,6 +898,20 @@ impl App {
                 );
                 self.messages.push(UiMsg::System(msg));
             }
+            _ if trimmed.starts_with("/focus") => {
+                let arg = trimmed.strip_prefix("/focus").unwrap_or("").trim().to_lowercase();
+                match arg.as_str() {
+                    "on" | "enable" | "true" => self.focus_mode = true,
+                    "off" | "disable" | "false" => self.focus_mode = false,
+                    _ => self.focus_mode = !self.focus_mode,
+                }
+                let status = if self.focus_mode {
+                    "🎯 Focus mode toggled ON (ADHD zero-fluff mode active)"
+                } else {
+                    "💭 Focus mode toggled OFF (Normal detailed conversational mode)"
+                };
+                self.messages.push(UiMsg::System(status.to_string()));
+            }
             _ if trimmed.starts_with("/model ") => {
                 let target = trimmed.strip_prefix("/model ").unwrap_or("").trim();
                 self.llm_client.set_model(target);

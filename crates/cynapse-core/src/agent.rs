@@ -742,45 +742,34 @@ mod tests {
     }
 }
 
-fn strip_thinking_tags(input: &str) -> String {
-    let mut s = input.to_string();
-    // 1. If response opens with <think> or Thinking Process, strip through </think> or the end of the block
+pub fn strip_thinking_tags(text: &str) -> String {
+    let mut s = text.to_string();
+
+    // 1. Remove closed <think>...</think> blocks
     while let Some(start) = s.find("<think>") {
-        if let Some(end) = s[start..].find("</think>") {
-            s.replace_range(start..start + end + 8, "");
+        if let Some(end) = s[start + 7..].find("</think>") {
+            s.replace_range(start..start + 7 + end + 8, "");
         } else {
-            // Unclosed thinking tag — strip everything inside <think> up to the end or final answer
-            s.truncate(start);
+            // Unclosed thinking tag — strip up to double newline if available
+            if let Some(rest) = s[start + 7..].find("\n\n") {
+                s.replace_range(start..start + 7 + rest + 2, "");
+            } else {
+                s.truncate(start);
+            }
             break;
         }
     }
-    while let Some(pos) = s.find("[thinking]") {
-        if let Some(end) = s[pos..].find('\n') {
-            s.replace_range(pos..pos + end + 1, "");
-        } else {
-            s.replace_range(pos..pos + 10, "");
+
+    // 2. Remove "Thinking Process:" or "Thinking:" header block if followed by content
+    if let Some(pos) = s.find("Thinking Process:") {
+        if let Some(double_nl) = s[pos..].find("\n\n") {
+            s = s[pos + double_nl + 2..].to_string();
+        }
+    } else if let Some(pos) = s.find("Thinking:") {
+        if let Some(double_nl) = s[pos..].find("\n\n") {
+            s = s[pos + double_nl + 2..].to_string();
         }
     }
-    if let Some(pos) = s.find("Thinking Process:") {
-        s.truncate(pos);
-    }
-    if let Some(pos) = s.find("Thinking:") {
-        s.truncate(pos);
-    }
-    if let Some(pos) = s.find("---##") {
-        s.truncate(pos);
-    }
-    if let Some(pos) = s.find("\n---") {
-        s.truncate(pos);
-    }
-    if let Some(pos) = s.find("## Identity") {
-        s.truncate(pos);
-    }
-    if let Some(pos) = s.find("## System Instructions") {
-        s.truncate(pos);
-    }
-    if let Some(pos) = s.find("You've asked me a few questions") {
-        s.truncate(pos);
-    }
+
     s.trim().to_string()
 }
