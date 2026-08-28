@@ -228,19 +228,9 @@ impl LlmClient for LeafcutterClient {
                 }
             };
 
-            let gguf = GGUFile::open(path_str).ok();
-            let profile = resolve_profile(
-                &gguf.as_ref().map(|f| &f.metadata).cloned().unwrap_or_default(),
-                None,
-            );
-
+            let profile = resolve_profile(&engine.model.file.metadata, None);
             let prompt_text = render_chat_prompt(&profile, &user_msg, &history);
-            let tok = GgufBpeTokenizer::from_gguf(&engine.gguf_path);
-            let tokens = tok
-                .as_ref()
-                .map(|t| t.encode(&prompt_text))
-                .filter(|t| !t.is_empty())
-                .unwrap_or_else(|| engine.tokenize(&prompt_text, true));
+            let tokens = engine.tokenize(&prompt_text, true);
 
             if tokens.is_empty() {
                 send_err(&errors_tx, anyhow!("empty tokenized prompt"));
