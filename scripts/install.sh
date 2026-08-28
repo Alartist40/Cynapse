@@ -82,7 +82,14 @@ echo "Detected: ${OS}/${ARCH}"
 REPO_URL="${CYNAPSE_REPO:-https://github.com/Alartist40/cynapse.git}"
 REPO="Alartist40/cynapse"
 
-# ─── try prebuilt download ─────────────────────────────────────────────────
+# ─── try prebuilt download (skip if running in local source tree) ─────────────
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [ -f "$REPO_DIR/Cargo.toml" ]; then
+    CYNAPSE_SOURCE_BUILD=1
+fi
 
 if [ "${CYNAPSE_SOURCE_BUILD:-0}" != "1" ]; then
     if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
@@ -132,32 +139,54 @@ command -v cargo >/dev/null 2>&1 || err "cargo and Rust are required (https://ru
 
 # ─── build from development source ────────────────────────────────────────────
 
-BRANCH="${CYNAPSE_BRANCH:-main}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
-
-info "Cloning $REPO_URL ($BRANCH) ..."
-git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$tmpdir/cynapse-src"
+if [ -f "$REPO_DIR/Cargo.toml" ]; then
+    info "Building cynapse from local source ($REPO_DIR) …"
+    SRC_DIR="$REPO_DIR"
+else
+    BRANCH="${CYNAPSE_BRANCH:-main}"
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' EXIT
+    info "Cloning $REPO_URL ($BRANCH) ..."
+    git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$tmpdir/cynapse-src"
+    SRC_DIR="$tmpdir/cynapse-src"
+fi
 
 info "Building cynapse (hardware-safe release profile) ..."
-RUSTFLAGS="-C target-cpu=native" cargo build --release --manifest-path "$tmpdir/cynapse-src/Cargo.toml" -j 2 || err "cargo build failed"
+RUSTFLAGS="-C target-cpu=native" cargo build --release --manifest-path "$SRC_DIR/Cargo.toml" || err "cargo build failed"
 
 info "Determining version hash ..."
-VERSION_HASH=$(git -C "$tmpdir/cynapse-src" rev-parse --short HEAD 2>/dev/null || echo "local")
+VERSION_HASH=$(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo "local")
 VERSION_DIR="$VERSIONS_DIR/$VERSION_HASH"
 CARGO_BIN="$HOME/.cargo/bin"
-mkdir -p "$INSTALL_DIR" "$CARGO_BIN" "$VERSION_DIR" "$STABLE_DIR" "$CURRENT_DIR"
+mkdir -p "$INSTALL_DIR" "$CARGO_BIN" "$VERSION_DIR" "$STABLE_DIR" "$CURRENT_DIR" "$CYNAPSE_HOME"
+
+# Seed default config, assets, docs, and persona templates into ~/.cynapse/ if not present
+if [ -d "$SRC_DIR/assets" ]; then
+    mkdir -p "$CYNAPSE_HOME/assets"
+    cp -r "$SRC_DIR/assets/"* "$CYNAPSE_HOME/assets/" 2>/dev/null || true
+fi
+if [ -d "$SRC_DIR/persona" ]; then
+    mkdir -p "$CYNAPSE_HOME/persona"
+    cp -r "$SRC_DIR/persona/"* "$CYNAPSE_HOME/persona/" 2>/dev/null || true
+fi
+if [ -f "$SRC_DIR/config.yaml" ] && [ ! -f "$CYNAPSE_HOME/config.yaml" ]; then
+    cp "$SRC_DIR/config.yaml" "$CYNAPSE_HOME/config.yaml"
+fi
+if [ -d "$SRC_DIR/docs" ]; then
+    mkdir -p "$CYNAPSE_HOME/docs"
+    cp -r "$SRC_DIR/docs/"* "$CYNAPSE_HOME/docs/" 2>/dev/null || true
+fi
 
 # Install binary atomically using install -m 755
-install -m 755 "$tmpdir/cynapse-src/target/release/cynapse" "$VERSION_DIR/cynapse"
-install -m 755 "$tmpdir/cynapse-src/target/release/cynapse" "$CARGO_BIN/cynapse" 2>/dev/null || true
+install -m 755 "$SRC_DIR/target/release/cynapse" "$VERSION_DIR/cynapse"
+install -m 755 "$SRC_DIR/target/release/cynapse" "$STABLE_DIR/cynapse"
+install -m 755 "$SRC_DIR/target/release/cynapse" "$CURRENT_DIR/cynapse"
+install -m 755 "$SRC_DIR/target/release/cynapse" "$INSTALL_DIR/cynapse"
+install -m 755 "$SRC_DIR/target/release/cynapse" "$CARGO_BIN/cynapse" 2>/dev/null || true
 echo "$VERSION_HASH" > "$VERSION_DIR/VERSION"
-
-# Symlinks for universal launch
-ln -sfn "$VERSION_DIR/cynapse" "$STABLE_DIR/cynapse"
-ln -sfn "$VERSION_DIR/cynapse" "$CURRENT_DIR/cynapse"
-ln -sfn "$CURRENT_DIR/cynapse" "$INSTALL_DIR/cynapse"
 
 # Record metadata
 echo "$VERSION_HASH" > "$BUILDS_DIR/stable-version"

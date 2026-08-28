@@ -383,19 +383,42 @@ pub fn load(path: &Path) -> Result<Config> {
     apply_env(&mut cfg);
     load_keyring(&mut cfg);
 
-    // If defaults_path or persona_path relative paths don't exist in CWD, fallback to ~/.cynapse/
+    // If defaults_path, persona_path, database paths, or models_dir relative paths don't exist in CWD, fallback to ~/.cynapse/
     if let Some(home) = dirs::home_dir() {
+        let cynapse_dir = home.join(".cynapse");
+        let _ = fs::create_dir_all(cynapse_dir.join("data/sessions"));
+        let _ = fs::create_dir_all(cynapse_dir.join("persona/defaults"));
+        let _ = fs::create_dir_all(cynapse_dir.join("persona/devices"));
+        let _ = fs::create_dir_all(cynapse_dir.join("models"));
+        let _ = fs::create_dir_all(cynapse_dir.join("workspace"));
+
         if !Path::new(&cfg.memory.defaults_path).exists() {
-            let alt = home.join(".cynapse/persona/defaults");
-            if alt.exists() {
-                cfg.memory.defaults_path = alt.to_string_lossy().to_string();
-            }
+            let alt = cynapse_dir.join("persona/defaults");
+            cfg.memory.defaults_path = alt.to_string_lossy().to_string();
         }
         if !Path::new(&cfg.memory.persona_path).exists() {
-            let alt = home.join(".cynapse/persona/devices");
-            if alt.exists() {
-                cfg.memory.persona_path = alt.to_string_lossy().to_string();
-            }
+            let alt = cynapse_dir.join("persona/devices");
+            cfg.memory.persona_path = alt.to_string_lossy().to_string();
+        }
+        if !Path::new(&cfg.memory.sessions_path).exists() {
+            let alt = cynapse_dir.join("data/sessions");
+            cfg.memory.sessions_path = alt.to_string_lossy().to_string();
+        }
+        if !Path::new(&cfg.memory.db_path).exists() && !Path::new(&cfg.memory.db_path).parent().map(|p| p.exists()).unwrap_or(false) {
+            let alt = cynapse_dir.join("data/memory.db");
+            cfg.memory.db_path = alt.to_string_lossy().to_string();
+        }
+        if !Path::new(&cfg.memory.dendrite_db_path).exists() && !Path::new(&cfg.memory.dendrite_db_path).parent().map(|p| p.exists()).unwrap_or(false) {
+            let alt = cynapse_dir.join("data/dendrite.db");
+            cfg.memory.dendrite_db_path = alt.to_string_lossy().to_string();
+        }
+        if !Path::new(&cfg.models.models_dir).exists() {
+            let alt = cynapse_dir.join("models");
+            cfg.models.models_dir = alt.to_string_lossy().to_string();
+        }
+        if !Path::new(&cfg.llm.models_dir).exists() {
+            let alt = cynapse_dir.join("models");
+            cfg.llm.models_dir = alt.to_string_lossy().to_string();
         }
     }
 

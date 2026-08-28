@@ -25,7 +25,18 @@
 /// Returns whatever rayon reports; ignores errors (rayon returns a
 /// string error when called twice).
 pub fn configure_thread_pool(threads: Option<usize>) -> Result<usize, String> {
-    let n = threads.unwrap_or_else(default_thread_count);
+    let n = threads
+        .or_else(|| {
+            std::env::var("CYNAPSE_THREADS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
+        .or_else(|| {
+            std::env::var("LEAFCUTTER_THREADS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
+        .unwrap_or_else(default_thread_count);
     // Pass RAYON_NUM_THREADS *before* the first par_iter; this is the
     // simplest hook. Process-level env override also works if user sets it.
     std::env::set_var("RAYON_NUM_THREADS", n.to_string());

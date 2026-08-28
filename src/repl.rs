@@ -1126,7 +1126,15 @@ fn resolve_gguf_path(cfg: &Config) -> Result<String> {
                     let p = entry.path();
                     if p.extension().and_then(|s| s.to_str()) == Some("gguf") {
                         let name_str = p.file_name().unwrap_or_default().to_string_lossy().to_string();
-                        if name_str == file_basename || name_str.contains(&file_basename) || file_basename.contains(&name_str) {
+                        let lower_name = name_str.to_lowercase();
+                        let lower_base = file_basename.to_lowercase();
+                        let family_prefix = lower_base.split(&['-', '_', '.'][..]).next().unwrap_or(&lower_base);
+
+                        if lower_name == lower_base
+                            || lower_name.contains(&lower_base)
+                            || lower_base.contains(&lower_name)
+                            || (!family_prefix.is_empty() && family_prefix.len() >= 3 && lower_name.contains(family_prefix))
+                        {
                             return Ok(p.to_string_lossy().to_string());
                         }
                     }

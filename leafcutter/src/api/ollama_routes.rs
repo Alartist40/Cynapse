@@ -209,20 +209,40 @@ pub async fn api_chat_handler(
             let profile = resolve_profile(&engine.model.file.metadata, None);
             let stop_token_ids: Vec<usize> = profile.stop_tokens.iter().map(|s| s.0).collect();
 
+            let mut in_thinking = false;
+
             engine.generate_streaming_with_stops(
                 &tokens,
                 requested_max,
                 temperature,
                 top_p,
                 &stop_token_ids,
-                |_id, piece| {
+                |id, piece| {
+                    match id {
+                        248068 => {
+                            in_thinking = true;
+                            return true;
+                        }
+                        248069 => {
+                            in_thinking = false;
+                            return true;
+                        }
+                        _ => {}
+                    }
+
+                    let (content, thinking) = if in_thinking {
+                        (String::new(), Some(piece.to_string()))
+                    } else {
+                        (piece.to_string(), None)
+                    };
+
                     let chunk = OllamaChatResponse {
                         model: model_name_clone.clone(),
                         created_at: now_iso(),
                         message: OllamaChatMessage {
                             role: "assistant".to_string(),
-                            content: piece.to_string(),
-                            thinking: None,
+                            content,
+                            thinking,
                             images: None,
                         },
                         done: false,

@@ -1772,13 +1772,16 @@ impl App {
         let sys_p = Style::default().fg(PURPLE_ACCENT);
 
         for m in &self.messages {
-            let (prefix, style): (&str, Style) = match m {
-                UiMsg::User(_) => ("You: ", user_p),
-                UiMsg::Assistant(_) => ("CYNAPSE: ", asst_p),
-                UiMsg::Thinking(_) => ("  ... ", think_p),
-                UiMsg::Tool(_) => ("[tool] ", tool_p),
-                UiMsg::ToolResult(_) => ("[ok] ", toolres_p),
-                UiMsg::System(_) => ("* ", sys_p),
+            let (prefix, style): (String, Style) = match m {
+                UiMsg::User(_) => ("You: ".to_string(), user_p),
+                UiMsg::Assistant(_) => ("CYNAPSE: ".to_string(), asst_p),
+                UiMsg::Thinking(c) => (
+                    format!("  Thinking ↓ {} tokens: ", llm::estimate_tokens_chars(c)),
+                    think_p,
+                ),
+                UiMsg::Tool(_) => ("[tool] ".to_string(), tool_p),
+                UiMsg::ToolResult(_) => ("[ok] ".to_string(), toolres_p),
+                UiMsg::System(_) => ("* ".to_string(), sys_p),
             };
             let content = match m {
                 UiMsg::User(c) | UiMsg::Assistant(c) | UiMsg::Thinking(c) | UiMsg::Tool(c) | UiMsg::ToolResult(c) | UiMsg::System(c) => c,
@@ -1787,12 +1790,12 @@ impl App {
             let body_w = width.saturating_sub(prefix_w).max(1);
             let wrapped = wrap_text(content, body_w);
             if wrapped.is_empty() {
-                lines.push(Line::from(vec![Span::styled(prefix.to_string(), style)]));
+                lines.push(Line::from(vec![Span::styled(prefix, style)]));
             } else {
                 for (i, w) in wrapped.iter().enumerate() {
                     if i == 0 {
                         lines.push(Line::from(vec![
-                            Span::styled(prefix.to_string(), style),
+                            Span::styled(prefix.clone(), style),
                             Span::styled(w.clone(), style),
                         ]));
                     } else {
@@ -1805,14 +1808,26 @@ impl App {
         }
 
         if self.busy {
-            // Show live thinking stream (italic dim) if present
+            // Show live thinking stream (italic dim) with bounded tail optimization
             if !self.streaming_thinking.is_empty() {
-                let body_w = width.saturating_sub("  ... ".width()).max(1);
-                let wrapped = wrap_text(&self.streaming_thinking, body_w);
+                let tok_count = llm::estimate_tokens_chars(&self.streaming_thinking);
+                let prefix = format!("  Thinking ↓ {} tokens: ", tok_count);
+                let prefix_w = prefix.width();
+                let body_w = width.saturating_sub(prefix_w).max(1);
+
+                let text_to_wrap = if self.streaming_thinking.len() > 4096 {
+                    let tail = &self.streaming_thinking[self.streaming_thinking.len() - 4096..];
+                    let cut = tail.find('\n').map(|i| &tail[i + 1..]).unwrap_or(tail);
+                    format!("… (earlier thinking omitted while streaming)\n{}", cut)
+                } else {
+                    self.streaming_thinking.clone()
+                };
+
+                let wrapped = wrap_text(&text_to_wrap, body_w);
                 for (i, w) in wrapped.iter().enumerate() {
                     if i == 0 {
                         lines.push(Line::from(vec![
-                            Span::styled("  ... ", think_p),
+                            Span::styled(prefix.clone(), think_p),
                             Span::styled(w.clone(), think_p),
                         ]));
                     } else {
@@ -2067,7 +2082,7 @@ async fn run_loop<B: ratatui::backend::Backend>(
 
     loop {
         let now = Instant::now();
-        if app.dirty && now.duration_since(last_render) >= Duration::from_millis(33) {
+        if app.dirty && now.duration_since(last_render) >= Duration::from_millis(50) {
             terminal
                 .draw(|f| app.draw(f))
                 .map_err(|e| anyhow!("draw failed: {e}"))?;
