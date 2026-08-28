@@ -4,6 +4,7 @@
 //! This is the Rust port of the Go `cynapse` agent. Types are named and
 //! structured to match the original so that behaviour stays byte-compatible.
 
+pub mod adhd;
 pub mod agent;
 pub mod approval;
 pub mod attachments;
@@ -12,6 +13,7 @@ pub mod config;
 pub mod confirm;
 pub mod dendrite;
 pub mod gateway;
+pub mod graft;
 pub mod hf;
 pub mod llm;
 pub mod netguard;

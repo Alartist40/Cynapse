@@ -321,7 +321,7 @@ pub fn choose_tier(
 
 /// `/proc/meminfo` → (MemTotal_mb, MemAvailable_mb). Falls back to a
 /// conservative 4 GiB available if the file can't be read.
-fn meminfo_mb() -> (u64, u64) {
+pub fn meminfo_mb() -> (u64, u64) {
     let mut total = 0u64;
     let mut avail = 0u64;
     if let Ok(text) = std::fs::read_to_string("/proc/meminfo") {

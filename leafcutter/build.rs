@@ -54,8 +54,12 @@ fn link_llama_cpp() {
         println!("cargo:rustc-link-search=native={}", effective_lib_dir);
         println!("cargo:rustc-link-lib=dylib=llama");
         println!("cargo:rustc-link-lib=dylib=ggml");
-        println!("cargo:rustc-link-lib=dylib=ggml-base");
-        println!("cargo:rustc-link-lib=dylib=ggml-cpu");
+        if Path::new(&format!("{}/libggml-base.so", effective_lib_dir)).exists() {
+            println!("cargo:rustc-link-lib=dylib=ggml-base");
+        }
+        if Path::new(&format!("{}/libggml-cpu.so", effective_lib_dir)).exists() {
+            println!("cargo:rustc-link-lib=dylib=ggml-cpu");
+        }
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}", effective_lib_dir);
         println!("cargo:warning=llama.cpp linked from {}", effective_lib_dir);
     } else {

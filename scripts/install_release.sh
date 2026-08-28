@@ -36,7 +36,7 @@ case "$profile" in
   *)           echo "Unsupported profile: $profile" >&2; exit 1 ;;
 esac
 
-cargo build --profile "$profile" --manifest-path "$repo_root/Cargo.toml"
+RUSTFLAGS="-C target-cpu=native" cargo build --profile "$profile" --manifest-path "$repo_root/Cargo.toml" -j 2
 bin="$repo_root/target/$profile/cynapse"
 [[ -x "$bin" ]] || { echo "Release binary not found: $bin" >&2; exit 1; }
 
@@ -46,9 +46,10 @@ if [[ -n "$hash" ]] && [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/nu
 fi
 
 version_dir="$VERSIONS_DIR/$hash"
-mkdir -p "$INSTALL_DIR" "$version_dir" "$STABLE_DIR" "$CURRENT_DIR"
-cp "$bin" "$version_dir/cynapse"
-chmod +x "$version_dir/cynapse"
+CARGO_BIN="$HOME/.cargo/bin"
+mkdir -p "$INSTALL_DIR" "$CARGO_BIN" "$version_dir" "$STABLE_DIR" "$CURRENT_DIR"
+install -m 755 "$bin" "$version_dir/cynapse"
+install -m 755 "$bin" "$CARGO_BIN/cynapse" 2>/dev/null || true
 echo "$hash" > "$version_dir/VERSION"
 
 ln -sfn "$version_dir/cynapse" "$STABLE_DIR/cynapse"

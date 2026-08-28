@@ -256,6 +256,12 @@ impl Engine {
     }
 
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        #[cfg(feature = "llama-ffi")]
+        {
+            if let Ok(ffi_eng) = Self::load_ffi(path) {
+                return Ok(ffi_eng);
+            }
+        }
         // ── Load GGUF for architecture detection ──────────────────────
         let model = GGUFModel::load(path)?;
         let arch = model.architecture;
@@ -750,19 +756,27 @@ impl Engine {
     where
         F: FnMut(usize, &str) -> bool,
     {
-        self.kv_cache.clear();
-        self.ssm_cache.clear();
-        self.deltanet_cache.clear();
-        self.seq_offset = 0;
+        let common = if self.seq_offset > 0 && tokens.len() > self.seq_offset {
+            self.seq_offset
+        } else {
+            self.kv_cache.clear();
+            self.ssm_cache.clear();
+            self.deltanet_cache.clear();
+            self.seq_offset = 0;
+            0
+        };
+
+        let delta_tokens = &tokens[common..];
+        if delta_tokens.is_empty() {
+            return vec![];
+        }
 
         // Prefill
-        let mut logits = match self.forward_native(tokens) {
-            Ok(l) => l,
-            Err(e) => {
-                eprintln!("Forward pass failed: {}", e);
-                return vec![];
-            }
-        };
+        let mut logits = self.forward(delta_tokens);
+        if logits.is_empty() {
+            eprintln!("Forward pass failed");
+            return vec![];
+        }
         self.seq_offset = tokens.len();
         let prompt_tail_len = tokens.len().min(64);
         let mut recent_tokens: Vec<usize> = tokens[tokens.len() - prompt_tail_len..].to_vec();
@@ -793,13 +807,11 @@ impl Engine {
         }
 
         for _ in 0..max_tokens - 1 {
-            let mut logits = match self.forward_native(&[next_token]) {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!("Forward pass failed: {}", e);
-                    break;
-                }
-            };
+            let mut logits = self.forward(&[next_token]);
+            if logits.is_empty() {
+                eprintln!("Forward pass failed");
+                break;
+            }
             self.seq_offset += 1;
 
             if recent_tokens.len() > 64 {

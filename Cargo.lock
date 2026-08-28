@@ -703,6 +703,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "cynapse-core",
+ "leafcutter",
  "ratatui",
  "tokio",
  "unicode-width 0.2.2",

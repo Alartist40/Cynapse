@@ -52,9 +52,18 @@ unsafe impl Sync for LlamaModel {}
 unsafe impl Send for LlamaContext {}
 unsafe impl Sync for LlamaContext {}
 
+unsafe extern "C" fn silent_log_callback(_level: i32, _text: *const c_char, _user_data: *mut std::ffi::c_void) {}
+
+pub fn silence_llama_logs() {
+    unsafe {
+        bindings::llama_log_set(Some(silent_log_callback), std::ptr::null_mut());
+    }
+}
+
 impl LlamaModel {
     /// Load a GGUF model from disk.
     pub fn load(path: &Path, n_gpu_layers: i32) -> Result<Self, String> {
+        silence_llama_logs();
         let c_path = CString::new(path.to_str().ok_or("Invalid path")?)
             .map_err(|e| format!("CString error: {}", e))?;
 
@@ -204,7 +213,7 @@ impl LlamaContext {
                 buf.as_mut_ptr() as *mut c_char,
                 buf.len() as i32,
                 0,
-                true,
+                false,
             );
             if len > 0 {
                 buf.truncate(len as usize);

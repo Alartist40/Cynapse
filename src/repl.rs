@@ -87,6 +87,12 @@ pub enum ThinkingMode {
 
 pub fn run_repl(cmd: ReplCmd) -> Result<()> {
     let cfg = resolve_unified_config(&cmd.config);
+    let threads = if cfg.llm.local_threads > 0 {
+        Some(cfg.llm.local_threads as usize)
+    } else {
+        None
+    };
+    let _ = leafcutter::init::configure_thread_pool(threads);
 
     if cfg.llm.provider == "leafcutter" {
         run_native_engine_repl(&cfg, cmd)
@@ -98,17 +104,35 @@ pub fn run_repl(cmd: ReplCmd) -> Result<()> {
 
 fn resolve_unified_config(cmd_cfg: &str) -> Config {
     if let Ok(home) = std::env::var("HOME") {
-        let home_cfg = std::path::PathBuf::from(&home).join(".cynapse").join("config.yaml");
+        let home_dir = std::path::PathBuf::from(&home).join(".cynapse");
+        let home_cfg = home_dir.join("config.yaml");
         if home_cfg.exists() {
             if let Ok(c) = config::load(&home_cfg) {
                 return c;
             }
         }
-    }
-    let p = Path::new(cmd_cfg);
-    if p.exists() {
-        if let Ok(c) = config::load(p) {
-            return c;
+        let p = Path::new(cmd_cfg);
+        if p.exists() {
+            if let Ok(c) = config::load(p) {
+                std::fs::create_dir_all(&home_dir).ok();
+                std::fs::copy(p, &home_cfg).ok();
+                return c;
+            }
+        }
+        let fallback_p = std::path::PathBuf::from(&home).join("Documents/portfolio/cynapse/config.yaml");
+        if fallback_p.exists() {
+            if let Ok(c) = config::load(&fallback_p) {
+                std::fs::create_dir_all(&home_dir).ok();
+                std::fs::copy(&fallback_p, &home_cfg).ok();
+                return c;
+            }
+        }
+    } else {
+        let p = Path::new(cmd_cfg);
+        if p.exists() {
+            if let Ok(c) = config::load(p) {
+                return c;
+            }
         }
     }
     Config::default()
@@ -150,6 +174,7 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
     let top_p = 0.95f32;
     let mut max_tokens = cfg.llm.max_tokens as usize;
     let mut thinking_mode = ThinkingMode::Dim;
+    let mut focus_mode = true;
 
     print_native_banner(
         &model_name,
@@ -172,7 +197,7 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
     let mut conversation: Vec<(String, String)> = Vec::new();
 
     if let Some(prompt) = cmd.prompt {
-        execute_native_turn(&mut engine, &profile, &model_name, &prompt, &conversation, temp, top_p, max_tokens, thinking_mode)?;
+        execute_native_turn(&mut engine, &profile, &model_name, &prompt, &conversation, temp, top_p, max_tokens, thinking_mode, focus_mode)?;
         return Ok(());
     }
 
@@ -226,6 +251,25 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
                                 println!("{}", "[thinking mode = DIM (thinking in purple, response in gold)]".green());
                             }
                             _ => println!("Usage: /think dim (show in purple) or /think hide (suppress scratchpad)"),
+                        }
+                    }
+                    continue;
+                }
+                "/focus" | "/adhd" => {
+                    if parts.len() < 2 {
+                        let status = if focus_mode { "ON (focused, zero-fluff output)" } else { "OFF" };
+                        println!("Current focus mode: {status}. Usage: /focus on or /focus off");
+                    } else {
+                        match parts[1].trim().to_lowercase().as_str() {
+                            "on" | "enable" | "true" => {
+                                focus_mode = true;
+                                println!("{}", "[focus mode = ON (action-first, zero-fluff responses)]".green());
+                            }
+                            "off" | "disable" | "false" => {
+                                focus_mode = false;
+                                println!("{}", "[focus mode = OFF]".green());
+                            }
+                            _ => println!("Usage: /focus on or /focus off"),
                         }
                     }
                     continue;
@@ -323,7 +367,7 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
             }
         }
 
-        if let Err(e) = execute_native_turn(
+        match execute_native_turn(
             &mut engine,
             &profile,
             &model_name,
@@ -333,11 +377,36 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
             top_p,
             max_tokens,
             thinking_mode,
+            focus_mode,
         ) {
-            eprintln!("\n{}", format!("Engine execution error: {e:#}").red());
-        }
+            Ok(asst_text) => {
+                conversation.push(("user".into(), trimmed.to_string()));
+                conversation.push(("assistant".into(), asst_text.clone()));
 
-        conversation.push(("user".into(), trimmed.to_string()));
+                // Multi-turn agent tool call handling for local GGUF models
+                let tool_calls = cynapse_core::tools::extract_tool_calls_from_text(&asst_text);
+                if !tool_calls.is_empty() {
+                    for tc in tool_calls {
+                        eprintln!("{}", format!("🛠 Local Agent Tool Call: {} ({})", tc.name, tc.arguments).cyan().bold());
+                        let tool_result = match tc.name.as_str() {
+                            "read_file" | "file_read" => {
+                                if let Some(path) = tc.arguments.get("path").and_then(|v| v.as_str()) {
+                                    std::fs::read_to_string(path).unwrap_or_else(|e| format!("Error reading file: {e}"))
+                                } else {
+                                    "Missing path parameter".to_string()
+                                }
+                            }
+                            _ => format!("Tool '{}' executed.", tc.name),
+                        };
+                        eprintln!("{}", format!("  ↳ Result: {}", cynapse_core::adhd::strip_fluff(&tool_result)).dimmed());
+                        conversation.push(("system".into(), format!("Tool Result ({}): {}", tc.name, tool_result)));
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("\n{}", format!("Engine execution error: {e:#}").red());
+            }
+        }
     }
 
     Ok(())
@@ -353,8 +422,17 @@ fn execute_native_turn(
     top_p: f32,
     max_tokens: usize,
     thinking_mode: ThinkingMode,
-) -> Result<()> {
-    let formatted_prompt = render_chat_prompt(profile, user_msg, history);
+    focus_mode: bool,
+) -> Result<String> {
+    let thinking_mode = if focus_mode { ThinkingMode::Hide } else { thinking_mode };
+    let mut turn_history = history.to_vec();
+    turn_history.push(("user".to_string(), user_msg.to_string()));
+    let sys_prompt = if focus_mode {
+        format!("{}\n\n{}", profile.default_system, cynapse_core::adhd::ADHD_SYSTEM_PROMPT)
+    } else {
+        profile.default_system.to_string()
+    };
+    let formatted_prompt = render_chat_prompt(profile, &sys_prompt, &turn_history);
     let prompt_tokens = if let Some(tok) = engine.tokenizer_from_model() {
         tok.encode(&formatted_prompt, true)
     } else {
@@ -381,15 +459,37 @@ fn execute_native_turn(
         temp,
         top_p,
         &stop_token_ids,
-        |_id, chunk| {
+        |id, chunk| {
+            // Ornith / Qwen3.5 reasoning control tokens (matching Ollama protocol)
+            //   id = 248068 -> <think> opener control token
+            //   id = 248069 -> </think> closer control token
+            match id {
+                248068 => {
+                    in_thinking = true;
+                    checked_initial_thinking = true;
+                    return true;
+                }
+                248069 => {
+                    in_thinking = false;
+                    checked_initial_thinking = true;
+                    if thinking_mode == ThinkingMode::Dim && thinking_prefix_shown {
+                        println!();
+                    }
+                    thinking_tail.clear();
+                    let _ = io::stdout().flush();
+                    return true;
+                }
+                _ => {}
+            }
+
             thinking_tail.push_str(chunk);
 
-            // Dynamically inspect initial stream buffer (25 chars) to determine if model actually outputted thinking steps
+            // Dynamically inspect initial stream buffer (25 chars or newline/tag) to determine if model outputted reasoning
             if !checked_initial_thinking {
-                if thinking_tail.len() >= 25 || thinking_tail.contains('\n') || thinking_tail.contains("<think>") {
+                if thinking_tail.len() >= 25 || thinking_tail.contains('\n') || thinking_tail.contains("<think>") || thinking_tail.contains("[THINK]") {
                     checked_initial_thinking = true;
                     let lower = thinking_tail.to_lowercase();
-                    if lower.contains("<think>") || lower.contains("thinking process:") || lower.contains("thinking:") {
+                    if lower.contains("<think>") || lower.contains("[think]") || lower.contains("thinking process:") || lower.contains("thinking:") {
                         in_thinking = true;
                     } else {
                         in_thinking = false;
@@ -403,18 +503,36 @@ fn execute_native_turn(
                 thinking_tail = strip_thinking_headers(&thinking_tail);
             }
 
-            // HIDE Mode: Discard thinking scratchpad silently, output answer only
+            // HIDE Mode: Discard thinking scratchpad silently, output answer only in gold
             if thinking_mode == ThinkingMode::Hide {
                 if in_thinking {
-                    if let Some(pos) = thinking_tail.find("</think>") {
-                        thinking_tail = thinking_tail[pos + "</think>".len()..].to_string();
+                    if let Some(pos) = thinking_tail.find("</think>").or_else(|| thinking_tail.find("[/THINK]")) {
+                        let tag_len = if thinking_tail[pos..].starts_with("</think>") { "</think>".len() } else { "[/THINK]".len() };
+                        thinking_tail = thinking_tail[pos + tag_len..].to_string();
                         in_thinking = false;
-                    } else if thinking_tail.contains("\n\n") && thinking_tail.len() > 60 {
-                        if let Some(pos) = thinking_tail.find("\n\n") {
-                            thinking_tail = thinking_tail[pos + 2..].to_string();
+                    } else if let Some(pos) = thinking_tail.find("\n\n") {
+                        let (pre, rest) = thinking_tail.split_at(pos);
+                        let clean_pre = strip_thinking_headers(pre);
+                        let rest_trimmed = rest[2..].trim_start();
+                        if !clean_pre.trim().is_empty() && clean_pre.len() > 20 {
+                            let is_still_thinking = rest_trimmed.starts_with('*')
+                                || rest_trimmed.starts_with('-')
+                                || rest_trimmed.starts_with('#')
+                                || rest_trimmed.starts_with("1.")
+                                || rest_trimmed.starts_with("2.")
+                                || rest_trimmed.starts_with("3.")
+                                || rest_trimmed.starts_with("4.")
+                                || rest_trimmed.starts_with("5.")
+                                || rest_trimmed.to_lowercase().starts_with("thinking")
+                                || rest_trimmed.to_lowercase().starts_with("note:")
+                                || rest_trimmed.to_lowercase().starts_with("step");
+                            if !is_still_thinking {
+                                thinking_tail = rest[2..].to_string();
+                                in_thinking = false;
+                            }
                         }
-                        in_thinking = false;
-                    } else {
+                    }
+                    if in_thinking {
                         return true;
                     }
                 }
@@ -430,11 +548,12 @@ fn execute_native_turn(
             // DIM Mode: Stream thinking steps in dim purple, answer in gold
             if in_thinking {
                 // Buffer initial tokens so headers are never partially printed
-                if thinking_tail.len() < 40 && !thinking_tail.contains("</think>") {
+                if thinking_tail.len() < 30 && !thinking_tail.contains("</think>") && !thinking_tail.contains("[/THINK]") {
                     return true;
                 }
 
-                if let Some(pos) = thinking_tail.find("</think>") {
+                if let Some(pos) = thinking_tail.find("</think>").or_else(|| thinking_tail.find("[/THINK]")) {
+                    let tag_len = if thinking_tail[pos..].starts_with("</think>") { "</think>".len() } else { "[/THINK]".len() };
                     let (pre, rest) = thinking_tail.split_at(pos);
                     let clean_pre = strip_thinking_headers(pre);
                     if !clean_pre.trim().is_empty() {
@@ -447,10 +566,33 @@ fn execute_native_turn(
                     if thinking_prefix_shown {
                         println!();
                     }
-                    thinking_tail = rest["</think>".len()..].to_string();
+                    thinking_tail = rest[tag_len..].to_string();
                     in_thinking = false;
-                } else if thinking_tail.contains("\n\n") && thinking_tail.len() > 60 {
+                } else {
+                    let mut transition_pos = None;
                     if let Some(pos) = thinking_tail.find("\n\n") {
+                        let (pre, rest) = thinking_tail.split_at(pos);
+                        let clean_pre = strip_thinking_headers(pre);
+                        let rest_trimmed = rest[2..].trim_start();
+                        if !clean_pre.trim().is_empty() && clean_pre.len() > 20 {
+                            let is_still_thinking = rest_trimmed.starts_with('*')
+                                || rest_trimmed.starts_with('-')
+                                || rest_trimmed.starts_with('#')
+                                || rest_trimmed.starts_with("1.")
+                                || rest_trimmed.starts_with("2.")
+                                || rest_trimmed.starts_with("3.")
+                                || rest_trimmed.starts_with("4.")
+                                || rest_trimmed.starts_with("5.")
+                                || rest_trimmed.to_lowercase().starts_with("thinking")
+                                || rest_trimmed.to_lowercase().starts_with("note:")
+                                || rest_trimmed.to_lowercase().starts_with("step");
+                            if !is_still_thinking {
+                                transition_pos = Some(pos);
+                            }
+                        }
+                    }
+
+                    if let Some(pos) = transition_pos {
                         let (pre, rest) = thinking_tail.split_at(pos);
                         let clean_pre = strip_thinking_headers(pre);
                         if !clean_pre.trim().is_empty() {
@@ -465,20 +607,20 @@ fn execute_native_turn(
                         }
                         thinking_tail = rest[2..].to_string();
                         in_thinking = false;
-                    }
-                } else {
-                    let keep = floor_char_boundary(&thinking_tail, thinking_tail.len().saturating_sub(15));
-                    if keep > 0 {
-                        let (emit, rest) = thinking_tail.split_at(keep);
-                        let clean_emit = strip_thinking_headers(emit);
-                        if !clean_emit.is_empty() {
-                            if !thinking_prefix_shown {
-                                print!("{}", dim_purple("💭 "));
-                                thinking_prefix_shown = true;
+                    } else {
+                        let keep = floor_char_boundary(&thinking_tail, thinking_tail.len().saturating_sub(15));
+                        if keep > 0 {
+                            let (emit, rest) = thinking_tail.split_at(keep);
+                            let clean_emit = strip_thinking_headers(emit);
+                            if !clean_emit.is_empty() {
+                                if !thinking_prefix_shown {
+                                    print!("{}", dim_purple("💭 "));
+                                    thinking_prefix_shown = true;
+                                }
+                                print!("{}", dim_purple(&clean_emit));
                             }
-                            print!("{}", dim_purple(&clean_emit));
+                            thinking_tail = rest.to_string();
                         }
-                        thinking_tail = rest.to_string();
                     }
                 }
                 let _ = io::stdout().flush();
@@ -487,9 +629,14 @@ fn execute_native_turn(
 
             if !thinking_tail.is_empty() {
                 let clean_text = strip_thinking_headers(&thinking_tail);
-                print!("{}", gold(&clean_text));
+                let final_text = if focus_mode {
+                    cynapse_core::adhd::strip_fluff(&clean_text)
+                } else {
+                    clean_text
+                };
+                print!("{}", gold(&final_text));
                 let _ = io::stdout().flush();
-                generated_text.push_str(&clean_text);
+                generated_text.push_str(&final_text);
                 thinking_tail.clear();
             }
 
@@ -526,7 +673,7 @@ fn execute_native_turn(
         ))
     );
 
-    Ok(())
+    Ok(generated_text)
 }
 
 fn print_native_banner(
@@ -614,6 +761,7 @@ fn print_help_menu() {
     println!("    {} - List all available local GGUF models", purple("/models"));
     println!("    {} - Hot-swap active model in-session (by index or name)", purple("/model <n|id>"));
     println!("    {} - Toggle thinking scratchpad output (/think dim or /think hide)", purple("/think <dim|hide>"));
+    println!("    {} - Toggle ADHD focus mode output (/focus on or /focus off)", purple("/focus <on|off>"));
     println!("    {} - Adjust sampling temperature (e.g. /set temp 0.7)", purple("/set temp <v>"));
     println!("    {} - Adjust max tokens (e.g. /set max 2048)", purple("/set max <v>"));
     println!("    {} - Flush KV/SSM engine state & reset context", purple("/clear"));
@@ -799,6 +947,10 @@ async fn run_fallback_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
                 println!("{}", "Session cleared.".green());
                 continue;
             }
+            "/focus" | "/adhd" => {
+                println!("{}", "[focus mode = ON (action-first, zero-fluff responses)]".green());
+                continue;
+            }
             "/help" => {
                 print_help_menu();
                 continue;
@@ -876,6 +1028,8 @@ fn strip_thinking_headers(s: &str) -> String {
         let trimmed = current.trim_start_matches(|c: char| c == '\n' || c == '\r' || c == ' ');
         if let Some(rest) = trimmed.strip_prefix("<think>") {
             current = rest.to_string();
+        } else if let Some(rest) = trimmed.strip_prefix("[THINK]") {
+            current = rest.to_string();
         } else if let Some(rest) = trimmed.strip_prefix("Thinking Process:") {
             current = rest.to_string();
         } else if let Some(rest) = trimmed.strip_prefix("Thinking process:") {
@@ -940,25 +1094,30 @@ fn resolve_gguf_path(cfg: &Config) -> Result<String> {
         return Ok(path.to_string_lossy().to_string());
     }
 
+    let file_basename = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| model_setting.clone());
+
     let search_dirs = [
         &cfg.models.models_dir,
         &cfg.llm.models_dir,
-        "./models",
-        "../models",
-        "../../models",
+        "~/.cynapse/models",
+        "~/.leafcutter/models",
+        "~/Documents/portfolio/LeafcutterLLM/models",
+        "~/Documents/portfolio/cynapse/models",
         "~/Downloads/models",
         "~/Downloads",
         "~/models",
-        "~/.leafcutter/models",
-        "~/.cache/cynapse/models",
-        "~/.cynapse/models",
+        "./models",
+        "../models",
     ];
 
     for dir_str in search_dirs {
         let expanded = shellexpand_tilde(dir_str);
         let dir = Path::new(&expanded);
         if dir.exists() {
-            let candidate = dir.join(model_setting);
+            let candidate = dir.join(&file_basename);
             if candidate.exists() {
                 return Ok(candidate.to_string_lossy().to_string());
             }
@@ -966,7 +1125,8 @@ fn resolve_gguf_path(cfg: &Config) -> Result<String> {
                 for entry in entries.flatten() {
                     let p = entry.path();
                     if p.extension().and_then(|s| s.to_str()) == Some("gguf") {
-                        if p.file_name().unwrap_or_default().to_string_lossy().contains(model_setting) {
+                        let name_str = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        if name_str == file_basename || name_str.contains(&file_basename) || file_basename.contains(&name_str) {
                             return Ok(p.to_string_lossy().to_string());
                         }
                     }
@@ -975,7 +1135,32 @@ fn resolve_gguf_path(cfg: &Config) -> Result<String> {
         }
     }
 
-    Err(anyhow::anyhow!("model file not found: '{}'. Run `cynapse get hf:org/repo` to download it.", model_setting))
+    // Auto-detection pass: If configured model was deleted, auto-detect the newest .gguf model on disk
+    let mut all_found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for dir_str in search_dirs {
+        let expanded = shellexpand_tilde(dir_str);
+        let dir = Path::new(&expanded);
+        if dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().and_then(|s| s.to_str()) == Some("gguf") {
+                        let mtime = p.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        all_found.push((mtime, p));
+                    }
+                }
+            }
+        }
+    }
+
+    if !all_found.is_empty() {
+        all_found.sort_by(|a, b| b.0.cmp(&a.0));
+        let detected = all_found[0].1.to_string_lossy().to_string();
+        eprintln!("{}", format!("✨ Auto-detected active model on disk: {detected}").cyan().bold());
+        return Ok(detected);
+    }
+
+    Err(anyhow::anyhow!("No .gguf model files found on disk. Run `cynapse get hf:Qwen/Qwen2.5-Coder-7B-Instruct-GGUF` or `/download` to fetch a model from HuggingFace."))
 }
 
 fn shellexpand_tilde(s: &str) -> String {

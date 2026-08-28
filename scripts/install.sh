@@ -140,27 +140,30 @@ trap 'rm -rf "$tmpdir"' EXIT
 info "Cloning $REPO_URL ($BRANCH) ..."
 git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$tmpdir/cynapse-src"
 
-info "Building cynapse (release profile) ..."
-cargo build --release --manifest-path "$tmpdir/cynapse-src/Cargo.toml" || err "cargo build failed"
+info "Building cynapse (hardware-safe release profile) ..."
+RUSTFLAGS="-C target-cpu=native" cargo build --release --manifest-path "$tmpdir/cynapse-src/Cargo.toml" -j 2 || err "cargo build failed"
 
 info "Determining version hash ..."
-VERSION_HASH=$(git -C "$tmpdir/cynapse-src" rev-parse --short HEAD)
+VERSION_HASH=$(git -C "$tmpdir/cynapse-src" rev-parse --short HEAD 2>/dev/null || echo "local")
 VERSION_DIR="$VERSIONS_DIR/$VERSION_HASH"
-mkdir -p "$INSTALL_DIR" "$VERSION_DIR" "$STABLE_DIR"
+CARGO_BIN="$HOME/.cargo/bin"
+mkdir -p "$INSTALL_DIR" "$CARGO_BIN" "$VERSION_DIR" "$STABLE_DIR" "$CURRENT_DIR"
 
-# Copy the binary to the versioned directory
-cp "$tmpdir/cynapse-src/target/release/cynapse" "$VERSION_DIR/cynapse"
-chmod +x "$VERSION_DIR/cynapse"
+# Install binary atomically using install -m 755
+install -m 755 "$tmpdir/cynapse-src/target/release/cynapse" "$VERSION_DIR/cynapse"
+install -m 755 "$tmpdir/cynapse-src/target/release/cynapse" "$CARGO_BIN/cynapse" 2>/dev/null || true
 echo "$VERSION_HASH" > "$VERSION_DIR/VERSION"
 
-# Symlink: stable → versioned binary
+# Symlinks for universal launch
 ln -sfn "$VERSION_DIR/cynapse" "$STABLE_DIR/cynapse"
-# Launcher: ~/.local/bin/cynapse → stable
-ln -sfn "$STABLE_DIR/cynapse" "$INSTALL_DIR/cynapse"
+ln -sfn "$VERSION_DIR/cynapse" "$CURRENT_DIR/cynapse"
+ln -sfn "$CURRENT_DIR/cynapse" "$INSTALL_DIR/cynapse"
 
 # Record metadata
 echo "$VERSION_HASH" > "$BUILDS_DIR/stable-version"
+echo "$VERSION_HASH" > "$BUILDS_DIR/current-version"
 
+ensure_path "$CARGO_BIN"
 ensure_path "$INSTALL_DIR"
 
 echo ""

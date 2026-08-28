@@ -306,4 +306,9 @@ extern "C" {
         idx: i32,
     ) -> llama_token;
     pub fn llama_sampler_free(sampler: *mut llama_sampler);
+
+    pub fn llama_log_set(
+        log_callback: Option<unsafe extern "C" fn(level: i32, text: *const c_char, user_data: *mut std::ffi::c_void)>,
+        user_data: *mut std::ffi::c_void,
+    );
 }

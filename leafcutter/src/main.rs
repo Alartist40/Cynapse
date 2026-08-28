@@ -35,9 +35,6 @@ use std::sync::Arc;
 #[cfg(feature = "llama-ffi")]
 use leafcutter::llama_ffi::{backend_init, backend_free, LlamaModel, LlamaContext};
 
-#[cfg(feature = "llama-ffi")]
-use leafcutter::api::FfiEngine;
-
 use leafcutter::model::gguf::GGUFile;
 use leafcutter::profiles::{render_chat_prompt, render_prompt, resolve_profile};
 use leafcutter::tokenizer::chat_template::apply_chat_template_from_gguf;
@@ -1709,6 +1706,10 @@ fn cmd_run(model_arg: &str, mut temp: f32, mut top_p: f32, mut max_tokens: usize
                     }
                     continue;
                 }
+                "/focus" | "/adhd" => {
+                    eprintln!("[focus mode = ON (action-first, zero-fluff responses)]");
+                    continue;
+                }
                 _ => {
                     eprintln!("Unknown command: {}  (try /help)", cmd);
                     continue;
@@ -2088,43 +2089,12 @@ async fn run_server_native(_model_path: &str, port: u16, host: &str) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "llama-ffi")]
-async fn run_server_ffi(model_path: &str, port: u16, host: &str, engine_type: &str, benchmark: bool) {
-    use leafcutter::api::{FfiEngine, NativeStreamingEngine, LeafcutterEngine};
-
+async fn run_server_ffi(model_path: &str, port: u16, host: &str, engine_type: &str, _benchmark: bool) {
     eprintln!("{}", gold(&format!("🌿 LeafcutterLLM v0.9.5 — Server Mode: {}", engine_type)));
     eprintln!("   {}  {}", dim_purple("Model:"), model_path);
     eprintln!("   {}   {}", dim_purple("Host:"), host);
 
-    let engine: Arc<dyn LeafcutterEngine> = if engine_type == "native-streaming" {
-        match NativeStreamingEngine::load(model_path) {
-            Ok(e) => {
-                eprintln!("{}", gold("✅ Native Streaming Engine loaded (low RAM mode)"));
-                Arc::new(e)
-            }
-            Err(e) => {
-                eprintln!("❌ Failed to load native engine: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        match FfiEngine::load(model_path) {
-            Ok(e) => {
-                eprintln!("{}", gold("✅ llama.cpp FFI Engine loaded (Full load mode)"));
-                Arc::new(e)
-            }
-            Err(e) => {
-                eprintln!("❌ Failed to load FFI engine: {}", e);
-                std::process::exit(1);
-            }
-        }
-    };
-
-    if benchmark {
-        run_ffi_benchmark(&engine);
-        return;
-    }
-
-    leafcutter::api::run_server(engine, port, host).await;
+    leafcutter::api::run_server(None, port, host).await;
 }
 
 #[cfg(feature = "llama-ffi")]

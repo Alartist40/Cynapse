@@ -16,7 +16,7 @@ path = "src/main.rs"
 [dependencies]
 cynapse-core = { path = "crates/cynapse-core" }
 cynapse-tui = { path = "crates/cynapse-tui" }
-leafcutter = { path = "leafcutter" }
+leafcutter = { path = "leafcutter", features = ["llama-ffi"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 serde_yaml = "0.9"
@@ -26,9 +26,10 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 rustyline = "14"
 
 [profile.release]
-opt-level = 1
-codegen-units = 256
-incremental = true
+opt-level = 3
+codegen-units = 1
+lto = "thin"
+incremental = false
 
 [profile.release-lto]
 inherits = "release"

@@ -53,20 +53,12 @@ const SPINNER: [&str; 10] = ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"]
 
 /// Slash commands shown in the dropdown when the user types `/`.
 const SLASH_COMMANDS: &[(&str, &str)] = &[
-    ("/help", "Show help text and all commands"),
-    ("/models", "List and switch between available models"),
-    ("/model <n|id>", "Hot-swap active GGUF model live in-session"),
-    ("/think <dim|hide>", "Toggle thinking scratchpad visibility in chat"),
+    ("/focus", "Toggle ADHD focus mode (zero-fluff output)"),
+    ("/think", "Toggle thinking scratchpad visibility in chat"),
+    ("/models", "List & hot-swap GGUF models on disk"),
+    ("/download", "Download GGUF model directly from HuggingFace"),
+    ("/memory", "Search, edit, or delete DENDRITE graph memories"),
     ("/ps", "Display live memory RSS footprint vs peak RAM"),
-    ("/provider", "Show current LLM provider"),
-    ("/key", "Manage API keys (list, add, remove)"),
-    ("/clear", "Clear chat to idle screen"),
-    ("/attach <file>", "Attach a file from workspace"),
-    ("/attachments", "List pending attachments"),
-    ("/clear-attach", "Clear all attachments"),
-    ("/compress", "Force compression to DENDRITE"),
-    ("/memory <query>", "Full-text search DENDRITE"),
-    ("/allowed list", "Show allowlist rules"),
     ("/allowed forget <r>", "Remove an allowlist rule"),
     ("/allowed clear", "Remove all allowlist rules"),
 ];
@@ -305,6 +297,9 @@ struct App {
 
     messages: Vec<UiMsg>,
     in_think_block: bool,
+    focus_mode: bool,
+    show_startup_modal: bool,
+    startup_cursor: usize,
     input: String,
     cursor: usize,
     active: bool,
@@ -356,6 +351,9 @@ impl App {
             llm_client,
             messages: Vec::new(),
             in_think_block: false,
+            focus_mode: false,
+            show_startup_modal: true,
+            startup_cursor: 0,
             input: String::new(),
             cursor: 0,
             active: false,
@@ -430,6 +428,48 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        if self.show_startup_modal {
+            let models = self.get_available_models_list();
+            let n = models.len();
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if self.startup_cursor > 0 {
+                        self.startup_cursor -= 1;
+                    }
+                    return Ok(());
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if self.startup_cursor + 1 < n {
+                        self.startup_cursor += 1;
+                    }
+                    return Ok(());
+                }
+                KeyCode::Enter => {
+                    self.show_startup_modal = false;
+                    if let Some(selected) = models.get(self.startup_cursor) {
+                        if selected.contains("Download model") {
+                            self.input = "/download ".to_string();
+                            self.cursor = self.input.len();
+                        } else {
+                            self.llm_client.set_model(selected);
+                            self.cfg.llm.model = selected.clone();
+                            let stem = std::path::Path::new(selected)
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(selected);
+                            self.messages.push(UiMsg::System(format!("🚀 Initialized session with model: {stem}")));
+                        }
+                    }
+                    return Ok(());
+                }
+                KeyCode::Esc => {
+                    self.show_startup_modal = false;
+                    return Ok(());
+                }
+                _ => return Ok(()),
+            }
+        }
+
         if self.show_slash_menu {
             let matches = filtered_slash(&self.input);
             let n = matches.len();
@@ -518,7 +558,17 @@ impl App {
                 self.toggle_menu();
             }
             KeyCode::Esc => {
-                self.quit = true;
+                if self.busy {
+                    self.busy = false;
+                    self.chunks = None;
+                    self.errors = None;
+                    self.messages.push(UiMsg::System("⏹ Response generation interrupted by ESC key.".to_string()));
+                } else if self.show_slash_menu || self.menu_open {
+                    self.show_slash_menu = false;
+                    self.menu_open = false;
+                } else {
+                    self.quit = true;
+                }
             }
             KeyCode::Char(c) if key.modifiers == KeyModifiers::NONE || key.modifiers.contains(KeyModifiers::SHIFT) => {
                 let byte_idx = self
@@ -1327,104 +1377,139 @@ impl App {
         self.width = area.width;
         self.height = area.height;
         self.active = !self.messages.is_empty();
-        if self.active {
-            self.render_active(f, area);
+
+        let menu_h = if self.menu_open { self.menu_height() } else { 0 };
+        let main_layout = Layout::vertical([
+            Constraint::Length(1), // Top Header Bar
+            Constraint::Length(1), // Divider Line
+            Constraint::Min(3),    // Main Content Area (Sidebar + Chat split)
+            Constraint::Length(menu_h), // Menu Overlay
+            Constraint::Length(1), // Status / Hotkey Bar
+            Constraint::Length(3), // Input Composer Panel
+        ])
+        .split(area);
+
+        self.render_top_header(f, main_layout[0], main_layout[1]);
+
+        let content_split = Layout::horizontal([
+            Constraint::Length(28), // Sidebar width
+            Constraint::Min(10),   // Chat Log Area
+        ])
+        .split(main_layout[2]);
+
+        self.render_sidebar(f, content_split[0]);
+
+        if self.messages.is_empty() && !self.busy {
+            self.render_welcome_cards(f, content_split[1]);
         } else {
-            self.render_idle(f, area);
+            self.render_chat_stream(f, content_split[1]);
+        }
+
+        self.render_menu_overlay(f, main_layout[3]);
+        self.render_status_bar(f, main_layout[4]);
+        self.render_input(f, main_layout[5]);
+        self.render_slash_dropdown(f, main_layout[5]);
+
+        if self.show_startup_modal {
+            self.render_startup_modal(f, area);
         }
     }
 
-    fn render_idle(&mut self, f: &mut Frame, area: Rect) {
-        let menu_h = if self.menu_open { self.menu_height() } else { 0 };
-        // Reserve space for the bottom UI: hint (1), status (1), input (3) +
-        // optional menu overlay above the status.
-        let reserved_below = 1 + 1 + 3;
-        let layout = Layout::vertical([
-            Constraint::Min(6),
-            Constraint::Length(menu_h),
-            Constraint::Length(1),
-            Constraint::Length(3),
-        ])
-        .split(area);
+    fn render_top_header(&self, f: &mut Frame, header_area: Rect, divider_area: Rect) {
+        let mut left_spans = vec![
+            Span::styled("⚡ CYNAPSE AI ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)),
+            Span::styled("· Native Engine ", Style::default().fg(PURPLE_ACCENT)),
+        ];
 
-        let hero_area = Rect {
-            x: area.x,
-            y: layout[0].y,
-            width: area.width,
-            height: area.height.saturating_sub(reserved_below + menu_h),
-        };
+        let mode_label = if self.focus_mode { "[🎯 FOCUS]" } else { "[💭 THINK]" };
+        left_spans.push(Span::styled(mode_label, Style::default().fg(GOLD)));
 
-        // Compute the slice of HERO that fits in the hero_area, plus the
-        // widest visible line for horizontal centering.
-        let art_lines: Vec<&str> = HERO.lines().collect();
-        let total = art_lines.len();
-        let max_h = hero_area.height as usize;
-        let skip = if total > max_h { (total - max_h) / 2 } else { 0 };
-        let take = total.min(max_h);
-        let visible: Vec<&str> = art_lines.iter().skip(skip).take(take).copied().collect();
-        let widest = visible
-            .iter()
-            .map(|l| UnicodeWidthStr::width(*l))
-            .max()
-            .unwrap_or(0);
-
-        let hero = Paragraph::new(Text::from(visible.join("\n")))
-            .style(Style::default().fg(GOLD).add_modifier(Modifier::BOLD))
-            .alignment(Alignment::Center);
-        let hero_h = (take as u16).min(hero_area.height);
-        let hero_y = hero_area
-            .y
-            .saturating_add(hero_area.height.saturating_sub(hero_h) / 2);
-        f.render_widget(hero, Rect::new(area.x, hero_y, area.width, hero_h));
-
-        // Wordmark + hint sit just below the art (or under the hero area
-        // when the art was truncated).
-        let hint_y = hero_y.saturating_add(hero_h).min(layout[2].y);
-        let word = Paragraph::new(Line::from(Span::styled(
-            "C Y N A P S E",
-            Style::default()
-                .fg(PURPLE_ACCENT)
-                .add_modifier(Modifier::BOLD),
-        )))
-        .alignment(Alignment::Center);
-        f.render_widget(word, Rect::new(area.x, hint_y, area.width, 1));
-
-        self.render_menu_overlay(f, layout[1]);
-        self.render_status_bar(f, layout[2]);
-        self.render_input(f, layout[3]);
-        self.render_slash_dropdown(f, layout[3]);
-
-        // Last-ditch centering info, used to debug terminal sizing.
-        let _ = widest;
-    }
-
-    fn render_active(&mut self, f: &mut Frame, area: Rect) {
-        let menu_h = if self.menu_open { self.menu_height() } else { 0 };
-        let layout = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(3),
-            Constraint::Length(menu_h),
-            Constraint::Length(1),
-            Constraint::Length(3),
-        ])
-        .split(area);
-
-        let logo = Paragraph::new(Line::from(Span::styled(
-            " CYNAPSE",
-            Style::default().fg(PURPLE_ACCENT).add_modifier(Modifier::BOLD),
-        )));
-        f.render_widget(logo, layout[0]);
+        let header_line = Line::from(left_spans);
+        f.render_widget(Paragraph::new(header_line), header_area);
 
         let rule = Paragraph::new(Line::from(Span::styled(
-            "─".repeat(area.width as usize),
+            "─".repeat(header_area.width as usize),
             Style::default().fg(DIM),
         )));
-        f.render_widget(rule, layout[1]);
+        f.render_widget(rule, divider_area);
+    }
 
-        let lines = self.chat_lines(layout[2].width as usize);
+    fn render_sidebar(&self, f: &mut Frame, area: Rect) {
+        let cur_model = self.current_model();
+        let short_model = std::path::Path::new(&cur_model)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or(cur_model);
+
+        let lines = vec![
+            Line::from(Span::styled("🧠 DENDRITE Memory", Style::default().fg(GOLD).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled("  • Status: Active", Style::default().fg(BRIGHT))),
+            Line::from(Span::styled("  • Store: SQLite", Style::default().fg(DIM))),
+            Line::from(""),
+            Line::from(Span::styled("⚙️ Engine Specs", Style::default().fg(GOLD).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(format!("  • Model: {short_model}"), Style::default().fg(BRIGHT))),
+            Line::from(Span::styled(format!("  • Provider: {}", self.cfg.llm.provider), Style::default().fg(DIM))),
+            Line::from(""),
+            Line::from(Span::styled("⌨️ Keybindings", Style::default().fg(GOLD).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled("  • ESC: Stop / Back", Style::default().fg(BRIGHT))),
+            Line::from(Span::styled("  • Ctrl+K: Menu", Style::default().fg(DIM))),
+            Line::from(Span::styled("  • /: Slash Commands", Style::default().fg(DIM))),
+        ];
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(PURPLE_ACCENT))
+            .title(Span::styled(" Sidebar ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)));
+        let sidebar = Paragraph::new(lines).block(block);
+        f.render_widget(sidebar, area);
+    }
+
+    fn render_welcome_cards(&self, f: &mut Frame, area: Rect) {
+        let welcome_lines = vec![
+            Line::from(vec![
+                Span::styled("⚡ Welcome to CYNAPSE AI ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)),
+                Span::styled("— Native Layer-Streaming & FFI Engine", Style::default().fg(PURPLE_ACCENT)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(GOLD)),
+                Span::styled("GGUF Model Downloader: ", Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD)),
+                Span::styled("Type ", Style::default().fg(DIM)),
+                Span::styled("/download hf:org/repo", Style::default().fg(PURPLE_ACCENT)),
+                Span::styled(" to fetch models from HuggingFace.", Style::default().fg(DIM)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(GOLD)),
+                Span::styled("DENDRITE Graph Memory: ", Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD)),
+                Span::styled("Type ", Style::default().fg(DIM)),
+                Span::styled("/memory search <q>", Style::default().fg(PURPLE_ACCENT)),
+                Span::styled(" or ", Style::default().fg(DIM)),
+                Span::styled("/memory del <id>", Style::default().fg(PURPLE_ACCENT)),
+                Span::styled(" to manage memories.", Style::default().fg(DIM)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(GOLD)),
+                Span::styled("Focus / Zero-Fluff Mode: ", Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD)),
+                Span::styled("Type ", Style::default().fg(DIM)),
+                Span::styled("/focus", Style::default().fg(PURPLE_ACCENT)),
+                Span::styled(" for concise, direct responses.", Style::default().fg(DIM)),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled("Type your prompt below or hit / to open the slash command menu.", Style::default().fg(DIM).add_modifier(Modifier::ITALIC))),
+        ];
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(DIM))
+            .title(Span::styled(" Atomic Dashboard ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)));
+        let welcome = Paragraph::new(welcome_lines).block(block);
+        f.render_widget(welcome, area);
+    }
+
+    fn render_chat_stream(&mut self, f: &mut Frame, area: Rect) {
+        let lines = self.chat_lines(area.width as usize);
         let total = lines.len();
-        let viewport = layout[2].height as usize;
+        let viewport = area.height as usize;
         let scroll = if self.follow {
             total.saturating_sub(viewport)
         } else {
@@ -1435,12 +1520,93 @@ impl App {
         let chat = Paragraph::new(Text::from(lines))
             .style(Style::default().fg(BRIGHT))
             .scroll((scroll as u16, 0));
-        f.render_widget(chat, layout[2]);
+        f.render_widget(chat, area);
+    }
 
-        self.render_menu_overlay(f, layout[3]);
-        self.render_status_bar(f, layout[4]);
-        self.render_input(f, layout[5]);
-        self.render_slash_dropdown(f, layout[5]);
+    fn render_startup_modal(&self, f: &mut Frame, area: Rect) {
+        let modal_w = area.width.min(72);
+        let modal_h = area.height.min(14);
+        let modal_area = Rect {
+            x: area.x + (area.width.saturating_sub(modal_w)) / 2,
+            y: area.y + (area.height.saturating_sub(modal_h)) / 2,
+            width: modal_w,
+            height: modal_h,
+        };
+
+        f.render_widget(Clear, modal_area);
+
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("⚡ CYNAPSE AI Launch Setup ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)),
+                Span::styled("— Select model for this session", Style::default().fg(DIM)),
+            ]),
+            Line::from(""),
+        ];
+
+        let models = self.get_available_models_list();
+        for (i, m) in models.iter().enumerate() {
+            let label = std::path::Path::new(m)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| m.clone());
+
+            let style = if i == self.startup_cursor {
+                Style::default().fg(GOLD).bg(Color::Rgb(60, 30, 80)).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(BRIGHT)
+            };
+
+            let prefix = if i == self.startup_cursor { "▸ " } else { "  " };
+            lines.push(Line::from(Span::styled(format!("{prefix}[{}] {label}", i + 1), style)));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled("Use ↑/↓ to navigate · Enter to Select · Esc to Skip", Style::default().fg(DIM).add_modifier(Modifier::ITALIC))));
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(GOLD))
+            .title(Span::styled(" 🚀 Select Model on Launch ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)));
+
+        let popup = Paragraph::new(lines).block(block);
+        f.render_widget(popup, modal_area);
+    }
+
+    fn get_available_models_list(&self) -> Vec<String> {
+        let mut list = Vec::new();
+        let search_dirs = [
+            &self.cfg.models.models_dir,
+            &self.cfg.llm.models_dir,
+            "~/.cynapse/models",
+            "~/Documents/portfolio/LeafcutterLLM/models",
+            "~/Downloads/models",
+            "~/Downloads",
+        ];
+        for dir_str in search_dirs {
+            let home = std::env::var("HOME").unwrap_or_default();
+            let expanded = if let Some(stripped) = dir_str.strip_prefix("~/") {
+                format!("{home}/{stripped}")
+            } else {
+                dir_str.to_string()
+            };
+            let dir = std::path::Path::new(&expanded);
+            if dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.extension().and_then(|s| s.to_str()) == Some("gguf") {
+                            let path_str = p.to_string_lossy().to_string();
+                            if !list.contains(&path_str) {
+                                list.push(path_str);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        list.push("📥 Download model from HuggingFace...".to_string());
+        list
     }
 
     fn menu_height(&self) -> u16 {

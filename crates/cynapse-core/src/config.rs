@@ -503,7 +503,7 @@ mod tests {
     fn defaults_match_go() {
         let c = defaults();
         assert_eq!(c.llm.provider, "ollama");
-        assert_eq!(c.llm.model, "qwen2.5");
+        assert_eq!(c.llm.model, "ministral-3:3b");
         assert_eq!(c.llm.ollama_base_url, "http://localhost:11434");
         assert_eq!(c.llm.max_tokens, 4096);
         assert_eq!(c.llm.temperature, 0.7);

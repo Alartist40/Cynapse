@@ -51,7 +51,12 @@ pub fn default_thread_count() -> usize {
     let logical = std::thread::available_parallelism()
         .map(|u| u.get())
         .unwrap_or(4);
-    if logical <= 4 {
+    if logical >= 8 {
+        // Target performance core cluster (typically 4 physical performance cores).
+        // Prevents thread synchronization stalls on low-frequency efficiency cores,
+        // eliminating fan spikes, thermal throttling, and high CPU power draw.
+        4
+    } else if logical <= 4 {
         logical
     } else {
         logical.saturating_sub(1)

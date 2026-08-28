@@ -58,14 +58,19 @@ cynapse doctor         # run full system diagnostic health check
 cynapse update         # update to latest release from GitHub
 ```
 
-In `cynapse cli`:
-- Dynamic greetings & goodbyes on launch and exit.
-- `/model <n|name>` to hot-swap active LLM models live in-session without restarting.
-- `/models` or `/ls` to list all available local GGUF models.
-- `/help` lists interactive CLI commands.
+In `cynapse cli` & `cynapse tui`:
+- Interactive **Startup Model Picker Modal** (`🚀 Select Model on Launch`) on every start to pick or download models.
+- **Double-ESC (`Esc`) Interrupt**: Press `Esc` while the model is responding to interrupt streaming instantly and return to prompt input.
+- **Real-Time Live Thinking Stream**: Thinking scratchpad streams live in Dim Purple Accent, cleanly separated from the final response in Gold.
+- `/focus` to toggle focused, zero-fluff output mode.
+- `/think` to toggle reasoning output scratchpad.
+- `/download <hf_repo>` to fetch GGUF models directly from HuggingFace.
+- `/models` to list and hot-swap active LLM models live in-session without restarting.
+- `/memory search`, `/memory edit`, `/memory del` to manage DENDRITE graph memory nodes.
+- `/ps` to display live RAM footprint vs peak memory.
+- `/help` lists interactive CLI and TUI commands.
 
-In the TUI: `/help` lists slash commands (`/attach`, `/clear`, `/compress`,
-`/memory`, `/allowed`, `/model`, `/quit`, ...).
+See [INSTALL.md](INSTALL.md) for step-by-step setup, hardware acceleration, and thermal tuning details.
 
 ## Providers
 
@@ -74,7 +79,21 @@ In the TUI: `/help` lists slash commands (`/attach`, `/clear`, `/compress`,
 | `ollama`        | `qwen-bench:latest`      | NDJSON    | Default; any Ollama local model |
 | `openai`        | (config)                 | SSE       | Set `OPENAI_API_KEY` or `openai_key` |
 | `anthropic`     | (config)                 | SSE       | Behind `--features anthropic` |
-| `leafcutter`    | local GGUF path          | SSE + fallback | Spawns `leafcutter server --model <gguf>`; falls back to non-streaming if leafcutter's native-streaming engine panics |
+| `leafcutter`    | local GGUF path          | SSE + fallback | Native dual-engine (Fast C++ FFI for 15+ tok/s or low-RAM layer streaming for 70B+ models) |
+
+## Leafcutter Native Engine (Fast C++ FFI + Low-RAM Layer Streaming)
+
+Cynapse embeds **Leafcutter** as its native inference engine, written in pure Rust with safe `llama-ffi` C++ bindings. Leafcutter features a **Dual-Engine Architecture**:
+
+1. **Fast Mode (`llama-ffi`)**: Embeds `llama.cpp` native C++ GGML kernels directly in-process for 15–25+ tok/s generation with 4-core physical CPU thread pinning.
+2. **Layer-Streaming Mode (`shard_loader`)**: Inspired by `AirLLM` (Python) and `Colibri` (C), Leafcutter streams massive LLMs (70B+) layer-by-layer from SSD using memory-mapped zero-copy slice reads (`memmap2`) with LFRU cache eviction:
+
+| Feature / Engine | AirLLM (Python) | Colibri (C) | **Leafcutter (Rust)** |
+|---|---|---|---|
+| **Runtime & Language** | Python / PyTorch | Raw C / C++ | **Pure Safe Rust (`memmap2`)** |
+| **70B Model RAM Footprint** | ~4.5 GB | ~1.2 GB | **~1.1 GB (Zero-copy `madvise`)** |
+| **Memory Safety** | Subject to GC pauses | Vulnerable to dangling pointers | **Memory-safe RAII slice boundaries** |
+| **Fast In-Process Path** | None | External binary | **Unified C++ FFI in-process** |
 
 Set the provider:
 

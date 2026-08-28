@@ -273,6 +273,25 @@ impl DendriteStore {
         conn.close().map_err(|(_, e)| e.into())
     }
 
+    pub fn delete_node(&self, id: &str) -> Result<()> {
+        let conn = lock_conn(&self.conn);
+        conn.execute("DELETE FROM dendrite_nodes WHERE id = ?", params![id])?;
+        Ok(())
+    }
+
+    pub fn update_node_content(&self, id: &str, content: &str) -> Result<()> {
+        let conn = lock_conn(&self.conn);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        conn.execute(
+            "UPDATE dendrite_nodes SET content = ?, updated_at = ? WHERE id = ?",
+            params![content, now, id],
+        )?;
+        Ok(())
+    }
+
     /// Number of rows in the core table.
     pub fn node_count(&self) -> Result<usize> {
         let conn = lock_conn(&self.conn);

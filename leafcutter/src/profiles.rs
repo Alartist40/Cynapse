@@ -461,7 +461,7 @@ mod tests {
     #[test]
     fn test_ornith_template_chatml_open_assistant() {
         let p = &ORNITH_PROFILE;
-        assert!(p.opens_with_thinking);
+        assert!(!p.opens_with_thinking);
         let rendered = render_prompt(p, "", "hi");
         // The model emits its own `<think>` opener, so the prompt is an
         // open ChatML assistant turn (no injected thinking tag).

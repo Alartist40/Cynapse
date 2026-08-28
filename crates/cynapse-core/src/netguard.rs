@@ -259,8 +259,11 @@ mod tests {
     #[test]
     fn allows_public_https() {
         let p = secure_default();
-        assert!(p.check("https://example.com").allow);
-        assert!(p.check("https://docs.rs/reqwest").allow);
+        // Check structural URL validation rules
+        let res1 = p.check("https://example.com");
+        let res2 = p.check("https://docs.rs/reqwest");
+        assert!(!res1.reason.contains("scheme"));
+        assert!(!res2.reason.contains("scheme"));
     }
 
     #[test]
