@@ -35,7 +35,7 @@ fn run(args: cli::Cli) -> anyhow::Result<()> {
         Some(cli::Command::Unload) => run_unload(),
         Some(cli::Command::Ps) => run_ps(),
         Some(cli::Command::Ls) => run_ls(),
-        None => run_chat(),
+        None => repl::run_repl(cli::ReplCmd::default()),
     }
 }
 

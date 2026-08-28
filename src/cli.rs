@@ -43,7 +43,7 @@ pub enum Command {
     Ls,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Default)]
 pub struct ReplCmd {
     /// Execute a single prompt directly without entering interactive REPL mode
     #[arg(short, long)]

@@ -1854,7 +1854,7 @@ impl App {
             if self.streaming.is_empty() && self.streaming_thinking.is_empty() {
                 let frame = SPINNER[self.spinner % SPINNER.len()];
                 lines.push(Line::from(Span::styled(
-                    format!(" {frame} thinking..."),
+                    format!(" {frame} Loading model & thinking..."),
                     Style::default().fg(GOLD),
                 )));
             }
