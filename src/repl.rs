@@ -33,6 +33,8 @@ use leafcutter::profiles::{render_chat_prompt, resolve_profile, ModelProfile};
 
 use crate::cli::ReplCmd;
 
+use futures_util::StreamExt as _;
+
 // ─── Custom Greetings & Farewells Configuration ──────────────────────────────
 
 pub const CYNAPSE_GREETINGS: &[&str] = &[
@@ -96,6 +98,9 @@ pub fn run_repl(cmd: ReplCmd) -> Result<()> {
 
     if cfg.llm.provider == "leafcutter" {
         run_native_engine_repl(&cfg, cmd)
+    } else if cfg.llm.provider == "ollama" {
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async move { run_ollama_repl(&cfg, cmd).await })
     } else {
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async move { run_fallback_repl(&cfg, cmd).await })
@@ -174,7 +179,7 @@ fn run_native_engine_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
     let top_p = 0.95f32;
     let mut max_tokens = cfg.llm.max_tokens as usize;
     let mut thinking_mode = ThinkingMode::Dim;
-    let mut focus_mode = true;
+    let mut focus_mode = false;
 
     print_native_banner(
         &model_name,
@@ -923,6 +928,174 @@ fn reload_model(
         .to_string();
 
     Ok((engine, resolved_path, model_name, profile, info, file_mb, tier, arch_str))
+}
+
+
+// ─── Ollama Fast-Path REPL (bypasses agent, calls Ollama directly) ────────
+
+async fn run_ollama_repl(cfg: &Config, cmd: ReplCmd) -> Result<()> {
+    use reqwest::Client;
+    use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt};
+
+    let base_url = &cfg.llm.ollama_base_url;
+    let model = &cfg.llm.model;
+    let client = Client::new();
+
+    // Load profile for system prompt (same as native engine path)
+    let gguf_path = resolve_gguf_path(cfg).ok();
+    let profile = if let Some(ref path) = gguf_path {
+        use leafcutter::model::gguf::GGUFile;
+        use leafcutter::profiles::resolve_profile;
+        if let Ok(gguf) = GGUFile::open(path) {
+            resolve_profile(&gguf.metadata, None)
+        } else {
+            leafcutter::profiles::resolve_profile(&Default::default(), None)
+        }
+    } else {
+        leafcutter::profiles::resolve_profile(&Default::default(), None)
+    };
+
+    let system_prompt = profile.default_system.to_string();
+
+    if let Some(prompt) = cmd.prompt {
+        let reply = ollama_chat_once(&client, base_url, model, &system_prompt, &prompt).await?;
+        println!("{}", reply);
+        return Ok(());
+    }
+
+    println!("{}", "╔══════════════════════════════════════════════════════════════╗".purple().bold());
+    println!("{}", "║       ⚡ CYNAPSE AI CLI — OLLAMA FAST PATH                  ║".yellow().bold());
+    println!("{}", "╚══════════════════════════════════════════════════════════════╝".purple().bold());
+    println!(" Model: {} | Backend: Ollama ({})", model.yellow().bold(), base_url.dimmed());
+    println!(" Type /help for commands, /bye to exit.");
+    println!();
+
+    let mut conversation: Vec<(String, String)> = Vec::new();
+    let mut rl = rustyline::DefaultEditor::new().ok();
+
+    loop {
+        let prompt_str = format!("{} ", ">>>".truecolor(255, 215, 0).bold());
+        let input = if let Some(ref mut editor) = rl {
+            editor.readline(&prompt_str).ok()
+        } else {
+            print!("{}", prompt_str);
+            let _ = io::stdout().flush();
+            let mut buf = String::new();
+            match tokio::io::BufReader::new(tokio::io::stdin()).read_line(&mut buf).await {
+                Ok(0) => None,
+                Ok(_) => Some(buf),
+                Err(_) => None,
+            }
+        };
+
+        let raw_input = match input {
+            Some(line) => line,
+            None => break,
+        };
+        let input = raw_input.trim().to_string();
+        if input.is_empty() {
+            continue;
+        }
+        if let Some(ref mut editor) = rl {
+            let _ = editor.add_history_entry(&input);
+        }
+
+        match input.as_str() {
+            "/bye" | "/quit" | "/exit" => break,
+            "/clear" => {
+                conversation.clear();
+                println!("{}", "[context cleared]".dimmed());
+                continue;
+            }
+            _ => {}
+        }
+
+        conversation.push(("user".into(), input.clone()));
+
+        // Build prompt: just profile system + conversation (no tools, no persona)
+        let mut messages = vec![serde_json::json!({"role": "system", "content": &system_prompt})];
+        for (role, content) in &conversation {
+            messages.push(serde_json::json!({"role": role, "content": content}));
+        }
+
+        let body = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "stream": true,
+            "options": {
+                "temperature": profile.sampling.temperature,
+                "top_p": profile.sampling.top_p,
+                "num_predict": cfg.llm.max_tokens,
+            }
+        });
+
+        let url = format!("{}/api/chat", base_url);
+        let resp = match client.post(&url).json(&body).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                conversation.pop();
+                continue;
+            }
+        };
+
+        print!("{} ", "assistant>".yellow().bold());
+        let _ = io::stdout().flush();
+
+        let mut reply = String::new();
+        let mut token_count = 0usize;
+        let gen_start = std::time::Instant::now();
+        let mut stream = resp.bytes_stream();
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = match chunk {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            if let Ok(text) = std::str::from_utf8(&chunk) {
+                for line in text.lines() {
+                    if line.is_empty() { continue; }
+                    if let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) {
+                        if let Some(content) = obj["message"]["content"].as_str() {
+                            print!("{}", content);
+                            reply.push_str(content);
+                            token_count += 1;
+                            let _ = io::stdout().flush();
+                        }
+                    }
+                }
+            }
+        }
+        let gen_elapsed = gen_start.elapsed();
+        let tok_per_sec = if token_count > 0 { token_count as f64 / gen_elapsed.as_secs_f64() } else { 0.0 };
+        println!();
+        println!("{} | out={} | {:.1}s | {:.2} tok/s", model.dimmed(), token_count, gen_elapsed.as_secs_f64(), tok_per_sec);
+
+        conversation.push(("assistant".into(), reply));
+    }
+
+    Ok(())
+}
+
+async fn ollama_chat_once(
+    client: &reqwest::Client,
+    base_url: &str,
+    model: &str,
+    system: &str,
+    prompt: &str,
+) -> Result<String> {
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt}
+        ],
+        "stream": false,
+    });
+    let url = format!("{}/api/chat", base_url);
+    let resp = client.post(&url).json(&body).send().await?;
+    let obj: serde_json::Value = resp.json().await?;
+    Ok(obj["message"]["content"].as_str().unwrap_or("").to_string())
 }
 
 // ─── Fallback Async REPL for Non-Leafcutter Providers ──────────────────────
