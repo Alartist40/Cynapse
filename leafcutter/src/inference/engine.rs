@@ -13,13 +13,12 @@ use crate::model::tensor::Tensor;
 use crate::cache::{KVCache, ssm_state::SSMStateCache, deltanet_state::DeltaNetStateCache};
 use crate::inference::attention::{attention_forward, AttentionParams};
 use crate::inference::deltanet::{deltanet_forward, DeltaNetParams};
-use crate::inference::mla::{mla_forward, MlaParams};
+use crate::inference::mla::mla_forward;
 use crate::inference::moe::MoeConfig;
 use crate::inference::sampler::{apply_repeat_penalty, sample_top_p};
 use crate::inference::ssm::{ssm_forward, SSMConfig};
 use crate::inference::speculative::SpeculativeHead;
 use crate::tokenizer::GgufTokenizer;
-use rayon::prelude::*;
 use std::collections::HashMap;
 #[cfg(feature = "llama-ffi")]
 use crate::llama_ffi::{LlamaModel, LlamaContext};
@@ -78,6 +77,9 @@ pub struct Engine {
     /// Current sequence position offset for RoPE. Tracks total tokens processed
     /// across forward calls within a generation session.
     pub seq_offset: usize,
+    /// Cached total RAM in MB from `probe_hardware()` — avoid re-reading
+    /// `/proc/meminfo` on every forward pass (called per token).
+    cached_ram_total_mb: u64,
     // Embedding lookup is on-demand via mmap — see embed_lookup_mmap()
     #[cfg(feature = "llama-ffi")]
     ffi_model: Option<LlamaModel>,
@@ -214,8 +216,8 @@ impl Engine {
     }
 
     #[cfg(feature = "llama-ffi")]
-    fn load_ffi(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let model = LlamaModel::load(Path::new(path), 0)
+    fn load_ffi(path: &str, n_gpu_layers: i32) -> Result<Self, Box<dyn std::error::Error>> {
+        let model = LlamaModel::load(Path::new(path), n_gpu_layers)
             .map_err(|e| format!("Failed to load model via FFI: {}", e))?;
         let threads = crate::init::effective_thread_count() as i32;
         let context = LlamaContext::new(&model, 4096, threads)
@@ -249,6 +251,7 @@ impl Engine {
             cached_lm_head_size: std::sync::atomic::AtomicUsize::new(0),
             pages_dropped: true,
             seq_offset: 0,
+            cached_ram_total_mb: crate::detect::probe_hardware().ram_total_mb,
             #[cfg(feature = "llama-ffi")]
             ffi_model: Some(model),
             #[cfg(feature = "llama-ffi")]
@@ -257,40 +260,39 @@ impl Engine {
     }
 
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::load_with_gpu(path, 0)
+    }
+
+    pub fn load_with_gpu(path: &str, n_gpu_layers: i32) -> Result<Self, Box<dyn std::error::Error>> {
+        // ── FFI path (preferred — vendored llama.cpp with SIMD kernels) ──
         #[cfg(feature = "llama-ffi")]
         {
-            if let Ok(ffi_eng) = Self::load_ffi(path) {
-                return Ok(ffi_eng);
-            }
-        }
-        // ── Load GGUF for architecture detection ──────────────────────
-        let model = GGUFModel::load(path)?;
-        let arch = model.architecture;
-
-        // ── Native path ──────────────────────────────────────────────
-        // Run pre-flight capability report
-        let report = model.capability_report();
-        if !report.can_run {
-            eprintln!("\n{}", report.print());
-
-            // ── AUTO-FALLBACK: unsupported quants → try FFI ──────────
             if crate::llama_ffi::is_available() {
-                eprintln!("  Native path blocked. Trying llama.cpp FFI fallback...");
-                #[cfg(feature = "llama-ffi")]
-                return Self::load_ffi(path);
-                #[cfg(not(feature = "llama-ffi"))]
-                return Err("Model cannot run natively. Build with --features llama-ffi for fallback support.".into());
-            } else {
-                return Err(format!(
-                    "Model cannot run natively (unsupported quant types). \
-                     Build with --features llama-ffi for auto-fallback support. \
-                     Details: architecture={} unsupported_quant={} missing_tensors={}",
-                    report.architecture.name(),
-                    report.quant_summary.unsupported.len(),
-                    report.missing_tensors.len()
-                ).into());
+                if let Ok(ffi_eng) = Self::load_ffi(path, n_gpu_layers) {
+                    return Ok(ffi_eng);
+                }
             }
         }
+
+        // ── Fallback: native Rust engine ──────────────────────────────
+        let model = GGUFModel::load(path)?;
+        let report = model.capability_report();
+        if report.can_run {
+            return Self::load_native(model, path);
+        }
+
+        Err(format!(
+            "Model cannot run via FFI or natively. \
+             Details: architecture={} unsupported_quant={} missing_tensors={}",
+            report.architecture.name(),
+            report.quant_summary.unsupported.len(),
+            report.missing_tensors.len()
+        ).into())
+    }
+
+    fn load_native(mut model: GGUFModel, path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let arch = model.architecture;
+        let report = model.capability_report();
 
         if std::env::var("LEAFCUTTER_DEBUG").map(|v| v == "1").unwrap_or(false) {
             eprintln!("  Using native backend for {}", arch.name());
@@ -463,6 +465,7 @@ impl Engine {
             cached_tokenizer: std::sync::Mutex::new(None),
             pages_dropped: false,
             seq_offset: 0,
+            cached_ram_total_mb: crate::detect::probe_hardware().ram_total_mb,
             #[cfg(feature = "llama-ffi")]
             ffi_model: None,
             #[cfg(feature = "llama-ffi")]
@@ -694,7 +697,7 @@ impl Engine {
 
         // Decode loop
         for _ in 0..max_tokens - 1 {
-            let mut logits = match self.forward_native(&[next_token]) {
+            let logits = match self.forward_native(&[next_token]) {
                 Ok(l) => l,
                 Err(e) => {
                     eprintln!("Forward pass failed: {}", e);
@@ -1010,7 +1013,7 @@ impl Engine {
                 Some("0") | Some("false") => false,
                 Some("1") | Some("true") => true,
                 _ => {
-                    let total_ram = crate::detect::probe_hardware().ram_total_mb;
+                    let total_ram = self.cached_ram_total_mb;
                     let model_mb = (self.model.file.file_size_bytes() / (1024 * 1024)) as u64;
                     total_ram >= model_mb
                 }
@@ -1734,11 +1737,11 @@ fn infer_gemma_layouts(
         .file
         .get_metadata_int("gemma4.attention.value_length")
         .unwrap_or(256) as usize;
-    let key_length_swa = model
+    let _key_length_swa = model
         .file
         .get_metadata_int("gemma4.attention.key_length_swa")
         .unwrap_or(key_length as i64) as usize;
-    let value_length_swa = model
+    let _value_length_swa = model
         .file
         .get_metadata_int("gemma4.attention.value_length_swa")
         .unwrap_or(value_length as i64) as usize;
@@ -1764,7 +1767,7 @@ fn infer_gemma_layouts(
     };
     // Per-layer sliding-window pattern (bool array).
     // Gemma 3/4 default: 5 global then 1 sliding, repeating.
-    let mut default_pattern: Vec<bool> = (0..num_layers).map(|i| i % 6 == 5).collect();
+    let default_pattern: Vec<bool> = (0..num_layers).map(|i| i % 6 == 5).collect();
     let swa_pattern: Vec<bool> = match model
         .file
         .metadata

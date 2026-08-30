@@ -83,13 +83,13 @@ On multi-core and heterogeneous big.LITTLE CPUs (e.g. 12-core ARM CIX P1 / RK358
 2. Excessive CPU power draw and thermal fan spikes.
 3. Decreased matrix dot-product performance.
 
-Cynapse automatically caps default Rayon worker threads to **4 performance cores** (`logical >= 8`). You can explicitly set CPU threads in `~/.cynapse/config.yaml`:
+Cynapse automatically detects optimal thread count. For 12-core ARM CPUs (e.g. Orange Pi 6 Plus), **10 threads** gives best throughput. Set in `~/.cynapse/config.yaml`:
 
 ```yaml
 llm:
   provider: leafcutter
-  model: ornith-1.0-9b-Q4_K_M.gguf
-  local_threads: 4
+  model: Ornith-1.5-9B-Q4_K_M.gguf
+  local_threads: 10
 ```
 
 ### Compiler Vectorization (ARM NEON & AVX2)

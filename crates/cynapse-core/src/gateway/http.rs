@@ -202,7 +202,7 @@ fn reject_unauthorized(
     }
 }
 
-fn camera_path(state: &GatewayState) -> PathBuf {
+fn camera_path(_state: &GatewayState) -> PathBuf {
     // Allow override via env so tests/dev can point at a fixture.
     if let Ok(p) = std::env::var("CYNAPSE_CAMERA_JPEG") {
         if !p.is_empty() {

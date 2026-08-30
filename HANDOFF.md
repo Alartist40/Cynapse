@@ -1,7 +1,7 @@
 # Cynapse Handoff Document
 
-> **Session Date:** 2026-06-16  
-> **Version:** v2.3.0  
+> **Session Date:** 2026-08-30  
+> **Version:** v2.4.0  
 > **Repository:** https://github.com/Alartist40/cynapse.git  
 > **License:** MIT
 
@@ -35,12 +35,16 @@ curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/install.sh 
 
 ---
 
-## Current State (v2.3.0)
+## Current State (v2.4.0)
 
 ### ✅ Completed
 
 | Feature | Files |
 |---------|-------|
+| **Vendored llama.cpp (b10434) — static, no Ollama dep** | `leafcutter/llama.cpp/`, `leafcutter/build.rs` |
+| **FFI struct layouts aligned to b10434** | `leafcutter/src/llama_ffi/bindings.rs` |
+| **Optimized sampler (zero alloc hot path)** | `leafcutter/src/inference/sampler.rs` |
+| **2.5+ tok/s on ARMv9-A (matches Ollama)** | Benchmarked on Orange Pi 6 Plus |
 | HuggingFace model search & download | `internal/models/*.go` |
 | Local model registry (JSON) | `internal/models/registry.go` |
 | Ollama GGUF import | `internal/models/ollama.go` |
@@ -52,23 +56,20 @@ curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/install.sh 
 | Config expansion (models, local settings, hf_token) | `internal/config/config.go` |
 | CLI `cynapse model <cmd>` | `cmd/cynapse/main.go` |
 | DENDRITE multi-hop retrieval (1/2/3 hop) | `internal/memory/dendrite.go` |
-| **Auto-compression to DENDRITE (v2.3.0)** | `internal/compressor/compressor.go` |
-| **Approval gate (destructive shell) (v2.3.0)** | `internal/approval/approval.go` |
-| **SSRF guard (outbound HTTP) (v2.3.0)** | `internal/netguard/netguard.go` |
-| **Secret redaction (v2.3.0)** | `internal/redact/redact.go` |
-| **Operator confirmation protocol (v2.3.0)** | `internal/confirm/confirm.go` |
-| **`/compress` slash command (v2.3.0)** | `internal/tui/tui.go` |
-| **Security config block (v2.3.0)** | `internal/config/config.go` |
-| **`SECURITY.md` (v2.3.0)** | `SECURITY.md` |
+| Auto-compression to DENDRITE (v2.3.0) | `internal/compressor/compressor.go` |
+| Approval gate (destructive shell) (v2.3.0) | `internal/approval/approval.go` |
+| SSRF guard (outbound HTTP) (v2.3.0) | `internal/netguard/netguard.go` |
+| Secret redaction (v2.3.0) | `internal/redact/redact.go` |
+| Operator confirmation protocol (v2.3.0) | `internal/confirm/confirm.go` |
 
 ### 🔄 In Progress / Not Started
 
 | Feature | Status | Notes |
 |---------|--------|-------|
+| Cynapse ↔ Leafcutter runtime bridge | ✅ Done | Vendored llama.cpp b10434, static FFI, 2.5 tok/s |
 | TUI-based Confirmer (Bubble Tea message channel) | ⚠ Stub | TUI still uses StdinPrompter; replace with message-passed prompt when chat is active |
 | Gemini streaming | ❌ Stubbed | Returns "not implemented" |
 | Remote synapse registry | ❌ Not built | Currently requires `--path` for synapse install |
-| Cynapse ↔ Leafcutter runtime bridge | ❌ Not started | Synapse installs but isn't used as LLM backend yet |
 | Model switching persistence | ❌ Not started | Remember last model across TUI restarts |
 | Vision model auto-pairing | ❌ Not started | Auto-suggest `mmproj.gguf` for vision models |
 | Approval gate prompt commands like `/allowed list` | ❌ Not started | UI affordance vs. open `~/.cynapse/allowlist` |

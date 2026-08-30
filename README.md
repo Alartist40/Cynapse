@@ -76,24 +76,36 @@ See [INSTALL.md](INSTALL.md) for step-by-step setup, hardware acceleration, and 
 
 | Provider        | Default model            | Streaming | Notes |
 |-----------------|--------------------------|-----------|-------|
-| `ollama`        | `qwen-bench:latest`      | NDJSON    | Default; any Ollama local model |
+| `ollama`        | `qwen-bench:latest`      | NDJSON    | Any Ollama local model |
 | `openai`        | (config)                 | SSE       | Set `OPENAI_API_KEY` or `openai_key` |
 | `anthropic`     | (config)                 | SSE       | Behind `--features anthropic` |
-| `leafcutter`    | local GGUF path          | SSE + fallback | Native dual-engine (Fast C++ FFI for 15+ tok/s or low-RAM layer streaming for 70B+ models) |
+| `leafcutter`    | local GGUF path          | SSE + fallback | Native engine with vendored llama.cpp (b10434) — **2.5+ tok/s, no Ollama dependency** |
 
-## Leafcutter Native Engine (Fast C++ FFI + Low-RAM Layer Streaming)
+## Leafcutter Native Engine (Vendored llama.cpp)
 
-Cynapse embeds **Leafcutter** as its native inference engine, written in pure Rust with safe `llama-ffi` C++ bindings. Leafcutter features a **Dual-Engine Architecture**:
+Cynapse embeds **Leafcutter** as its native inference engine, with **llama.cpp statically linked** inside the binary. No external dependencies required.
 
-1. **Fast Mode (`llama-ffi`)**: Embeds `llama.cpp` native C++ GGML kernels directly in-process for 15–25+ tok/s generation with 4-core physical CPU thread pinning.
-2. **Layer-Streaming Mode (`shard_loader`)**: Inspired by `AirLLM` (Python) and `Colibri` (C), Leafcutter streams massive LLMs (70B+) layer-by-layer from SSD using memory-mapped zero-copy slice reads (`memmap2`) with LFRU cache eviction:
+### Architecture
 
-| Feature / Engine | AirLLM (Python) | Colibri (C) | **Leafcutter (Rust)** |
-|---|---|---|---|
-| **Runtime & Language** | Python / PyTorch | Raw C / C++ | **Pure Safe Rust (`memmap2`)** |
-| **70B Model RAM Footprint** | ~4.5 GB | ~1.2 GB | **~1.1 GB (Zero-copy `madvise`)** |
-| **Memory Safety** | Subject to GC pauses | Vulnerable to dangling pointers | **Memory-safe RAII slice boundaries** |
-| **Fast In-Process Path** | None | External binary | **Unified C++ FFI in-process** |
+1. **Vendored llama.cpp (b10434)**: Compiled with `GGML_NATIVE=ON` for ARM NEON/SVE SIMD kernels, statically linked via FFI
+2. **Layer-Streaming Mode (`shard_loader`)**: For 70B+ models, streams layer-by-layer from SSD using memory-mapped zero-copy reads
+
+### Performance (Orange Pi 6 Plus, 12-core ARMv9-A)
+
+| Engine | Speed | Notes |
+|--------|-------|-------|
+| Pure Rust (scalar) | ~1.0 tok/s | No SIMD |
+| **Vendored llama.cpp (FFI)** | **~2.5 tok/s** | Matches Ollama |
+| Ollama API | 2.58 tok/s | Reference |
+
+### Config
+
+```yaml
+llm:
+  provider: leafcutter
+  model: /path/to/model.gguf
+  local_threads: 10  # optimal for 12-core ARM
+```
 
 Set the provider:
 

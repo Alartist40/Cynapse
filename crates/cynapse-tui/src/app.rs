@@ -22,7 +22,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
@@ -46,8 +46,6 @@ const GOLD: Color = Color::Rgb(0xcb, 0x9b, 0x4e);
 const PURPLE_ACCENT: Color = Color::Rgb(0x9b, 0x6b, 0xc6);
 const DIM: Color = Color::Rgb(0x73, 0x64, 0x4e);
 const BRIGHT: Color = Color::Rgb(0xe8, 0xdc, 0xc8);
-
-const HERO: &str = include_str!("../../../assets/ascii-art.txt");
 
 const SPINNER: [&str; 10] = ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"];
 

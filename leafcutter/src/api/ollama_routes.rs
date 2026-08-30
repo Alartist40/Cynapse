@@ -10,7 +10,6 @@ use axum::{
     Json,
 };
 use std::collections::HashMap;
-use std::sync::Arc;
 use tokio_stream::StreamExt;
 
 use crate::api::types::*;

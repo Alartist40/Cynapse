@@ -355,7 +355,7 @@ pub fn q6_k_dot_q8_k_scalar(
     w_blocks: &[crate::kernels::q6_k::Block],
     a_blocks: &[Q8KBlock],
 ) -> f32 {
-    use crate::kernels::q6_k::Block;
+    
     use crate::kernels::q6_k::QK_K as Q6QK;
     debug_assert_eq!(w_blocks.len(), a_blocks.len());
     let mut sumf = 0.0f32;
@@ -425,7 +425,7 @@ pub fn q6_k_dot_q8_k_neon(
     w_blocks: &[crate::kernels::q6_k::Block],
     a_blocks: &[Q8KBlock],
 ) -> f32 {
-    use crate::kernels::q6_k::Block;
+    
     use crate::kernels::q6_k::QK_K as Q6QK;
     use std::arch::aarch64::*;
     debug_assert_eq!(w_blocks.len(), a_blocks.len());
@@ -464,7 +464,7 @@ pub fn q6_k_dot_q8_k_neon(
                 let qh1 = vld1q_u8(qh.as_ptr().add(16));
 
                 let mask0f = vdupq_n_u8(0x0F);
-                let mask03 = vdupq_n_u8(0x03);
+                let _mask03 = vdupq_n_u8(0x03);
                 let b0 = vdupq_n_u8(32);
                 let base = half * 128;
 
@@ -707,7 +707,7 @@ pub unsafe fn q6_block_dot_sdot(
     aux8: &[i8],
     y: &Q8KBlock,
 ) -> f32 {
-    use crate::kernels::q6_k::QK_K as Q6QK;
+    
     use std::arch::aarch64::*;
 
     // sumi = sum over 2 halves x 8 groups of scale * dot(aux8[16], y.qs[16])

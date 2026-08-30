@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,9 +7,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 
 use leafcutter::inference::engine::Engine;
-use leafcutter::model::gguf::GGUFile;
 use leafcutter::profiles::{render_chat_prompt, resolve_profile};
-use leafcutter::tokenizer::gguf::GgufBpeTokenizer;
 
 use crate::config::LlmConfig;
 use crate::llm::providers::{BaseClient, Cancelled, LlmClient, StreamHandle};
@@ -17,9 +15,10 @@ use crate::llm::{Request, Response, Usage};
 
 /// Embedded native Leafcutter engine client (in-process).
 pub struct LeafcutterClient {
-    base: BaseClient,
+    _base: BaseClient,
     models_dir: String,
     model_name: Mutex<String>,
+    gpu_layers: i64,
 }
 
 static ENGINE_CACHE: std::sync::OnceLock<Mutex<Option<(String, Engine)>>> = std::sync::OnceLock::new();
@@ -33,12 +32,13 @@ fn get_engine_cache() -> &'static Mutex<Option<(String, Engine)>> {
 pub fn prewarm_leafcutter_engine(cfg: &LlmConfig) {
     let model_id = cfg.model.clone();
     let models_dir = cfg.models_dir.clone();
+    let gpu_layers = cfg.local_gpu_layers;
     if let Ok(model_path) = resolve_model_path(&model_id, &models_dir) {
         tokio::task::spawn_blocking(move || {
             let cache_mutex = get_engine_cache();
             let mut guard = cache_mutex.lock().unwrap_or_else(|e| e.into_inner());
             if guard.is_none() {
-                if let Ok(new_eng) = Engine::load(&model_path) {
+                if let Ok(new_eng) = Engine::load_with_gpu(&model_path, gpu_layers as i32) {
                     *guard = Some((model_path, new_eng));
                 }
             }
@@ -130,9 +130,10 @@ pub fn list_cached_models(models_dir: &str) -> Vec<(String, u64)> {
 
 pub(crate) fn new(base: BaseClient, cfg: &LlmConfig) -> Result<Arc<dyn LlmClient>> {
     let instance = LeafcutterClient {
-        base,
+        _base: base,
         models_dir: cfg.models_dir.clone(),
         model_name: Mutex::new(cfg.model.clone()),
+        gpu_layers: cfg.local_gpu_layers,
     };
     Ok(Arc::new(instance))
 }
@@ -169,20 +170,17 @@ impl LlmClient for LeafcutterClient {
             }
         };
 
-        // Extract user message and history turns from req.messages in exact chronological order
+        // Build history from ALL messages, and use req.system_prompt as the system.
+        let system_prompt = req.system_prompt.clone();
         let mut history: Vec<(String, String)> = Vec::new();
-        let mut user_msg = String::new();
 
-        if let Some(last_msg) = req.messages.last() {
-            user_msg = last_msg.content.clone();
-            for m in &req.messages[..req.messages.len() - 1] {
-                let role = match m.role.as_str() {
-                    "assistant" => "assistant",
-                    "system" => "system",
-                    _ => "user",
-                };
-                history.push((role.to_string(), m.content.clone()));
-            }
+        for m in &req.messages {
+            let role = match m.role.as_str() {
+                "assistant" => "assistant",
+                "system" => "system",
+                _ => "user",
+            };
+            history.push((role.to_string(), m.content.clone()));
         }
 
         if history.len() > 16 {
@@ -191,6 +189,7 @@ impl LlmClient for LeafcutterClient {
 
         let requested_max = if req.max_tokens == 0 { 1024 } else { req.max_tokens } as usize;
         let temperature = req.temperature as f32;
+        let gpu_layers = self.gpu_layers;
 
         tokio::task::spawn_blocking(move || {
             let send_err = |tx: &mpsc::UnboundedSender<anyhow::Error>, e: anyhow::Error| {
@@ -211,7 +210,7 @@ impl LlmClient for LeafcutterClient {
             let engine = match guard.as_mut() {
                 Some((loaded_path, eng)) if loaded_path == path_str => eng,
                 _ => {
-                    let new_eng = match Engine::load(path_str) {
+                    let new_eng = match Engine::load_with_gpu(path_str, gpu_layers as i32) {
                         Ok(e) => e,
                         Err(e) => {
                             send_err(&errors_tx, anyhow!("failed to load embedded leafcutter engine: {e}"));
@@ -224,7 +223,7 @@ impl LlmClient for LeafcutterClient {
             };
 
             let profile = resolve_profile(&engine.model.file.metadata, None);
-            let prompt_text = render_chat_prompt(&profile, &user_msg, &history);
+            let prompt_text = render_chat_prompt(&profile, &system_prompt, &history);
             let tokens = engine.tokenize(&prompt_text, true);
 
             if tokens.is_empty() {
@@ -352,6 +351,7 @@ fn resolve_model_path(model_id: &str, models_dir: &str) -> Result<String> {
 }
 
 /// Locate the leafcutter binary in PATH or known install locations.
+#[allow(dead_code)]
 fn find_leafcutter() -> String {
     for dir in std::env::var("PATH").unwrap_or_default().split(':') {
         let candidate = std::path::Path::new(dir).join("leafcutter");
@@ -375,6 +375,7 @@ fn find_leafcutter() -> String {
 }
 
 /// Grab an ephemeral free port by binding a listener and releasing it.
+#[allow(dead_code)]
 fn find_free_port() -> Option<u16> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").ok()?;
     let port = listener.local_addr().ok()?.port();
@@ -382,6 +383,7 @@ fn find_free_port() -> Option<u16> {
 }
 
 /// Poll the address until the leafcutter server accepts connections.
+#[allow(dead_code)]
 fn wait_for_server(addr: &str, timeout: Duration) -> Result<()> {
     let url = url::Url::parse(addr)
         .with_context(|| format!("invalid leafcutter address: {addr}"))?;
@@ -409,6 +411,7 @@ fn wait_for_server(addr: &str, timeout: Duration) -> Result<()> {
     anyhow::bail!("timed out waiting for server at {addr}")
 }
 
+#[allow(dead_code)]
 fn truncate(s: &str, n: usize) -> String {
     let mut out: String = s.chars().take(n).collect();
     if s.chars().count() > n {

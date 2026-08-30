@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-08-30
+
+### Added
+- **Engine**: Vendored llama.cpp b10434 (Ollama v0.32.14's version) statically linked
+  into the binary. No Ollama dependency required. Builds with `GGML_NATIVE=ON`
+  for ARM NEON/SVE SIMD kernels.
+- **Performance**: ~2.5 tok/s on 12-core ARMv9-A (matches Ollama's speed).
+  Optimized sampler with O(n) partial sort, zero per-token heap allocations.
+- **Config**: `local_threads` option for explicit thread count (optimal: 10 on
+  12-core ARM). `provider: leafcutter` is now the recommended default.
+
+### Fixed
+- **FFI**: Struct layouts (`llama_model_params`, `llama_context_params`) aligned
+  to b10434 header — eliminated segfault on custom llama.cpp builds.
+- **Root build.rs**: Removed hardcoded `/usr/local/lib/ollama` path that
+  overrode vendored llama.cpp linking.
+- **Sampler**: Eliminated 128K Vec allocation and HashSet creation per token
+  in hot path, recovering 25% throughput.
+
 ## [2.3.0] - 2026-06-16
 
 ### Added

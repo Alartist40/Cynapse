@@ -7,3 +7,7 @@
 *.db-shm
 /persona/devices/**/logs/
 examples_connect_tmp.rs
+leafcutter/llama.cpp/build/
+leafcutter/llama.cpp/.cache/
+leafcutter/llama.cpp/build-*@
+DEV_MEMORY.md

@@ -10,7 +10,7 @@
 //! sampling.
 
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader, Write};
+use std::io::BufRead;
 
 #[derive(Clone)]
 pub struct OllamaClient {

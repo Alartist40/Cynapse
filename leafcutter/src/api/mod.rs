@@ -9,7 +9,7 @@ pub mod types;
 use axum::{
     body::Body,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     middleware,
     routing::{get, post},
     Json, Router,
@@ -19,7 +19,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::inference::engine::Engine as NativeEngine;
 use crate::model::scheduler::ModelScheduler;
 use crate::profiles::{render_chat_prompt, resolve_profile};
 use crate::tokenizer::GgufBpeTokenizer;

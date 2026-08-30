@@ -14,8 +14,6 @@ use anyhow::{Context, Result};
 use crate::compressor::PersonaSink;
 use crate::dendrite::{Dendrite, DendriteContext, DendriteStore, NodeType};
 
-const COMPILE_MAX_TOKENS: usize = 6000;
-
 /// Map of persona filename → graph node metadata.
 const NODE_MAP: [(&str, &str, &str, NodeType); 7] = [
     ("IDENTITY.md", "identity", "Identity", NodeType::Identity),
@@ -35,7 +33,7 @@ pub struct Persona {
     defaults_path: PathBuf,
     graph: Arc<Dendrite>,
     store: Arc<DendriteStore>,
-    context: Arc<DendriteContext>,
+    _context: Arc<DendriteContext>,
     mu: Mutex<()>,
 }
 
@@ -71,7 +69,7 @@ impl Persona {
             defaults_path: defaults_path.to_path_buf(),
             graph,
             store,
-            context,
+            _context: context,
             mu: Mutex::new(()),
         };
 
@@ -123,17 +121,15 @@ impl Persona {
 
     /// System prompt for CYNAPSE agent — warm, natural, direct, and conversational.
     pub fn compile_system_prompt(&self, user_message: &str) -> String {
-        self.compile_system_prompt_with_focus(user_message, true)
+        self.compile_system_prompt_with_focus(user_message, false)
     }
 
     pub fn compile_system_prompt_with_focus(&self, _user_message: &str, focus: bool) -> String {
-        let base = "You are CYNAPSE — a fast, local-first AI assistant and pair programmer.\n\
-        Be warm, natural, direct, and conversational. Respond like a real teammate in a real-time chat — concise, helpful, and clear. Avoid writing emails, formal reports, or artificial numbered bullet lists unless explicitly requested.";
-        if focus {
-            format!("{}\n\n{}", base, crate::adhd::ADHD_SYSTEM_PROMPT)
-        } else {
-            base.to_string()
-        }
+        // Use the model's native system prompt (from its profile) as the base.
+        // Only append CYNAPSE-specific context when tools/memory are relevant.
+        // This keeps token count low and avoids confusing the model with a
+        // completely different persona than it was trained on.
+        String::new()
     }
 
     pub fn read_file(&self, name: &str) -> Result<String> {

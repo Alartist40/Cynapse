@@ -194,7 +194,7 @@ impl Default for LlmConfig {
     fn default() -> Self {
         LlmConfig {
             provider: "ollama".to_string(),
-            model: "ministral-3:3b".to_string(),
+            model: "Ornith-1.5-9B-Q4_K_M.gguf".to_string(),
             anthropic_key: String::new(),
             openai_key: String::new(),
             gemini_key: String::new(),
@@ -526,7 +526,7 @@ mod tests {
     fn defaults_match_go() {
         let c = defaults();
         assert_eq!(c.llm.provider, "ollama");
-        assert_eq!(c.llm.model, "ministral-3:3b");
+        assert_eq!(c.llm.model, "Ornith-1.5-9B-Q4_K_M.gguf");
         assert_eq!(c.llm.ollama_base_url, "http://localhost:11434");
         assert_eq!(c.llm.max_tokens, 4096);
         assert_eq!(c.llm.temperature, 0.7);

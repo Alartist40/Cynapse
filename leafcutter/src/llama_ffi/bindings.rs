@@ -165,19 +165,18 @@ pub struct llama_model_params {
     pub tensor_buft_overrides: *const c_void,
     pub n_gpu_layers: i32,
     pub split_mode: c_int,
+    pub load_mode: c_int,
     pub main_gpu: i32,
     pub tensor_split: *const c_float,
     pub progress_callback: llama_progress_callback,
     pub progress_callback_user_data: *mut c_void,
     pub kv_overrides: *const c_void,
     pub vocab_only: bool,
-    pub use_mmap: bool,
-    pub use_direct_io: bool,
-    pub use_mlock: bool,
     pub check_tensors: bool,
     pub use_extra_bufts: bool,
     pub no_host: bool,
     pub no_alloc: bool,
+    pub load_mtp: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +190,8 @@ pub struct llama_context_params {
     pub n_ubatch: u32,
     pub n_seq_max: u32,
     pub n_rs_seq: u32,
+    pub n_outputs_max: u32,
+    pub n_outputs_max_per_seq: u32,
     pub n_threads: i32,
     pub n_threads_batch: i32,
     pub ctx_type: c_int,
@@ -220,6 +221,7 @@ pub struct llama_context_params {
     pub kv_unified: bool,
     pub samplers: *mut c_void,
     pub n_samplers: usize,
+    pub ctx_other: *mut c_void,
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +310,7 @@ extern "C" {
     pub fn llama_sampler_free(sampler: *mut llama_sampler);
 
     pub fn llama_log_set(
-        log_callback: Option<unsafe extern "C" fn(level: i32, text: *const c_char, user_data: *mut std::ffi::c_void)>,
-        user_data: *mut std::ffi::c_void,
+        log_callback: Option<unsafe extern "C" fn(level: i32, text: *const c_char, user_data: *mut c_void)>,
+        user_data: *mut c_void,
     );
 }

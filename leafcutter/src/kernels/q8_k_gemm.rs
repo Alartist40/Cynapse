@@ -9,9 +9,7 @@
 //! `_mm256_maddubs_epi16` and is the hot GEMV path for FFN gate/up and
 //! lm_head.
 
-use super::q4_k::Block as Q4KBlock;
 use super::q4_k::Matrix as Q4KMatrix;
-use super::q6_k::Block as Q6KBlock;
 use super::q6_k::Matrix as Q6KMatrix;
 use super::q8_k::Q8KBlock;
 use super::q8_k::{quantize_row_q8_k, q4_k_dot_q8_k_scalar, q6_k_dot_q8_k_scalar, QK_K};
@@ -330,7 +328,7 @@ fn run_q4_k_q8_gemm(a: &[f32], b: &Q4KMatrix, c: &mut [f32], m: usize, k: usize,
         use crate::kernels::q8_k::q4_block_dot_sdot;
         use rayon::prelude::*;
         let nthreads = rayon::current_num_threads().max(1);
-        let chunkp = (n / (nthreads * 2)).max(1);
+        let _chunkp = (n / (nthreads * 2)).max(1);
         let mut col_results = vec![0.0f32; n * m];
         col_results.par_chunks_mut(m).enumerate().for_each(|(j, col)| {
             let row_base = j * bpr;
@@ -402,7 +400,7 @@ fn run_q6_k_q8_gemm(a: &[f32], b: &Q6KMatrix, c: &mut [f32], m: usize, k: usize,
         use crate::kernels::q8_k::q6_block_dot_sdot;
         use rayon::prelude::*;
         let nthreads = rayon::current_num_threads().max(1);
-        let chunkp = (n / (nthreads * 2)).max(1);
+        let _chunkp = (n / (nthreads * 2)).max(1);
         let mut col_results = vec![0.0f32; n * m];
         col_results.par_chunks_mut(m).enumerate().for_each(|(j, col)| {
             let row_base = j * bpr;

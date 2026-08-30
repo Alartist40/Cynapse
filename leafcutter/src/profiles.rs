@@ -68,10 +68,9 @@ pub const ORNITH_PROFILE: ModelProfile = ModelProfile {
     architectures: &["qwen35", "qwen35moe", "qwen36", "ornith"],
     default_system:
         "You are Ornith, an open-source agentic coding assistant. \
-         Think step by step in a reasoning block, then act. \
-         Use the provided tools when they help. \
          Be concise, correct, and direct: write working code and \
-         explain only what is non-obvious.",
+         explain only what is non-obvious. \
+         Do not use <think> blocks — answer immediately.",
     sampling: SamplingDefaults {
         temperature: 0.6,
         top_k: 20,
