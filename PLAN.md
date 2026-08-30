@@ -1,6 +1,6 @@
 # cynapse-rs — Rust Rewrite of Cynapse (Detailed Plan)
 
-Status: **DRAFT — awaiting user approval before any code is written.**
+Status: **IN PROGRESS — leafcutter provider integrated with semantic router (v2.4.0).**
 Date: 2026-08-04
 
 ---

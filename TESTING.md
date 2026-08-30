@@ -3,7 +3,7 @@
 ## Quick start (unit tests)
 
 ```bash
-cd /home/xander/Documents/portfolio/cynapse-rs
+cd ~/Documents/portfolio/cynapse
 cargo test --workspace
 ```
 
@@ -49,7 +49,7 @@ LEAFCUTTER_MODEL=/path/to/model.gguf \
   cargo test -p cynapse-core --test agent_live -- --ignored --nocapture live_leafcutter
 ```
 
-Default model path: `/home/xander/Downloads/models/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf`
+Default model path: `~/Downloads/models/Ornith-1.5-9B-Q4_K_M.gguf`
 
 Runs:
 - `live_leafcutter_chat_roundtrip` — single completion

@@ -66,7 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/install.sh 
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Cynapse ↔ Leafcutter runtime bridge | ✅ Done | Vendored llama.cpp b10434, static FFI, 2.5 tok/s |
+| Cynapse ↔ Leafcutter runtime bridge | ✅ Done | Vendored llama.cpp b10434, static FFI, 2.6 tok/s, semantic router (Tier 2/3) |
 | TUI-based Confirmer (Bubble Tea message channel) | ⚠ Stub | TUI still uses StdinPrompter; replace with message-passed prompt when chat is active |
 | Gemini streaming | ❌ Stubbed | Returns "not implemented" |
 | Remote synapse registry | ❌ Not built | Currently requires `--path` for synapse install |

@@ -81,21 +81,25 @@ See [INSTALL.md](INSTALL.md) for step-by-step setup, hardware acceleration, and 
 | `anthropic`     | (config)                 | SSE       | Behind `--features anthropic` |
 | `leafcutter`    | local GGUF path          | SSE + fallback | Native engine with vendored llama.cpp (b10434) — **2.5+ tok/s, no Ollama dependency** |
 
-## Leafcutter Native Engine (Vendored llama.cpp)
+## Leafcutter Native Engine (Vendored llama.cpp + Semantic Router)
 
-Cynapse embeds **Leafcutter** as its native inference engine, with **llama.cpp statically linked** inside the binary. No external dependencies required.
+Cynapse embeds **Leafcutter** as its native inference engine, with **llama.cpp statically linked** inside the binary. No external dependencies required. A **semantic router** automatically selects the best execution tier based on available RAM.
 
-### Architecture
+### Tier System (Automatic)
 
-1. **Vendored llama.cpp (b10434)**: Compiled with `GGML_NATIVE=ON` for ARM NEON/SVE SIMD kernels, statically linked via FFI
-2. **Layer-Streaming Mode (`shard_loader`)**: For 70B+ models, streams layer-by-layer from SSD using memory-mapped zero-copy reads
+| Tier | Condition | Engine | Speed |
+|------|-----------|--------|-------|
+| Tier 2 (FastCpu) | Model fits RAM | FFI vendored llama.cpp (SIMD) | **2.6+ tok/s** |
+| Tier 3 (StreamingCpu) | Model too big for RAM | Native Rust + adaptive layer cache | ~1.0 tok/s (no OOM) |
+
+The router probes hardware (`/proc/meminfo`, GPU, NPU) and model size at startup, then selects the optimal tier automatically. No user configuration needed.
 
 ### Performance (Orange Pi 6 Plus, 12-core ARMv9-A)
 
 | Engine | Speed | Notes |
 |--------|-------|-------|
-| Pure Rust (scalar) | ~1.0 tok/s | No SIMD |
-| **Vendored llama.cpp (FFI)** | **~2.5 tok/s** | Matches Ollama |
+| Pure Rust (scalar) | ~1.0 tok/s | Tier 3 fallback |
+| **Vendored llama.cpp (FFI)** | **~2.6 tok/s** | Tier 2, matches Ollama |
 | Ollama API | 2.58 tok/s | Reference |
 
 ### Config
