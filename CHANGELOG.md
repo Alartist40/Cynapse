@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-08-30
+
+### Fixed
+- **Performance**: Eliminated 1.2MB per-token Vec allocation in sampler
+  (`sample_top_p_top_k`). Indices buffer now cached in Engine, reused across
+  all generation steps. Interactive CLI: 1.2 tok/s -> 3.4 tok/s.
+- **Tokenizer**: Replaced per-token clone with Arc-based zero-copy sharing.
+  Repl -p: 2.6 tok/s -> 3.8 tok/s.
+- **Install**: Added cmake prerequisite check in install scripts.
+
 ## [2.4.0] - 2026-08-30
 
 ### Added

@@ -6,8 +6,19 @@ This guide covers installing `cynapse` as a universal terminal command, building
 
 ## 1. Quick Installation
 
-### Option A: Local Build & Universal Install (Recommended for Development)
+### Option A: One-Line Install (Recommended)
+```bash
+curl -fsSL https://raw.githubusercontent.com/Alartist40/cynapse/main/scripts/install.sh | bash
+```
+
+**Prerequisites:** `git`, `cargo` (Rust), `cmake`, `make` (or `ninja`)
+
+This clones the repo, builds the vendored llama.cpp + Rust engine from source, and installs the binary to `~/.local/bin/cynapse`. No Ollama or external dependencies required.
+
+### Option B: Local Build & Universal Install
 To build from source and install `cynapse` as a universal system command:
+
+**Prerequisites:** `git`, `cargo` (Rust), `cmake`, `make` (or `ninja`)
 
 ```bash
 # Clone and enter directory
@@ -24,7 +35,7 @@ scripts/install_release.sh
 
 It also adds the binary directory to your `PATH` in `~/.bashrc`, `~/.profile`, and `~/.zshenv`.
 
-### Option B: Cargo Install (Hardware Safe)
+### Option C: Cargo Install (Hardware Safe)
 ```bash
 RUSTFLAGS="-C target-cpu=native" cargo build --release --offline -j 2
 install -m 755 target/release/cynapse ~/.cargo/bin/cynapse

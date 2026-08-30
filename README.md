@@ -89,7 +89,7 @@ Cynapse embeds **Leafcutter** as its native inference engine, with **llama.cpp s
 
 | Tier | Condition | Engine | Speed |
 |------|-----------|--------|-------|
-| Tier 2 (FastCpu) | Model fits RAM | FFI vendored llama.cpp (SIMD) | **2.6+ tok/s** |
+| Tier 2 (FastCpu) | Model fits RAM | FFI vendored llama.cpp (SIMD) | **3.8+ tok/s** |
 | Tier 3 (StreamingCpu) | Model too big for RAM | Native Rust + adaptive layer cache | ~1.0 tok/s (no OOM) |
 
 The router probes hardware (`/proc/meminfo`, GPU, NPU) and model size at startup, then selects the optimal tier automatically. No user configuration needed.
@@ -99,7 +99,7 @@ The router probes hardware (`/proc/meminfo`, GPU, NPU) and model size at startup
 | Engine | Speed | Notes |
 |--------|-------|-------|
 | Pure Rust (scalar) | ~1.0 tok/s | Tier 3 fallback |
-| **Vendored llama.cpp (FFI)** | **~2.6 tok/s** | Tier 2, matches Ollama |
+| **Vendored llama.cpp (FFI)** | **~3.8 tok/s** | Tier 2, beats Ollama |
 | Ollama API | 2.58 tok/s | Reference |
 
 ### Config
@@ -170,7 +170,11 @@ cynapse-rs/
 ├── crates/
 │   ├── cynapse-core/       # config, dendrite, agent, providers, tools, ocr, ...
 │   └── cynapse-tui/        # ratatui presentation layer
-└── config.yaml             # local dev config (live-data paths)
+├── leafcutter/             # native inference engine (Rust FFI wrapper)
+│   ├── llama.cpp/          # vendored llama.cpp b10434 (compiled into binary)
+│   └── src/                # FFI bindings, sampler, tokenizer, semantic router
+├── config.yaml             # local dev config (live-data paths)
+└── README.md
 ```
 
 ## Tests

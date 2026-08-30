@@ -134,8 +134,9 @@ fi
 
 # ─── prerequisites ─────────────────────────────────────────────────────────
 
-command -v git   >/dev/null 2>&1 || err "git is required"
-command -v cargo >/dev/null 2>&1 || err "cargo and Rust are required (https://rustup.rs)"
+command -v git    >/dev/null 2>&1 || err "git is required"
+command -v cargo  >/dev/null 2>&1 || err "cargo and Rust are required (https://rustup.rs)"
+command -v cmake  >/dev/null 2>&1 || err "cmake is required for building vendored llama.cpp"
 
 # ─── build from development source ────────────────────────────────────────────
 

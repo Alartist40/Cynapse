@@ -12,6 +12,8 @@
 #   scripts/install_release.sh [--fast]
 set -euo pipefail
 
+command -v cmake >/dev/null 2>&1 || { echo "error: cmake is required for building vendored llama.cpp" >&2; exit 1; }
+
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 CYNAPSE_HOME="${CYNAPSE_HOME:-$HOME/.cynapse}"
 BUILDS_DIR="$CYNAPSE_HOME/builds"
