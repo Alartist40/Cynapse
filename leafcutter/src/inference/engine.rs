@@ -66,7 +66,7 @@ pub struct Engine {
     /// Cached tokenizer; rebuilt only when None.  Avoids re-extracting the
     /// vocab from the mmap on every `generate_text` call (which used to
     /// happen per-token, ~50 KB of work per generation step).
-    cached_tokenizer: std::sync::Mutex<Option<GgufTokenizer>>,
+    cached_tokenizer: std::sync::Mutex<Option<std::sync::Arc<GgufTokenizer>>>,
     /// Cached lm_head projection buffer size; avoids per-token resize on
     /// thread-local buffers in `lm_head_projection`.
     cached_lm_head_size: std::sync::atomic::AtomicUsize,
@@ -1539,17 +1539,23 @@ impl Engine {
     /// array (~50–500 KB of HashMap construction), so doing it per
     /// `generate_text` invocation (which previously happened on every
     /// `tokenize` call) was a measurable hot-path cost.
-    pub fn tokenizer_from_model(&self) -> Option<GgufTokenizer> {
+    pub fn tokenizer_from_model(&self) -> Option<std::sync::Arc<GgufTokenizer>> {
         if let Ok(guard) = self.cached_tokenizer.lock() {
             if let Some(tok) = guard.as_ref() {
-                return Some(tok.clone());
+                return Some(std::sync::Arc::clone(tok));
             }
         }
         let built = self.build_tokenizer_from_model()?;
         if let Ok(mut guard) = self.cached_tokenizer.lock() {
-            *guard = Some(built.clone());
+            *guard = Some(std::sync::Arc::new(built));
         }
-        Some(built)
+        // Re-read from cache to get the Arc
+        if let Ok(guard) = self.cached_tokenizer.lock() {
+            if let Some(tok) = guard.as_ref() {
+                return Some(std::sync::Arc::clone(tok));
+            }
+        }
+        None
     }
 
     fn build_tokenizer_from_model(&self) -> Option<GgufTokenizer> {
