@@ -80,6 +80,8 @@ pub struct Engine {
     /// Cached total RAM in MB from `probe_hardware()` — avoid re-reading
     /// `/proc/meminfo` on every forward pass (called per token).
     cached_ram_total_mb: u64,
+    /// Reusable buffer for sampler top-k indices — avoids 1.2MB alloc per token.
+    sampler_indices: Vec<usize>,
     // Embedding lookup is on-demand via mmap — see embed_lookup_mmap()
     #[cfg(feature = "llama-ffi")]
     ffi_model: Option<LlamaModel>,
@@ -252,6 +254,7 @@ impl Engine {
             pages_dropped: true,
             seq_offset: 0,
             cached_ram_total_mb: crate::detect::probe_hardware().ram_total_mb,
+            sampler_indices: Vec::new(),
             #[cfg(feature = "llama-ffi")]
             ffi_model: Some(model),
             #[cfg(feature = "llama-ffi")]
@@ -503,6 +506,7 @@ impl Engine {
             pages_dropped: false,
             seq_offset: 0,
             cached_ram_total_mb: crate::detect::probe_hardware().ram_total_mb,
+            sampler_indices: Vec::new(),
             #[cfg(feature = "llama-ffi")]
             ffi_model: None,
             #[cfg(feature = "llama-ffi")]
@@ -725,7 +729,7 @@ impl Engine {
             }
         };
         self.seq_offset = tokens.len();
-        let mut next_token = sample_top_p(&logits, temperature, top_p);
+        let mut next_token = sample_top_p(&logits, temperature, top_p, &mut self.sampler_indices);
         let mut generated = vec![next_token];
 
         if next_token == self.config.eos_token {
@@ -743,7 +747,7 @@ impl Engine {
             };
             self.seq_offset += 1;
 
-            next_token = sample_top_p(&logits, temperature, top_p);
+            next_token = sample_top_p(&logits, temperature, top_p, &mut self.sampler_indices);
             generated.push(next_token);
 
             if next_token == self.config.eos_token {
@@ -823,7 +827,7 @@ impl Engine {
         let mut recent_tokens: Vec<usize> = tokens[tokens.len() - prompt_tail_len..].to_vec();
         apply_repeat_penalty(&mut logits, &recent_tokens, 1.15);
 
-        let mut next_token = sample_top_p(&logits, temperature, top_p);
+        let mut next_token = sample_top_p(&logits, temperature, top_p, &mut self.sampler_indices);
         let mut generated = vec![next_token];
         recent_tokens.push(next_token);
 
@@ -860,7 +864,7 @@ impl Engine {
             }
             apply_repeat_penalty(&mut logits, &recent_tokens, 1.15);
 
-            next_token = sample_top_p(&logits, temperature, top_p);
+            next_token = sample_top_p(&logits, temperature, top_p, &mut self.sampler_indices);
             generated.push(next_token);
             recent_tokens.push(next_token);
 

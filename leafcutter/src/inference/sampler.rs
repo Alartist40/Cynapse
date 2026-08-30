@@ -1,11 +1,11 @@
 use rand::Rng;
 
-pub fn sample_top_p(logits: &[f32], temperature: f32, top_p: f32) -> usize {
+pub fn sample_top_p(logits: &[f32], temperature: f32, top_p: f32, indices: &mut Vec<usize>) -> usize {
     let top_k: usize = std::env::var("LEAFCUTTER_TOP_K")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
-    sample_top_p_top_k(logits, temperature, top_p, top_k)
+    sample_top_p_top_k(logits, temperature, top_p, top_k, indices)
 }
 
 pub fn apply_repeat_penalty(logits: &mut [f32], recent_tokens: &[usize], penalty: f32) {
@@ -23,7 +23,7 @@ pub fn apply_repeat_penalty(logits: &mut [f32], recent_tokens: &[usize], penalty
     }
 }
 
-pub fn sample_top_p_top_k(logits: &[f32], temperature: f32, top_p: f32, top_k: usize) -> usize {
+pub fn sample_top_p_top_k(logits: &[f32], temperature: f32, top_p: f32, top_k: usize, indices: &mut Vec<usize>) -> usize {
     if temperature <= 0.0 {
         return logits.iter().enumerate().max_by(|(_, a), (_, b)| a.total_cmp(b)).map(|(i, _)| i).unwrap_or(0);
     }
@@ -34,7 +34,8 @@ pub fn sample_top_p_top_k(logits: &[f32], temperature: f32, top_p: f32, top_k: u
         if v > max_logit { max_logit = v; }
     }
 
-    let mut indices: Vec<usize> = (0..len).collect();
+    indices.clear();
+    indices.extend(0..len);
     let k = if top_k > 0 && top_k < len { top_k } else { len };
     indices.select_nth_unstable_by(k, |&a, &b| {
         let pa = (logits[a] - max_logit).exp();
@@ -49,7 +50,7 @@ pub fn sample_top_p_top_k(logits: &[f32], temperature: f32, top_p: f32, top_k: u
     let mut rng = rand::thread_rng();
     let rand_val: f32 = rng.gen::<f32>();
     let mut cum = 0.0f32;
-    for &i in &indices {
+    for &i in indices.iter() {
         cum += (logits[i] - max_logit).exp() / exp_sum;
         if cum >= rand_val {
             return i;

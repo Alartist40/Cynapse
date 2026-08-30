@@ -20,6 +20,7 @@ pub struct ShardEngine {
     pub kv_cache: KVCache,
     pub special_weights: HashMap<String, Tensor>,
     loader: ShardLoader,
+    sampler_indices: Vec<usize>,
 }
 
 impl ShardEngine {
@@ -91,6 +92,7 @@ impl ShardEngine {
             kv_cache,
             special_weights,
             loader,
+            sampler_indices: Vec::new(),
         })
     }
 
@@ -133,7 +135,7 @@ impl ShardEngine {
 
         // Prefill
         let mut logits = self.forward(tokens);
-        let mut next_token = sample_top_p(&logits, temperature, top_p);
+        let mut next_token = sample_top_p(&logits, temperature, top_p, &mut self.sampler_indices);
         let mut generated = vec![next_token];
 
         if next_token == 2 {
@@ -143,7 +145,7 @@ impl ShardEngine {
         // Decode loop
         for _ in 0..max_tokens - 1 {
             logits = self.forward(&[next_token]);
-            next_token = sample_top_p(&logits, temperature, top_p);
+            next_token = sample_top_p(&logits, temperature, top_p, &mut self.sampler_indices);
             generated.push(next_token);
 
             if next_token == 2 {
