@@ -264,30 +264,67 @@ impl Engine {
     }
 
     pub fn load_with_gpu(path: &str, n_gpu_layers: i32) -> Result<Self, Box<dyn std::error::Error>> {
-        // ── FFI path (preferred — vendored llama.cpp with SIMD kernels) ──
-        #[cfg(feature = "llama-ffi")]
-        {
-            if crate::llama_ffi::is_available() {
-                if let Ok(ffi_eng) = Self::load_ffi(path, n_gpu_layers) {
-                    return Ok(ffi_eng);
+        use crate::detect::{choose_tier, probe_hardware, probe_model, Tier};
+
+        let hw = probe_hardware();
+        let model_probe = probe_model(std::path::Path::new(path));
+        let prefer_gpu = n_gpu_layers > 0;
+        let tier = choose_tier(hw.gpu, hw.ram_available_mb, model_probe.size_bytes, prefer_gpu);
+
+        if std::env::var("LEAFCUTTER_DEBUG").map(|v| v == "1").unwrap_or(false) {
+            eprintln!("  Tier: {} ({})", tier.number(), tier.label());
+            eprintln!("  Model: {:.1} MB, RAM avail: {} MB", model_probe.size_mb(), hw.ram_available_mb);
+        }
+
+        match tier {
+            // ── Tier 2: Model fits RAM → FFI with vendored llama.cpp SIMD kernels ──
+            Tier::FastCpu => {
+                #[cfg(feature = "llama-ffi")]
+                {
+                    if crate::llama_ffi::is_available() {
+                        if let Ok(ffi_eng) = Self::load_ffi(path, n_gpu_layers) {
+                            return Ok(ffi_eng);
+                        }
+                    }
                 }
+                // FFI unavailable — fall through to native
+                let model = GGUFModel::load(path)?;
+                let report = model.capability_report();
+                if report.can_run {
+                    return Self::load_native(model, path);
+                }
+                Err(format!("Model cannot run: arch={}, quant={}, missing={}",
+                    report.architecture.name(), report.quant_summary.unsupported.len(),
+                    report.missing_tensors.len()).into())
+            }
+            // ── Tier 3: Model too big → native Rust engine with adaptive layer cache ──
+            Tier::StreamingCpu => {
+                let model = GGUFModel::load(path)?;
+                let report = model.capability_report();
+                if report.can_run {
+                    return Self::load_native(model, path);
+                }
+                Err(format!("Model cannot run: arch={}, quant={}, missing={}",
+                    report.architecture.name(), report.quant_summary.unsupported.len(),
+                    report.missing_tensors.len()).into())
+            }
+            // ── Tier 1: GPU (not yet wired) ──
+            Tier::Gpu => {
+                // Try FFI with GPU layers first
+                #[cfg(feature = "llama-ffi")]
+                {
+                    if crate::llama_ffi::is_available() {
+                        if let Ok(ffi_eng) = Self::load_ffi(path, n_gpu_layers) {
+                            return Ok(ffi_eng);
+                        }
+                    }
+                }
+                Err("GPU offload requested but not available".into())
+            }
+            Tier::Unsupported => {
+                Err(format!("Unsupported model: {}", path).into())
             }
         }
-
-        // ── Fallback: native Rust engine ──────────────────────────────
-        let model = GGUFModel::load(path)?;
-        let report = model.capability_report();
-        if report.can_run {
-            return Self::load_native(model, path);
-        }
-
-        Err(format!(
-            "Model cannot run via FFI or natively. \
-             Details: architecture={} unsupported_quant={} missing_tensors={}",
-            report.architecture.name(),
-            report.quant_summary.unsupported.len(),
-            report.missing_tensors.len()
-        ).into())
     }
 
     fn load_native(mut model: GGUFModel, path: &str) -> Result<Self, Box<dyn std::error::Error>> {
