@@ -51,3 +51,5 @@ security:
     net_policy: local-dev
     approval_policy: balanced
 backup_keep: 5
+tui:
+    theme: default

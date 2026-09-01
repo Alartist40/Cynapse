@@ -7,3 +7,4 @@
 pub use cynapse_core::*;
 
 pub mod app;
+pub mod theme;

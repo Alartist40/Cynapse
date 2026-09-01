@@ -38,6 +38,8 @@ pub struct Config {
     pub backup_keep: u32,
     /// Document-analysis / OCR settings.
     pub ocr: OcrConfig,
+    /// TUI appearance settings.
+    pub tui: TuiConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -289,6 +291,22 @@ impl Default for OcrConfig {
     }
 }
 
+/// TUI appearance settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TuiConfig {
+    /// Theme name: "default", "tokyonight", "catppuccin", "dracula", etc.
+    pub theme: String,
+}
+
+impl Default for TuiConfig {
+    fn default() -> Self {
+        TuiConfig {
+            theme: "default".to_string(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -300,6 +318,7 @@ impl Default for Config {
             models: ModelsConfig::default(),
             security: SecurityConfig::default(),
             ocr: OcrConfig::default(),
+            tui: TuiConfig::default(),
             backup_keep: 5,
         }
     }

@@ -23,7 +23,7 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::{Frame, Terminal};
@@ -40,12 +40,9 @@ use cynapse_core::persona::Persona;
 use cynapse_core::session::Manager;
 use cynapse_core::tools::build_profile;
 
-// ─── Palette (matches the Go lipgloss styles) ────────────────────────────────
+use crate::theme::Theme;
 
-const GOLD: Color = Color::Rgb(0xcb, 0x9b, 0x4e);
-const PURPLE_ACCENT: Color = Color::Rgb(0x9b, 0x6b, 0xc6);
-const DIM: Color = Color::Rgb(0x73, 0x64, 0x4e);
-const BRIGHT: Color = Color::Rgb(0xe8, 0xdc, 0xc8);
+// ─── Palette ──────────────────────────────────────────────────────────────────
 
 const SPINNER: [&str; 10] = ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"];
 
@@ -275,7 +272,7 @@ struct ConfirmState {
 }
 
 fn allowed_help() -> &'static str {
-    "📃 allowlist subcommands:
+    "allowlist subcommands:
     /allowed list                 show all rules persisted
     /allowed forget <rule>        remove one rule
     /allowed clear                remove every rule
@@ -292,6 +289,7 @@ struct App {
     cfg: Config,
     allowlist: Arc<Allowlist>,
     llm_client: Arc<dyn llm::LlmClient>,
+    theme: Theme,
 
     messages: Vec<UiMsg>,
     in_think_block: bool,
@@ -342,11 +340,13 @@ impl App {
         events_rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
         confirm_rx: tokio::sync::mpsc::UnboundedReceiver<ConfirmMsg>,
     ) -> App {
+        let theme = Theme::by_name(&cfg.tui.theme);
         App {
             agent,
             cfg,
             allowlist,
             llm_client,
+            theme,
             messages: Vec::new(),
             in_think_block: false,
             focus_mode: false,
@@ -455,7 +455,7 @@ impl App {
                                 .file_name()
                                 .and_then(|s| s.to_str())
                                 .unwrap_or(selected);
-                            self.messages.push(UiMsg::System(format!("🚀 Initialized session with model: {stem}")));
+                            self.messages.push(UiMsg::System(format!("Session initialized with model: {stem}")));
                         }
                     }
                     return Ok(());
@@ -560,7 +560,7 @@ impl App {
                     self.busy = false;
                     self.chunks = None;
                     self.errors = None;
-                    self.messages.push(UiMsg::System("⏹ Response generation interrupted by ESC key.".to_string()));
+                    self.messages.push(UiMsg::System("Response generation interrupted by ESC key.".to_string()));
                 } else if self.show_slash_menu || self.menu_open {
                     self.show_slash_menu = false;
                     self.menu_open = false;
@@ -905,9 +905,9 @@ impl App {
                 }
                 self.agent.set_focus_mode(self.focus_mode);
                 let status = if self.focus_mode {
-                    "🎯 Focus mode toggled ON (ADHD zero-fluff mode active)"
+                    "Focus mode ON (zero-fluff output)"
                 } else {
-                    "💭 Focus mode toggled OFF (Normal detailed conversational mode)"
+                    "Focus mode OFF (detailed conversational mode)"
                 };
                 self.messages.push(UiMsg::System(status.to_string()));
             }
@@ -915,7 +915,7 @@ impl App {
                 let target = trimmed.strip_prefix("/model ").unwrap_or("").trim();
                 self.llm_client.set_model(target);
                 self.cfg.llm.model = target.to_string();
-                self.messages.push(UiMsg::System(format!("✨ Swapped active model to: {target}")));
+                self.messages.push(UiMsg::System(format!("Swapped active model to: {target}")));
             }
             _ if trimmed.starts_with("/think") => {
                 let arg = trimmed.strip_prefix("/think").unwrap_or("").trim().to_lowercase();
@@ -935,7 +935,7 @@ impl App {
                 let cur_rss = get_current_rss_mb();
                 let peak_rss = get_peak_rss_mb();
                 self.messages.push(UiMsg::System(format!(
-                    "📊 Engine RAM footprint: {} (peak {})",
+                    "Engine RAM footprint: {} (peak {})",
                     format_rss(cur_rss),
                     format_rss(peak_rss)
                 )));
@@ -963,9 +963,9 @@ impl App {
                 let rules = self.allowlist.snapshot();
                 if rules.is_empty() {
                     self.messages
-                        .push(UiMsg::System("📃 ~/.cynapse/allowlist is empty.".to_string()));
+                        .push(UiMsg::System("~/.cynapse/allowlist is empty.".to_string()));
                 } else {
-                    let mut msg = format!("📃 ~/.cynapse/allowlist ({} rules):\n", rules.len());
+                    let mut msg = format!("~/.cynapse/allowlist ({} rules):\n", rules.len());
                     for r in &rules {
                         msg.push_str(&format!("    {r}\n"));
                     }
@@ -983,7 +983,7 @@ impl App {
                     key = format!("bash:{key}");
                 }
                 match self.allowlist.forget(&key) {
-                    Ok(_) => self.messages.push(UiMsg::System(format!("🗑  Removed rule: {key}"))),
+                    Ok(_) => self.messages.push(UiMsg::System(format!("Removed rule: {key}"))),
                     Err(e) => self
                         .messages
                         .push(UiMsg::System(format!("! Forget failed: {e}"))),
@@ -1001,7 +1001,7 @@ impl App {
                 }
                 let remaining = self.allowlist.snapshot().len();
                 self.messages
-                    .push(UiMsg::System(format!("🗑  Cleared {} rules.", count - remaining)));
+                    .push(UiMsg::System(format!("Cleared {} rules.", count - remaining)));
             }
             _ => {
                 self.messages.push(UiMsg::System(allowed_help().to_string()));
@@ -1025,13 +1025,13 @@ impl App {
                 Ok(ids) => {
                     if ids.is_empty() {
                         self.messages.push(UiMsg::System(format!(
-                            "🔎 No memories found for \"{query}\"."
+                            "No memories found for \"{query}\"."
                         )));
                         return;
                     }
                     let graph = cynapse_core::dendrite::Dendrite::new();
                     let _ = store.load_all(&graph);
-                    let mut msg = format!("🔎 {} match(es) for \"{query}\":\n", ids.len());
+                    let mut msg = format!("{} match(es) for \"{query}\":\n", ids.len());
                     for id in ids.iter().take(5) {
                         if let Some(node) = graph.get(id) {
                             let content: String = node
@@ -1186,7 +1186,7 @@ impl App {
             return;
         }
         if let Some(rest) = trimmed.strip_prefix("[tool:parallel]") {
-            self.messages.push(UiMsg::Tool(format!("⚡ parallel: {}", rest.trim())));
+            self.messages.push(UiMsg::Tool(format!("parallel: {}", rest.trim())));
             return;
         }
         if let Some(rest) = trimmed.strip_prefix("[tool]") {
@@ -1282,7 +1282,7 @@ impl App {
                 remembered_rule: String::new(),
             });
             self.messages
-                .push(UiMsg::System("⏹ Turn ended; pending confirmation cancelled.".to_string()));
+                .push(UiMsg::System("Turn ended; pending confirmation cancelled.".to_string()));
         }
     }
 
@@ -1337,7 +1337,7 @@ impl App {
                         input,
                         remembered_rule: String::new(),
                     });
-                    self.messages.push(UiMsg::System("🔒 (secret received)".to_string()));
+                    self.messages.push(UiMsg::System("(secret received)".to_string()));
                 }
                 KeyCode::Esc => {
                     self.resolve_confirm(confirm::Resolved {
@@ -1345,7 +1345,7 @@ impl App {
                         input: String::new(),
                         remembered_rule: String::new(),
                     });
-                    self.messages.push(UiMsg::System("🔒 (cancelled)".to_string()));
+                    self.messages.push(UiMsg::System("(cancelled)".to_string()));
                 }
                 KeyCode::Backspace => {
                     self.secret_buffer.pop();
@@ -1430,19 +1430,19 @@ impl App {
 
     fn render_top_header(&self, f: &mut Frame, header_area: Rect, divider_area: Rect) {
         let mut left_spans = vec![
-            Span::styled("⚡ CYNAPSE AI ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)),
-            Span::styled("· Native Engine ", Style::default().fg(PURPLE_ACCENT)),
+            Span::styled("CYNAPSE AI ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)),
+            Span::styled("~ Native Engine ", Style::default().fg(self.theme.accent)),
         ];
 
-        let mode_label = if self.focus_mode { "[🎯 FOCUS]" } else { "[💭 THINK]" };
-        left_spans.push(Span::styled(mode_label, Style::default().fg(GOLD)));
+        let mode_label = if self.focus_mode { "[FOCUS]" } else { "[THINK]" };
+        left_spans.push(Span::styled(mode_label, Style::default().fg(self.theme.gold)));
 
         let header_line = Line::from(left_spans);
         f.render_widget(Paragraph::new(header_line), header_area);
 
         let rule = Paragraph::new(Line::from(Span::styled(
             "─".repeat(header_area.width as usize),
-            Style::default().fg(DIM),
+            Style::default().fg(self.theme.dim),
         )));
         f.render_widget(rule, divider_area);
     }
@@ -1455,24 +1455,24 @@ impl App {
             .unwrap_or(cur_model);
 
         let lines = vec![
-            Line::from(Span::styled("🧠 DENDRITE Memory", Style::default().fg(GOLD).add_modifier(Modifier::BOLD))),
-            Line::from(Span::styled("  • Status: Active", Style::default().fg(BRIGHT))),
-            Line::from(Span::styled("  • Store: SQLite", Style::default().fg(DIM))),
+            Line::from(Span::styled("DENDRITE Memory", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled("  * Status: Active", Style::default().fg(self.theme.bright))),
+            Line::from(Span::styled("  * Store: SQLite", Style::default().fg(self.theme.dim))),
             Line::from(""),
-            Line::from(Span::styled("⚙️ Engine Specs", Style::default().fg(GOLD).add_modifier(Modifier::BOLD))),
-            Line::from(Span::styled(format!("  • Model: {short_model}"), Style::default().fg(BRIGHT))),
-            Line::from(Span::styled(format!("  • Provider: {}", self.cfg.llm.provider), Style::default().fg(DIM))),
+            Line::from(Span::styled("Engine Specs", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(format!("  * Model: {short_model}"), Style::default().fg(self.theme.bright))),
+            Line::from(Span::styled(format!("  * Provider: {}", self.cfg.llm.provider), Style::default().fg(self.theme.dim))),
             Line::from(""),
-            Line::from(Span::styled("⌨️ Keybindings", Style::default().fg(GOLD).add_modifier(Modifier::BOLD))),
-            Line::from(Span::styled("  • ESC: Stop / Back", Style::default().fg(BRIGHT))),
-            Line::from(Span::styled("  • Ctrl+K: Menu", Style::default().fg(DIM))),
-            Line::from(Span::styled("  • /: Slash Commands", Style::default().fg(DIM))),
+            Line::from(Span::styled("Keybindings", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled("  * ESC: Stop / Back", Style::default().fg(self.theme.bright))),
+            Line::from(Span::styled("  * Ctrl+K: Menu", Style::default().fg(self.theme.dim))),
+            Line::from(Span::styled("  * /: Slash Commands", Style::default().fg(self.theme.dim))),
         ];
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(PURPLE_ACCENT))
-            .title(Span::styled(" Sidebar ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)));
+            .border_style(Style::default().fg(self.theme.accent))
+            .title(Span::styled(" Sidebar ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)));
         let sidebar = Paragraph::new(lines).block(block);
         f.render_widget(sidebar, area);
     }
@@ -1480,41 +1480,41 @@ impl App {
     fn render_welcome_cards(&self, f: &mut Frame, area: Rect) {
         let welcome_lines = vec![
             Line::from(vec![
-                Span::styled("⚡ Welcome to CYNAPSE AI ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)),
-                Span::styled("— Native Layer-Streaming & FFI Engine", Style::default().fg(PURPLE_ACCENT)),
+                Span::styled("Welcome to CYNAPSE AI ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)),
+                Span::styled("~ Native Layer-Streaming & FFI Engine", Style::default().fg(self.theme.accent)),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  • ", Style::default().fg(GOLD)),
-                Span::styled("GGUF Model Downloader: ", Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD)),
-                Span::styled("Type ", Style::default().fg(DIM)),
-                Span::styled("/download hf:org/repo", Style::default().fg(PURPLE_ACCENT)),
-                Span::styled(" to fetch models from HuggingFace.", Style::default().fg(DIM)),
+                Span::styled("  * ", Style::default().fg(self.theme.gold)),
+                Span::styled("GGUF Model Downloader: ", Style::default().fg(self.theme.bright).add_modifier(Modifier::BOLD)),
+                Span::styled("Type ", Style::default().fg(self.theme.dim)),
+                Span::styled("/download hf:org/repo", Style::default().fg(self.theme.accent)),
+                Span::styled(" to fetch models from HuggingFace.", Style::default().fg(self.theme.dim)),
             ]),
             Line::from(vec![
-                Span::styled("  • ", Style::default().fg(GOLD)),
-                Span::styled("DENDRITE Graph Memory: ", Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD)),
-                Span::styled("Type ", Style::default().fg(DIM)),
-                Span::styled("/memory search <q>", Style::default().fg(PURPLE_ACCENT)),
-                Span::styled(" or ", Style::default().fg(DIM)),
-                Span::styled("/memory del <id>", Style::default().fg(PURPLE_ACCENT)),
-                Span::styled(" to manage memories.", Style::default().fg(DIM)),
+                Span::styled("  * ", Style::default().fg(self.theme.gold)),
+                Span::styled("DENDRITE Graph Memory: ", Style::default().fg(self.theme.bright).add_modifier(Modifier::BOLD)),
+                Span::styled("Type ", Style::default().fg(self.theme.dim)),
+                Span::styled("/memory search <q>", Style::default().fg(self.theme.accent)),
+                Span::styled(" or ", Style::default().fg(self.theme.dim)),
+                Span::styled("/memory del <id>", Style::default().fg(self.theme.accent)),
+                Span::styled(" to manage memories.", Style::default().fg(self.theme.dim)),
             ]),
             Line::from(vec![
-                Span::styled("  • ", Style::default().fg(GOLD)),
-                Span::styled("Focus / Zero-Fluff Mode: ", Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD)),
-                Span::styled("Type ", Style::default().fg(DIM)),
-                Span::styled("/focus", Style::default().fg(PURPLE_ACCENT)),
-                Span::styled(" for concise, direct responses.", Style::default().fg(DIM)),
+                Span::styled("  * ", Style::default().fg(self.theme.gold)),
+                Span::styled("Focus / Zero-Fluff Mode: ", Style::default().fg(self.theme.bright).add_modifier(Modifier::BOLD)),
+                Span::styled("Type ", Style::default().fg(self.theme.dim)),
+                Span::styled("/focus", Style::default().fg(self.theme.accent)),
+                Span::styled(" for concise, direct responses.", Style::default().fg(self.theme.dim)),
             ]),
             Line::from(""),
-            Line::from(Span::styled("Type your prompt below or hit / to open the slash command menu.", Style::default().fg(DIM).add_modifier(Modifier::ITALIC))),
+            Line::from(Span::styled("Type your prompt below or hit / to open the slash command menu.", Style::default().fg(self.theme.dim).add_modifier(Modifier::ITALIC))),
         ];
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(DIM))
-            .title(Span::styled(" Atomic Dashboard ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)));
+            .border_style(Style::default().fg(self.theme.dim))
+            .title(Span::styled(" Atomic Dashboard ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)));
         let welcome = Paragraph::new(welcome_lines).block(block);
         f.render_widget(welcome, area);
     }
@@ -1531,7 +1531,7 @@ impl App {
         self.chat_scroll = scroll;
 
         let chat = Paragraph::new(Text::from(lines))
-            .style(Style::default().fg(BRIGHT))
+            .style(Style::default().fg(self.theme.bright))
             .scroll((scroll as u16, 0));
         f.render_widget(chat, area);
     }
@@ -1550,8 +1550,8 @@ impl App {
 
         let mut lines = vec![
             Line::from(vec![
-                Span::styled("⚡ CYNAPSE AI Launch Setup ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)),
-                Span::styled("— Select model for this session", Style::default().fg(DIM)),
+                Span::styled("CYNAPSE AI Launch Setup ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)),
+                Span::styled("~ Select model for this session", Style::default().fg(self.theme.dim)),
             ]),
             Line::from(""),
         ];
@@ -1564,9 +1564,9 @@ impl App {
                 .unwrap_or_else(|| m.clone());
 
             let style = if i == self.startup_cursor {
-                Style::default().fg(GOLD).bg(Color::Rgb(60, 30, 80)).add_modifier(Modifier::BOLD)
+                Style::default().fg(self.theme.gold).bg(self.theme.highlight_bg).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(BRIGHT)
+                Style::default().fg(self.theme.bright)
             };
 
             let prefix = if i == self.startup_cursor { "▸ " } else { "  " };
@@ -1574,12 +1574,12 @@ impl App {
         }
 
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled("Use ↑/↓ to navigate · Enter to Select · Esc to Skip", Style::default().fg(DIM).add_modifier(Modifier::ITALIC))));
+        lines.push(Line::from(Span::styled("Use ↑/↓ to navigate · Enter to Select · Esc to Skip", Style::default().fg(self.theme.dim).add_modifier(Modifier::ITALIC))));
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(GOLD))
-            .title(Span::styled(" 🚀 Select Model on Launch ", Style::default().fg(GOLD).add_modifier(Modifier::BOLD)));
+            .border_style(Style::default().fg(self.theme.gold))
+            .title(Span::styled(" Select Model on Launch ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)));
 
         let popup = Paragraph::new(lines).block(block);
         f.render_widget(popup, modal_area);
@@ -1618,7 +1618,7 @@ impl App {
             }
         }
 
-        list.push("📥 Download model from HuggingFace...".to_string());
+        list.push("Download model from HuggingFace...".to_string());
         list
     }
 
@@ -1656,11 +1656,11 @@ impl App {
         for (i, (cmd, desc)) in matches.iter().enumerate() {
             let style = if i == self.slash_cursor {
                 Style::default()
-                    .fg(BRIGHT)
-                    .bg(Color::Rgb(60, 30, 80))
+                    .fg(self.theme.bright)
+                    .bg(self.theme.highlight_bg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(DIM)
+                Style::default().fg(self.theme.dim)
             };
             lines.push(Line::from(Span::styled(
                 format!(" {cmd:<22} {desc}"),
@@ -1669,7 +1669,7 @@ impl App {
         }
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(PURPLE_ACCENT))
+            .border_style(Style::default().fg(self.theme.accent))
             .title(" commands ");
         let dropdown = Paragraph::new(lines).block(block);
         f.render_widget(dropdown, area);
@@ -1691,17 +1691,17 @@ impl App {
             if i == self.menu_cursor {
                 lines.push(Line::from(Span::styled(
                     format!("▸ {}", item.label),
-                    Style::default().fg(GOLD).add_modifier(Modifier::BOLD),
+                    Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD),
                 )));
             } else {
                 lines.push(Line::from(Span::styled(
                     format!("  {}", item.label),
-                    Style::default().fg(DIM),
+                    Style::default().fg(self.theme.dim),
                 )));
             }
         }
         let menu = Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(GOLD)));
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(self.theme.gold)));
         f.render_widget(menu, box_area);
     }
 
@@ -1733,7 +1733,7 @@ impl App {
             bar.push_str(&" ".repeat(pad));
             bar.push_str(&right);
         }
-        let status = Paragraph::new(Line::from(Span::styled(bar, Style::default().fg(BRIGHT))));
+        let status = Paragraph::new(Line::from(Span::styled(bar, Style::default().fg(self.theme.bright))));
         f.render_widget(status, area);
     }
 
@@ -1754,7 +1754,7 @@ impl App {
         shown.push_str(&self.input[byte_idx..]);
         let input = Paragraph::new(Text::raw(shown))
             .wrap(ratatui::widgets::Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(GOLD)));
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(self.theme.gold)));
         f.render_widget(input, area);
     }
 
@@ -1763,12 +1763,12 @@ impl App {
     fn chat_lines(&self, width: usize) -> Vec<Line<'static>> {
         let width = if width == 0 { 1 } else { width };
         let mut lines: Vec<Line<'static>> = Vec::new();
-        let user_p = Style::default().fg(BRIGHT).add_modifier(Modifier::BOLD);
-        let asst_p = Style::default().fg(BRIGHT);
-        let think_p = Style::default().fg(DIM).add_modifier(Modifier::ITALIC);
-        let tool_p = Style::default().fg(GOLD);
-        let toolres_p = Style::default().fg(DIM);
-        let sys_p = Style::default().fg(PURPLE_ACCENT);
+        let user_p = Style::default().fg(self.theme.bright).add_modifier(Modifier::BOLD);
+        let asst_p = Style::default().fg(self.theme.bright);
+        let think_p = Style::default().fg(self.theme.dim).add_modifier(Modifier::ITALIC);
+        let tool_p = Style::default().fg(self.theme.gold);
+        let toolres_p = Style::default().fg(self.theme.dim);
+        let sys_p = Style::default().fg(self.theme.accent);
 
         for m in &self.messages {
             let (prefix, style): (String, Style) = match m {
@@ -1854,7 +1854,7 @@ impl App {
                 let frame = SPINNER[self.spinner % SPINNER.len()];
                 lines.push(Line::from(Span::styled(
                     format!(" {frame} Loading model & thinking..."),
-                    Style::default().fg(GOLD),
+                    Style::default().fg(self.theme.gold),
                 )));
             }
             lines.push(Line::from(""));
