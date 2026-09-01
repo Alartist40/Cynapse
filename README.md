@@ -109,7 +109,15 @@ llm:
   provider: leafcutter
   model: /path/to/model.gguf
   local_threads: 10  # optimal for 12-core ARM
+tui:
+  theme: tokyonight  # or: catppuccin, dracula, nord, gruvbox, one-dark, ...
 ```
+
+### Themes
+
+16 built-in themes. Set `tui.theme` in `~/.cynapse/config.yaml`:
+
+`default` | `tokyonight` | `catppuccin` | `catppuccin-macchiato` | `dracula` | `nord` | `gruvbox` | `one-dark` | `rose-pine` | `everforest` | `kanagawa` | `solarized` | `flexoki` | `monokai` | `cobalt2` | `ayu`
 
 Set the provider:
 
