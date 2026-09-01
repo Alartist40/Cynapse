@@ -50,6 +50,7 @@ const SPINNER: [&str; 10] = ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"]
 const SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/focus", "Toggle ADHD focus mode (zero-fluff output)"),
     ("/think", "Toggle thinking scratchpad visibility in chat"),
+    ("/theme", "Switch color theme (tokyonight, catppuccin, dracula, etc.)"),
     ("/models", "List & hot-swap GGUF models on disk"),
     ("/download", "Download GGUF model directly from HuggingFace"),
     ("/memory", "Search, edit, or delete DENDRITE graph memories"),
@@ -210,11 +211,13 @@ fn resolved_echo(c: char, req: &confirm::Request) -> String {
 enum MenuAction {
     Status,
     Models,
+    Themes,
     Clear,
     Help,
     Quit,
     Back,
     SelectModel(String),
+    SelectTheme(String),
 }
 
 #[derive(Clone)]
@@ -227,6 +230,7 @@ fn main_menu() -> Vec<MenuItem> {
     vec![
         MenuItem { label: "Status".into(), action: MenuAction::Status },
         MenuItem { label: "Models".into(), action: MenuAction::Models },
+        MenuItem { label: "Themes".into(), action: MenuAction::Themes },
         MenuItem { label: "Clear".into(), action: MenuAction::Clear },
         MenuItem { label: "Help".into(), action: MenuAction::Help },
         MenuItem { label: "Quit".into(), action: MenuAction::Quit },
@@ -741,6 +745,35 @@ impl App {
                     .push(UiMsg::System(format!("Switched model to: {stem}")));
                 self.restore_main_menu();
             }
+            MenuAction::Themes => {
+                let current = self.cfg.tui.theme.clone();
+                let names = crate::theme::Theme::all_names();
+                let mut items: Vec<MenuItem> = names
+                    .iter()
+                    .map(|n| {
+                        let label = if *n == current {
+                            format!("{n} (active)")
+                        } else {
+                            n.to_string()
+                        };
+                        MenuItem {
+                            label,
+                            action: MenuAction::SelectTheme(n.to_string()),
+                        }
+                    })
+                    .collect();
+                items.push(MenuItem { label: "< Back".into(), action: MenuAction::Back });
+                self.menu_items = items;
+                self.menu_cursor = 0;
+                self.menu_open = true;
+            }
+            MenuAction::SelectTheme(name) => {
+                self.cfg.tui.theme = name.clone();
+                self.theme = crate::theme::Theme::by_name(&name);
+                self.messages
+                    .push(UiMsg::System(format!("Theme switched to: {name}")));
+                self.restore_main_menu();
+            }
             MenuAction::Clear => {
                 self.messages.clear();
                 let _ = self.agent.clear_session();
@@ -878,7 +911,6 @@ impl App {
             "/models" => {
                 let prev = self.menu_items.clone();
                 self.restore_main_menu();
-                // Trigger the Models menu action programmatically.
                 let models_action = MenuItem {
                     label: "Models".into(),
                     action: MenuAction::Models,
@@ -887,6 +919,27 @@ impl App {
                 self.menu_cursor = 0;
                 self.run_menu_action().await;
                 self.menu_items = prev;
+            }
+            _ if trimmed.starts_with("/theme") => {
+                let arg = trimmed.strip_prefix("/theme").unwrap_or("").trim().to_lowercase();
+                if arg.is_empty() {
+                    let names = crate::theme::Theme::all_names();
+                    let current = &self.cfg.tui.theme;
+                    let mut msg = format!("Current theme: {current}\nAvailable themes:\n");
+                    for name in names {
+                        let marker = if *name == current { " *" } else { "" };
+                        msg.push_str(&format!("  {name}{marker}\n"));
+                    }
+                    msg.push_str("\nUsage: /theme <name>");
+                    self.messages.push(UiMsg::System(msg));
+                } else {
+                    let theme = crate::theme::Theme::by_name(&arg);
+                    let resolved = theme.name.to_string();
+                    self.cfg.tui.theme = resolved.clone();
+                    self.theme = theme;
+                    self.messages
+                        .push(UiMsg::System(format!("Theme switched to: {resolved}")));
+                }
             }
             "/provider" => {
                 let msg = format!(
