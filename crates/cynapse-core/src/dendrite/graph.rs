@@ -4,7 +4,7 @@
 //! wiki-links (`[[target]]`) and hashtags (`#tag`) that are parsed from
 //! content; backlinks are auto-wired and kept in sync on every mutation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use regex::Regex;
@@ -323,6 +323,17 @@ impl Dendrite {
             return Vec::new();
         }
 
+        // Compute document frequency for each query token (how many docs contain it).
+        let mut doc_freq: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+        for node in inner.nodes.values() {
+            let doc_text = format!("{} {} {}", node.title, node.content, node.tags.join(" ")).to_lowercase();
+            for token in &query_tokens {
+                if doc_text.contains(token) {
+                    *doc_freq.entry(token.clone()).or_insert(0.0) += 1.0;
+                }
+            }
+        }
+
         let mut scored: Vec<(Node, f32)> = Vec::new();
         let k1 = 1.2f32;
         let b = 0.75f32;
@@ -342,7 +353,9 @@ impl Dendrite {
             for token in &query_tokens {
                 let count = doc_text.matches(token).count() as f32;
                 if count > 0.0 {
-                    let idf = ((total_docs + 1.0) / (1.0 + count)).ln();
+                    let df = doc_freq.get(token).copied().unwrap_or(0.0);
+                    // Standard BM25 IDF: ln((N - df + 0.5) / (df + 0.5))
+                    let idf = ((total_docs - df + 0.5) / (df + 0.5)).max(0.0001).ln();
                     let tf = (count * (k1 + 1.0)) / (count + k1 * (1.0 - b + b * (doc_len / avg_len.max(1.0))));
                     score += idf * tf;
                 }
@@ -457,9 +470,9 @@ impl Dendrite {
         seen.insert(id.to_string());
         let mut out = Vec::new();
 
-        let mut queue: Vec<(String, usize)> = vec![(id.to_string(), 0)];
-        while let Some((node_id, depth)) = queue.first().cloned() {
-            queue.remove(0);
+        let mut queue: VecDeque<(String, usize)> = VecDeque::new();
+        queue.push_back((id.to_string(), 0));
+        while let Some((node_id, depth)) = queue.pop_front() {
             if depth >= 3 {
                 continue;
             }
@@ -472,7 +485,7 @@ impl Dendrite {
                     if let Some(target) = inner.nodes.get(lid) {
                         out.push(target.clone());
                         seen.insert(lid.clone());
-                        queue.push((lid.clone(), depth + 1));
+                        queue.push_back((lid.clone(), depth + 1));
                     }
                 }
             }
@@ -481,7 +494,7 @@ impl Dendrite {
                     if let Some(target) = inner.nodes.get(bid) {
                         out.push(target.clone());
                         seen.insert(bid.clone());
-                        queue.push((bid.clone(), depth + 1));
+                        queue.push_back((bid.clone(), depth + 1));
                     }
                 }
             }
@@ -565,11 +578,6 @@ pub(crate) fn parse_tags(content: &str) -> Vec<String> {
         }
     }
     tags
-}
-
-#[allow(dead_code)]
-pub(crate) fn contains_str(slice: &[String], item: &str) -> bool {
-    slice.iter().any(|s| s == item)
 }
 
 pub(crate) fn contains_str_fold(slice: &[String], item: &str) -> bool {

@@ -219,15 +219,20 @@ impl Engine {
 
     #[cfg(feature = "llama-ffi")]
     fn load_ffi(path: &str, n_gpu_layers: i32) -> Result<Self, Box<dyn std::error::Error>> {
+        // Read GGUF metadata first to get architecture info and config.
+        let gguf_model = GGUFModel::load(path)?;
+        let config = gguf_model.config.clone();
+
         let model = LlamaModel::load(Path::new(path), n_gpu_layers)
             .map_err(|e| format!("Failed to load model via FFI: {}", e))?;
         let threads = crate::init::effective_thread_count() as i32;
-        let context = LlamaContext::new(&model, 4096, threads)
-            .map_err(|e| format!("Failed to create FFI context: {}", e))?;
 
-        // Still load GGUFModel for metadata (config, tokenizer info, etc.)
-        let gguf_model = GGUFModel::load(path)?;
-        let config = gguf_model.config.clone();
+        // Read model's trained context length from GGUF metadata if available,
+        // fall back to a safe default.
+        let model_ctx = model.n_ctx_train();
+        let n_ctx = if model_ctx > 0 { model_ctx.min(8192) } else { 4096 };
+        let context = LlamaContext::new(&model, n_ctx as u32, threads)
+            .map_err(|e| format!("Failed to create FFI context: {}", e))?;
 
         Ok(Self {
             model: gguf_model,
@@ -702,8 +707,20 @@ impl Engine {
     pub fn generate(&mut self, tokens: &[usize], max_tokens: usize, temperature: f32, top_p: f32) -> Vec<usize> {
         #[cfg(feature = "llama-ffi")]
         if let Some(model) = &self.ffi_model {
+            // Validate token IDs against vocab size.
+            let n_vocab = model.n_vocab() as usize;
+            if tokens.iter().any(|&t| t >= n_vocab) {
+                eprintln!("⚠️  Token ID out of FFI vocab range in generate, falling back to native");
+                self.ffi_context = None;
+                self.ffi_model = None;
+                return self.generate_native(tokens, max_tokens, temperature, top_p);
+            }
+
             // Recreate context to ensure fresh KV cache (test_generation calls forward before generate)
-            let mut ctx = LlamaContext::new(model, 4096, 4)
+            let n_ctx = model.n_ctx_train();
+            let n_ctx = if n_ctx > 0 { n_ctx.min(8192) } else { 4096 };
+            let threads = crate::init::effective_thread_count() as i32;
+            let mut ctx = LlamaContext::new(model, n_ctx as u32, threads)
                 .expect("Failed to recreate FFI context");
             let tokens_i32: Vec<i32> = tokens.iter().map(|&t| t as i32).collect();
             let eos = model.eos_token();
@@ -945,13 +962,24 @@ impl Engine {
     pub fn forward(&mut self, tokens: &[usize]) -> Vec<f32> {
         #[cfg(feature = "llama-ffi")]
         if let Some(ctx) = &mut self.ffi_context {
+            // Validate token IDs against FFI vocab size before forward pass.
+            let n_vocab = ctx.n_vocab() as usize;
+            if tokens.iter().any(|&t| t >= n_vocab) {
+                eprintln!("⚠️  Token ID out of FFI vocab range (max {}), falling back to native", n_vocab);
+                self.ffi_context = None;
+                self.ffi_model = None;
+                return self.forward_native(tokens).unwrap_or_default();
+            }
+
             let tokens_i32: Vec<i32> = tokens.iter().map(|&t| t as i32).collect();
             let start_pos = self.seq_offset as i32;
             return match ctx.forward_at_pos(&tokens_i32, start_pos) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("⚠️  FFI forward failed: {}", e);
-                    vec![]
+                    eprintln!("⚠️  FFI forward failed: {} — falling back to native engine", e);
+                    self.ffi_context = None;
+                    self.ffi_model = None;
+                    self.forward_native(tokens).unwrap_or_default()
                 }
             };
         }

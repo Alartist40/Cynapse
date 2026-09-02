@@ -141,8 +141,8 @@ impl LlamaContext {
         unsafe {
             let mut cparams = bindings::llama_context_default_params();
             cparams.n_ctx = n_ctx;
-            cparams.n_batch = 2048.min(n_ctx);
-            cparams.n_ubatch = 512.min(cparams.n_batch);
+            cparams.n_batch = n_ctx.min(8192);
+            cparams.n_ubatch = cparams.n_batch.min(2048);
             cparams.n_threads = n_threads;
             cparams.n_threads_batch = n_threads;
 

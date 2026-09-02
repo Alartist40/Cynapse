@@ -398,13 +398,33 @@ pub fn list_files_tool(work_dir: &str) -> Arc<dyn Tool> {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Safely resolve a relative path within the workspace, blocking
-/// directory traversal (`../../etc/passwd`).
+/// directory traversal (`../../etc/passwd`). For writes, the parent
+/// directory must exist and be canonicalizable.
 fn resolve_path(work_dir: &str, rel: &str) -> Result<String> {
     let abs_work = std::fs::canonicalize(work_dir)
         .unwrap_or_else(|_| std::path::PathBuf::from(work_dir));
+
+    // Reject obvious traversal patterns before any path joining.
+    if rel.contains("..") {
+        return Err(anyhow!("path contains '..' traversal: {rel}"));
+    }
+
     let joined = std::path::Path::new(work_dir).join(rel);
-    let abs_resolved = std::fs::canonicalize(&joined)
-        .unwrap_or_else(|_| joined);
+
+    // Try to canonicalize the full path; if it fails (target doesn't
+    // exist yet), canonicalize the parent and verify it's within the
+    // workspace.
+    let abs_resolved = match std::fs::canonicalize(&joined) {
+        Ok(p) => p,
+        Err(_) => {
+            // Target doesn't exist — verify the parent is within workspace.
+            let parent = joined.parent().unwrap_or(&joined);
+            let abs_parent = std::fs::canonicalize(parent)
+                .map_err(|_| anyhow!("cannot resolve parent directory: {}", parent.display()))?;
+            abs_parent.join(joined.file_name().unwrap_or_default())
+        }
+    };
+
     let ws = abs_work.to_string_lossy().to_string();
     let rs = abs_resolved.to_string_lossy().to_string();
     if rs != ws && !rs.starts_with(&format!("{ws}/")) {
@@ -509,9 +529,9 @@ pub fn web_fetch_tool(policy: netguard::Policy) -> Arc<dyn Tool> {
         move |args| {
             let url = str_arg(&args, "url")?;
 
-            // SSRF gate: skipped when every relevant flag is open
-            // (loopback+private+cleartext all allowed).
-            if !policy.allow_loopback && !policy.allow_private && !policy.allow_cleartext_http {
+            // SSRF gate: always run the check — policy.check() respects
+            // the allow_* flags internally.
+            {
                 let decision = policy.check(url);
                 if !decision.allow {
                     return Ok(format!("BLOCKED by netguard: {}", decision.reason));

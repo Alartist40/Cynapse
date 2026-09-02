@@ -10,7 +10,9 @@
 //! lm_head.
 
 use super::q4_k::Matrix as Q4KMatrix;
+use super::q4_k::Block as Q4KBlock;
 use super::q6_k::Matrix as Q6KMatrix;
+use super::q6_k::Block as Q6KBlock;
 use super::q8_k::Q8KBlock;
 use super::q8_k::{quantize_row_q8_k, q4_k_dot_q8_k_scalar, q6_k_dot_q8_k_scalar, QK_K};
 

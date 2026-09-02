@@ -29,7 +29,11 @@ pub enum Command {
     /// Query the DENDRITE graph memory.
     Memory(MemoryCmd),
     /// Run full system diagnostic health check.
-    Doctor,
+    Doctor {
+        /// Automatically repair detected issues
+        #[arg(long, short)]
+        fix: bool,
+    },
     /// Update cynapse to the latest version from GitHub.
     Update,
     /// Download a GGUF model from HuggingFace (e.g. cynapse get hf:Qwen/Qwen2.5-Coder-7B-Instruct-GGUF).

@@ -89,13 +89,11 @@ impl ReflectionWorker {
             return Ok(());
         }
 
-        let timestamp = std::time::SystemTime::now()
+        let node_id = format!("reflection_{}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or(Duration::ZERO)
-            .as_secs() as i64;
-
-        let node_id = format!("reflection_{}", timestamp);
-        let title = format!("Reflected Memory {}", timestamp);
+            .as_nanos());
+        let title = format!("Reflected Memory {}", node_id);
 
         let node_type = if output.contains("#procedure") {
             NodeType::Procedure

@@ -124,12 +124,14 @@ impl Persona {
         self.compile_system_prompt_with_focus(user_message, false)
     }
 
-    pub fn compile_system_prompt_with_focus(&self, _user_message: &str, focus: bool) -> String {
-        // Use the model's native system prompt (from its profile) as the base.
-        // Only append CYNAPSE-specific context when tools/memory are relevant.
-        // This keeps token count low and avoids confusing the model with a
-        // completely different persona than it was trained on.
-        String::new()
+    pub fn compile_system_prompt_with_focus(&self, user_message: &str, focus: bool) -> String {
+        let max_tokens = if focus { 2000 } else { 4000 };
+        let mut prompt = self._context.build_prompt(user_message, max_tokens);
+        if focus {
+            prompt.push_str("\n\n");
+            prompt.push_str(crate::adhd::ADHD_SYSTEM_PROMPT);
+        }
+        prompt
     }
 
     pub fn read_file(&self, name: &str) -> Result<String> {
@@ -137,18 +139,10 @@ impl Persona {
         fs::read_to_string(self.base_path.join(name)).context("reading persona file")
     }
 
-    /// Write a file and sync it to the graph if it's a core node.
+    /// Write a file atomically (temp+rename with .bak backup) and sync
+    /// it to the graph if it's a core node.
     pub fn write_file(&self, name: &str, content: &str) -> Result<()> {
-        let _guard = self.mu.lock().unwrap_or_else(|e| e.into_inner());
-
-        if let Some((id, title, node_type)) = node_meta(name) {
-            let node = self.graph.upsert(id, title, content, node_type, None);
-            if let Err(e) = self.store.save(&node) {
-                eprintln!("WARNING: could not sync {name} to graph: {e}");
-            }
-        }
-
-        fs::write(self.base_path.join(name), content).context("writing persona file")
+        self.atomic_write(name, content)
     }
 
     /// Write to a temp file then atomically rename over the target,
@@ -265,9 +259,12 @@ impl Persona {
                         }
                     }
                     let mut node = n;
-                    node.tags = merged;
+                    node.tags = merged.clone();
                     node.updated_at = now();
-                    let _ = self.store.save(&node);
+                    self.graph.upsert(&node.id, &node.title, &node.content, node.node_type, Some(merged));
+                    if let Err(e) = self.store.save(&node) {
+                        eprintln!("WARNING: could not save deduped fact: {e}");
+                    }
                 }
                 return Ok(()); // existing fact, no new node needed
             }
@@ -305,13 +302,7 @@ fn node_meta(name: &str) -> Option<(&'static str, &'static str, NodeType)> {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        let mut out: String = s.chars().take(n).collect();
-        out.push_str("...");
-        out
-    }
+    crate::text::truncate(s, n)
 }
 
 fn now() -> i64 {

@@ -93,7 +93,8 @@ impl Session {
         let data = serde_json::to_vec(&e)?;
         f.write_all(&data)?;
         f.write_all(b"\n")?;
-        f.sync_all()?;
+        // Don't sync_all on every append — callers who need durability
+        // use replace/compact which do their own sync.
         Ok(())
     }
 

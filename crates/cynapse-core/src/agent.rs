@@ -110,6 +110,7 @@ pub struct Agent {
     redact: bool,
     http: reqwest::Client,
     focus_mode: AtomicBool,
+    reflection: Option<Arc<crate::dendrite::ReflectionWorker>>,
 }
 
 /// Resolve the model's context length for compression purposes.
@@ -135,6 +136,11 @@ impl Agent {
             context_window_tokens(&cfg),
             Some(persona.clone()),
         ));
+        let reflection = Some(Arc::new(crate::dendrite::ReflectionWorker::new(
+            persona.graph(),
+            Some(persona.store()),
+            llm_client.clone(),
+        )));
         Agent {
             device_id,
             llm: llm_client,
@@ -147,6 +153,7 @@ impl Agent {
             redact,
             http: reqwest::Client::new(),
             focus_mode: AtomicBool::new(true),
+            reflection,
         }
     }
 
@@ -310,6 +317,9 @@ impl Agent {
         if self.redact {
             final_response = redact::redact(&final_response);
         }
+        if self.focus_mode() {
+            final_response = crate::adhd::strip_fluff(&final_response);
+        }
 
         sess.append(Entry {
             role: Role::Assistant,
@@ -322,6 +332,14 @@ impl Agent {
         })?;
 
         self.spawn_self_improve(user_msg, &final_response);
+
+        if let Some(ref reflection) = self.reflection {
+            let msgs = vec![
+                Message::text(Role::User, user_msg),
+                Message::text(Role::Assistant, &final_response),
+            ];
+            reflection.spawn_reflection(msgs);
+        }
 
         Ok(final_response)
     }
@@ -361,6 +379,7 @@ impl Agent {
             redact: self.redact,
             http: self.http.clone(),
             focus_mode: AtomicBool::new(self.focus_mode.load(std::sync::atomic::Ordering::Relaxed)),
+            reflection: self.reflection.clone(),
         });
 
         let sess_fut = self.sessions.get(&self.device_id);
@@ -512,6 +531,11 @@ impl Agent {
 
                 if !saw_tool_calls {
                     let clean_resp = strip_thinking_tags(&full_response);
+                    let clean_resp = if agent.focus_mode() {
+                        crate::adhd::strip_fluff(&clean_resp)
+                    } else {
+                        clean_resp
+                    };
                     if !clean_resp.is_empty() {
                         if let Err(e) = sess.append(Entry {
                             role: Role::Assistant,
@@ -526,6 +550,13 @@ impl Agent {
                             return;
                         }
                         agent.spawn_self_improve(&user_msg, &clean_resp);
+                        if let Some(ref reflection) = agent.reflection {
+                            let msgs = vec![
+                                Message::text(Role::User, &user_msg),
+                                Message::text(Role::Assistant, &clean_resp),
+                            ];
+                            reflection.spawn_reflection(msgs);
+                        }
                     }
                     return;
                 }
@@ -675,13 +706,7 @@ fn read_user_md(persona: &Persona) -> String {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        let mut out: String = s.chars().take(n).collect();
-        out.push_str("...");
-        out
-    }
+    crate::text::truncate(s, n)
 }
 
 /// Find the first balanced `{...}` block in s, or None.

@@ -82,5 +82,6 @@ pub mod bpe_tokenizer;
 pub mod safetensor_backend;
 pub mod safetensors_loader;
 pub mod shard;
+pub mod slot_manager;
 pub mod tokenizer;
 pub mod launch;

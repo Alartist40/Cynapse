@@ -186,10 +186,11 @@ pub async fn augment_with_ocr(
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n {
+    if s.chars().count() <= n {
         s.to_string()
     } else {
-        format!("{}…", &s[..n])
+        let truncated: String = s.chars().take(n).collect();
+        format!("{}…", truncated)
     }
 }
 

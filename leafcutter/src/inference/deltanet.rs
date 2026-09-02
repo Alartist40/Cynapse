@@ -185,9 +185,46 @@ pub fn deltanet_forward(
     let k_total = params.num_qk_heads * params.head_k_dim;
     let v_total = params.num_v_heads * params.head_v_dim;
 
+    // Derive actual_head_v_dim from ssm_out.weight shape when available,
+    // since the GGUF weight's first dim is the true output_dim_per_token.
+    // This avoids mismatches when conv_dim clamping produces a different V size.
+    let output_dim_from_weight = weights
+        .get("ssm_out.weight")
+        .or_else(|| weights.get("ssm_out_proj.weight"))
+        .map(|w| w.shape[0])
+        .unwrap_or(0);
+    let actual_head_v_dim = if output_dim_from_weight > 0 && params.num_v_heads > 0 {
+        // Use the weight's output dimension as the authoritative source
+        output_dim_from_weight / params.num_v_heads
+    } else if v_total > 0 && params.conv_dim >= q_total + k_total + v_total {
+        // No output weight found; use params directly
+        params.head_v_dim
+    } else {
+        // Fallback: clamp V to fit within conv_dim
+        let v_total_safe = v_total.min(params.conv_dim.saturating_sub(q_total + k_total));
+        if v_total_safe > 0 && params.num_v_heads > 0 {
+            v_total_safe / params.num_v_heads
+        } else {
+            params.head_v_dim
+        }
+    };
+    let output_dim_per_token = params.num_v_heads * actual_head_v_dim;
+
+    // Validate that Q+K+V fit within conv_dim before splitting.
+    let qkv_total = q_total + k_total + v_total;
+    if qkv_total > params.conv_dim {
+        eprintln!(
+            "  DeltaNet WARN: Q+K+V total ({}) exceeds conv_dim ({}), clamping v_total",
+            qkv_total, params.conv_dim
+        );
+    }
+    let v_total_safe = v_total.min(params.conv_dim.saturating_sub(q_total + k_total));
+
     let mut q_data = vec![0.0f32; seq_len * q_total];
     let mut k_data = vec![0.0f32; seq_len * k_total];
-    let mut v_data = vec![0.0f32; seq_len * v_total];
+    // V data sized to output_dim_per_token (from ssm_out.weight), not v_total_safe.
+    // Elements beyond conv_out are zero-padded.
+    let mut v_data = vec![0.0f32; seq_len * output_dim_per_token];
 
     for s in 0..seq_len {
         let base = s * params.conv_dim;
@@ -195,14 +232,25 @@ pub fn deltanet_forward(
             .copy_from_slice(&conv_out.data[base..base + q_total]);
         k_data[s * k_total..(s + 1) * k_total]
             .copy_from_slice(&conv_out.data[base + q_total..base + q_total + k_total]);
-        v_data[s * v_total..(s + 1) * v_total]
-            .copy_from_slice(&conv_out.data[base + q_total + k_total..base + params.conv_dim]);
+        let v_available = v_total_safe.min(output_dim_per_token);
+        if v_available > 0 && base + q_total + k_total + v_available <= conv_out.data.len() {
+            v_data[s * output_dim_per_token..s * output_dim_per_token + v_available]
+                .copy_from_slice(&conv_out.data[base + q_total + k_total..base + q_total + k_total + v_available]);
+        }
+        // Remaining v_data elements are already zero (padding)
     }
 
     // 4. L2-normalize Q and K (per-head)
     let mut q = Tensor::from_vec(q_data, vec![seq_len, params.num_qk_heads, params.head_k_dim]);
     let mut k = Tensor::from_vec(k_data, vec![seq_len, params.num_qk_heads, params.head_k_dim]);
-    let v = Tensor::from_vec(v_data, vec![seq_len, params.num_v_heads, params.head_v_dim]);
+    let v = Tensor::from_vec(v_data, vec![seq_len, params.num_v_heads, actual_head_v_dim]);
+
+    if std::env::var("LEAFCUTTER_DELTANET_DEBUG").is_ok() && layer_idx == 0 {
+        eprintln!(
+            "  [deltanet] dims: q_total={} k_total={} v_total={} v_total_safe={} conv_dim={} head_v_dim={} actual_head_v_dim={} output_dim_from_weight={}",
+            q_total, k_total, v_total, v_total_safe, params.conv_dim, params.head_v_dim, actual_head_v_dim, output_dim_from_weight
+        );
+    }
 
     l2_normalize_per_head(&mut q, seq_len, params.num_qk_heads, params.head_k_dim, params.norm_eps);
     l2_normalize_per_head(&mut k, seq_len, params.num_qk_heads, params.head_k_dim, params.norm_eps);
@@ -230,11 +278,10 @@ pub fn deltanet_forward(
 
 
     // 7. Delta rule state update + output
-    let output_dim_per_token = params.num_v_heads * params.head_v_dim;
     let mut output = vec![0.0f32; seq_len * output_dim_per_token];
 
     if state_cache.get(layer_idx).is_none() {
-        state_cache.init_layer(layer_idx, params.num_v_heads, params.head_v_dim, params.head_k_dim);
+        state_cache.init_layer(layer_idx, params.num_v_heads, actual_head_v_dim, params.head_k_dim);
     }
     let state = state_cache.get_mut(layer_idx).unwrap();
     let _delta_t0 = std::time::Instant::now();
@@ -255,27 +302,27 @@ pub fn deltanet_forward(
             let decay_h = decay[s * params.num_v_heads + h_v];
             let beta_h = beta[s * params.num_v_heads + h_v];
 
-            let state_stride = h_v * params.head_v_dim * params.head_k_dim;
-            let v_base = s * params.num_v_heads * params.head_v_dim + h_v * params.head_v_dim;
-            let v_h = &v.data[v_base..v_base + params.head_v_dim];
+            let state_stride = h_v * actual_head_v_dim * params.head_k_dim;
+            let v_base = s * params.num_v_heads * actual_head_v_dim + h_v * actual_head_v_dim;
+            let v_h = &v.data[v_base..v_base + actual_head_v_dim];
 
                 // DeltaNet delta rule:
                 // 1. Predict v from current state: v_pred = S @ k
                 // 2. State update: S = decay * S + beta * ((v - v_pred) outer k)
                 // 3. Output: o = S @ q  (q is already scaled)
-                let mut v_pred = vec![0.0f32; params.head_v_dim];
-                let out_base = s * output_dim_per_token + h_v * params.head_v_dim;
+                let mut v_pred = vec![0.0f32; actual_head_v_dim];
+                let out_base = s * output_dim_per_token + h_v * actual_head_v_dim;
                 delta_rule_block(
-                    &mut state[state_stride..state_stride + params.head_v_dim * params.head_k_dim],
+                    &mut state[state_stride..state_stride + actual_head_v_dim * params.head_k_dim],
                     k_h,
                     q_h,
                     v_h,
-                    params.head_v_dim,
+                    actual_head_v_dim,
                     params.head_k_dim,
                     decay_h,
                     beta_h,
                     &mut v_pred,
-                    &mut output[out_base..out_base + params.head_v_dim],
+                    &mut output[out_base..out_base + actual_head_v_dim],
                 );
             }
         }
@@ -300,8 +347,8 @@ pub fn deltanet_forward(
 
         // Per-head RMSNorm using ssm_norm.weight (shape = head_v_dim)
         if let Some(norm_w) = weights.get("ssm_norm.weight") {
-            let mut reshaped = Tensor::from_vec(reshaped_data, vec![seq_len, params.num_v_heads, params.head_v_dim]);
-            apply_per_head_rms_norm(&mut reshaped, seq_len, params.num_v_heads, params.head_v_dim, norm_w, params.norm_eps);
+            let mut reshaped = Tensor::from_vec(reshaped_data, vec![seq_len, params.num_v_heads, actual_head_v_dim]);
+            apply_per_head_rms_norm(&mut reshaped, seq_len, params.num_v_heads, actual_head_v_dim, norm_w, params.norm_eps);
             reshaped_data = reshaped.data;
         }
 
@@ -314,23 +361,14 @@ pub fn deltanet_forward(
             .or_else(|| weights.get("wqkv_gate.weight"))
         {
             let z = hidden_states.matmul(gate_w);
-            // z shape: [seq_len, output_dim_per_token] — element-wise with reshaped_data
-            let mut silu_sum = 0.0f32;
-            let mut silu_min = f32::INFINITY;
-            let mut silu_max = f32::NEG_INFINITY;
-            for i in 0..reshaped_data.len() {
-                let z_val = z.data[i];
+            // z shape: [seq_len, gate_out_dim] — element-wise with reshaped_data
+            // Trim or pad z to match reshaped_data length
+            let target_len = reshaped_data.len();
+            let z_len = z.data.len();
+            for i in 0..target_len {
+                let z_val = if i < z_len { z.data[i] } else { 0.0 };
                 let silu_z = z_val * (1.0 / (1.0 + (-z_val).exp()));
-                silu_sum += silu_z;
-                silu_min = silu_min.min(silu_z);
-                silu_max = silu_max.max(silu_z);
                 reshaped_data[i] *= silu_z;
-            }
-            if layer_idx == 0 {
-                if std::env::var("DEBUG_LAYER").is_ok() {
-                    eprintln!("  [layer {}] gate silu: min={:.4} max={:.4} mean={:.4}", 
-                        layer_idx, silu_min, silu_max, silu_sum / reshaped_data.len() as f32);
-                }
             }
         }
 

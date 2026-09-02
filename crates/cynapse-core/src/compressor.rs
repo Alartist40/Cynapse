@@ -281,13 +281,7 @@ pub fn to_messages(entries: &[Entry]) -> Vec<Message> {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        let mut out: String = s.chars().take(n).collect();
-        out.push_str("...");
-        out
-    }
+    crate::text::truncate(s, n)
 }
 
 fn now() -> i64 {

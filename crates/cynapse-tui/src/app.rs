@@ -40,11 +40,10 @@ use cynapse_core::persona::Persona;
 use cynapse_core::session::Manager;
 use cynapse_core::tools::build_profile;
 
-use crate::theme::Theme;
+use crate::theme::{Theme, SPINNER, rounded};
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
-
-const SPINNER: [&str; 10] = ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"];
+// Braille spinner imported from theme module.
 
 /// Slash commands shown in the dropdown when the user types `/`.
 const SLASH_COMMANDS: &[(&str, &str)] = &[
@@ -296,7 +295,7 @@ struct App {
     theme: Theme,
 
     messages: Vec<UiMsg>,
-    in_think_block: bool,
+    stream_parser: cynapse_core::stream_parser::StreamParser,
     focus_mode: bool,
     show_startup_modal: bool,
     startup_cursor: usize,
@@ -307,7 +306,6 @@ struct App {
 
     busy: bool,
     streaming: String,
-    streaming_thinking: String,
     spinner: usize,
     stream_start: Instant,
     last_elapsed: Option<Duration>,
@@ -352,7 +350,9 @@ impl App {
             llm_client,
             theme,
             messages: Vec::new(),
-            in_think_block: false,
+            stream_parser: cynapse_core::stream_parser::StreamParser::new(
+                cynapse_core::stream_parser::StreamParserOptions::default(),
+            ),
             focus_mode: false,
             show_startup_modal: true,
             startup_cursor: 0,
@@ -362,7 +362,6 @@ impl App {
             quit: false,
             busy: false,
             streaming: String::new(),
-            streaming_thinking: String::new(),
             spinner: 0,
             stream_start: Instant::now(),
             last_elapsed: None,
@@ -818,8 +817,9 @@ impl App {
         self.cursor = 0;
         self.busy = true;
         self.streaming.clear();
-        self.streaming_thinking.clear();
-        self.in_think_block = false;
+        self.stream_parser = cynapse_core::stream_parser::StreamParser::new(
+            cynapse_core::stream_parser::StreamParserOptions::default(),
+        );
         self.stream_start = Instant::now();
         self.spinner = 0;
         self.follow = true;
@@ -1249,7 +1249,7 @@ impl App {
 
         // Handle Ollama/Provider [thinking] prefix (with leading whitespace/newline tolerance)
         if let Some(rest) = trimmed.strip_prefix("[thinking]") {
-            self.streaming_thinking.push_str(rest);
+            self.stream_parser.push(rest);
             return;
         }
 
@@ -1257,56 +1257,28 @@ impl App {
         if text.contains("[thinking]") {
             for part in text.split("[thinking]") {
                 if !part.is_empty() {
-                    self.streaming_thinking.push_str(part);
+                    self.stream_parser.push(part);
                 }
             }
             return;
         }
 
-        // Handle ChatML / DeepSeek <think>...</think> tags and Thinking Process: headers
-        let text_lower = text.to_lowercase();
-        if !self.in_think_block && self.streaming.is_empty() && (text.contains("<think>") || text_lower.contains("thinking process:") || text_lower.contains("thinking:")) {
-            self.in_think_block = true;
-            if text.contains("<think>") {
-                let parts: Vec<&str> = text.splitn(2, "<think>").collect();
-                if !parts[0].is_empty() {
-                    self.streaming.push_str(parts[0]);
+        // Use the StreamParser for think tags and normal text
+        let events = self.stream_parser.push(text);
+        for event in events {
+            match event {
+                cynapse_core::stream_parser::StreamEvent::ReasoningDelta(delta) => {
+                    // Thinking content is tracked by the parser's current_thinking()
+                    // and displayed separately — do NOT add to streaming reply
                 }
-                if parts.len() > 1 {
-                    text = parts[1];
-                } else {
-                    return;
+                cynapse_core::stream_parser::StreamEvent::ReplyDelta(delta) => {
+                    self.streaming.push_str(&delta);
                 }
+                // Other events (ReasoningOpen, ReasoningClose, ReplyOpen, ReplyClose)
+                // are handled implicitly by the parser state
+                _ => {}
             }
         }
-
-        if self.in_think_block {
-            if let Some(pos) = text.find("</think>") {
-                let thinking_part = &text[..pos];
-                let response_part = &text[pos + 8..];
-                self.streaming_thinking.push_str(thinking_part);
-                self.in_think_block = false;
-                if !response_part.is_empty() {
-                    self.streaming.push_str(response_part);
-                }
-            } else if self.streaming_thinking.to_lowercase().contains("thinking process:") && text.contains("\n\n") && self.streaming_thinking.len() > 60 {
-                self.in_think_block = false;
-                if let Some(pos) = text.find("\n\n") {
-                    self.streaming_thinking.push_str(&text[..pos]);
-                    let response_part = &text[pos + 2..];
-                    if !response_part.is_empty() {
-                        self.streaming.push_str(response_part);
-                    }
-                } else {
-                    self.streaming_thinking.push_str(text);
-                }
-            } else {
-                self.streaming_thinking.push_str(text);
-            }
-            return;
-        }
-
-        self.streaming.push_str(text);
     }
 
     fn finalize_stream(&mut self) {
@@ -1315,11 +1287,33 @@ impl App {
             return;
         }
         self.busy = false;
-        let thinking = std::mem::take(&mut self.streaming_thinking);
+        
+        // Flush the stream parser to get any remaining output
+        let events = self.stream_parser.end();
+        let mut thinking = String::new();
+        let mut content = String::new();
+        
+        for event in events {
+            match event {
+                cynapse_core::stream_parser::StreamEvent::ReasoningDelta(delta) => {
+                    thinking.push_str(&delta);
+                }
+                cynapse_core::stream_parser::StreamEvent::ReplyDelta(delta) => {
+                    content.push_str(&delta);
+                }
+                _ => {}
+            }
+        }
+        
+        // Add any thinking content
         if !thinking.trim().is_empty() {
             self.messages.push(UiMsg::Thinking(thinking));
         }
-        let content = std::mem::take(&mut self.streaming);
+        
+        // Add the streaming content
+        content.push_str(&self.streaming);
+        self.streaming.clear();
+        
         if !content.is_empty() {
             self.last_tokens = llm::estimate_tokens_chars(&content);
             self.messages.push(UiMsg::Assistant(content));
@@ -1336,6 +1330,16 @@ impl App {
             });
             self.messages
                 .push(UiMsg::System("Turn ended; pending confirmation cancelled.".to_string()));
+        }
+        self.trim_messages();
+    }
+
+    /// Cap the message buffer to prevent unbounded memory growth.
+    fn trim_messages(&mut self) {
+        let max = self.cfg.tui.max_messages;
+        if max > 0 && self.messages.len() > max {
+            let excess = self.messages.len() - max;
+            self.messages.drain(..excess);
         }
     }
 
@@ -1444,6 +1448,19 @@ impl App {
         self.height = area.height;
         self.active = !self.messages.is_empty();
 
+        // Minimum terminal size check
+        if area.width < self.cfg.tui.min_width || area.height < self.cfg.tui.min_height {
+            let msg = format!(
+                "Terminal too small ({}x{}). Need at least {}x{}.",
+                area.width, area.height, self.cfg.tui.min_width, self.cfg.tui.min_height
+            );
+            let paragraph = Paragraph::new(msg).style(Style::default().fg(self.theme.error));
+            f.render_widget(paragraph, area);
+            return;
+        }
+
+        let sidebar_w = self.cfg.tui.sidebar_width.max(16).min(area.width / 3);
+
         let menu_h = if self.menu_open { self.menu_height() } else { 0 };
         let main_layout = Layout::vertical([
             Constraint::Length(1), // Top Header Bar
@@ -1458,8 +1475,8 @@ impl App {
         self.render_top_header(f, main_layout[0], main_layout[1]);
 
         let content_split = Layout::horizontal([
-            Constraint::Length(28), // Sidebar width
-            Constraint::Min(10),   // Chat Log Area
+            Constraint::Length(sidebar_w), // Sidebar width (configurable)
+            Constraint::Min(10),           // Chat Log Area
         ])
         .split(main_layout[2]);
 
@@ -1524,7 +1541,8 @@ impl App {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.theme.accent))
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .border_style(Style::default().fg(if self.menu_open { self.theme.border_focus } else { self.theme.border }))
             .title(Span::styled(" Sidebar ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)));
         let sidebar = Paragraph::new(lines).block(block);
         f.render_widget(sidebar, area);
@@ -1566,8 +1584,9 @@ impl App {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.theme.dim))
-            .title(Span::styled(" Atomic Dashboard ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)));
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .border_style(Style::default().fg(self.theme.border))
+            .title(Span::styled(" Welcome ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)));
         let welcome = Paragraph::new(welcome_lines).block(block);
         f.render_widget(welcome, area);
     }
@@ -1631,6 +1650,7 @@ impl App {
 
         let block = Block::default()
             .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(Style::default().fg(self.theme.gold))
             .title(Span::styled(" Select Model on Launch ", Style::default().fg(self.theme.gold).add_modifier(Modifier::BOLD)));
 
@@ -1722,6 +1742,7 @@ impl App {
         }
         let block = Block::default()
             .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(Style::default().fg(self.theme.accent))
             .title(" commands ");
         let dropdown = Paragraph::new(lines).block(block);
@@ -1754,7 +1775,7 @@ impl App {
             }
         }
         let menu = Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(self.theme.gold)));
+            .block(Block::default().borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Rounded).border_style(Style::default().fg(self.theme.gold)));
         f.render_widget(menu, box_area);
     }
 
@@ -1786,7 +1807,7 @@ impl App {
             bar.push_str(&" ".repeat(pad));
             bar.push_str(&right);
         }
-        let status = Paragraph::new(Line::from(Span::styled(bar, Style::default().fg(self.theme.bright))));
+        let status = Paragraph::new(Line::from(Span::styled(bar, Style::default().fg(self.theme.info))));
         f.render_widget(status, area);
     }
 
@@ -1807,7 +1828,7 @@ impl App {
         shown.push_str(&self.input[byte_idx..]);
         let input = Paragraph::new(Text::raw(shown))
             .wrap(ratatui::widgets::Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(self.theme.gold)));
+            .block(Block::default().borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Rounded).border_style(Style::default().fg(self.theme.gold)));
         f.render_widget(input, area);
     }
 
@@ -1816,12 +1837,12 @@ impl App {
     fn chat_lines(&self, width: usize) -> Vec<Line<'static>> {
         let width = if width == 0 { 1 } else { width };
         let mut lines: Vec<Line<'static>> = Vec::new();
-        let user_p = Style::default().fg(self.theme.bright).add_modifier(Modifier::BOLD);
-        let asst_p = Style::default().fg(self.theme.bright);
-        let think_p = Style::default().fg(self.theme.dim).add_modifier(Modifier::ITALIC);
-        let tool_p = Style::default().fg(self.theme.gold);
+        let user_p = Style::default().fg(self.theme.user).add_modifier(Modifier::BOLD);
+        let asst_p = Style::default().fg(self.theme.ai);
+        let think_p = Style::default().fg(self.theme.thinking).add_modifier(Modifier::ITALIC);
+        let tool_p = Style::default().fg(self.theme.tool);
         let toolres_p = Style::default().fg(self.theme.dim);
-        let sys_p = Style::default().fg(self.theme.accent);
+        let sys_p = Style::default().fg(self.theme.system);
 
         for m in &self.messages {
             let (prefix, style): (String, Style) = match m {
@@ -1861,18 +1882,19 @@ impl App {
 
         if self.busy {
             // Show live thinking stream (italic dim) with bounded tail optimization
-            if !self.streaming_thinking.is_empty() {
-                let tok_count = llm::estimate_tokens_chars(&self.streaming_thinking);
+            let thinking = self.stream_parser.current_thinking();
+            if !thinking.is_empty() {
+                let tok_count = llm::estimate_tokens_chars(thinking);
                 let prefix = format!("  Thinking ↓ {} tokens: ", tok_count);
                 let prefix_w = prefix.width();
                 let body_w = width.saturating_sub(prefix_w).max(1);
 
-                let text_to_wrap = if self.streaming_thinking.len() > 4096 {
-                    let tail = &self.streaming_thinking[self.streaming_thinking.len() - 4096..];
+                let text_to_wrap = if thinking.len() > 4096 {
+                    let tail = &thinking[thinking.len() - 4096..];
                     let cut = tail.find('\n').map(|i| &tail[i + 1..]).unwrap_or(tail);
                     format!("… (earlier thinking omitted while streaming)\n{}", cut)
                 } else {
-                    self.streaming_thinking.clone()
+                    thinking.to_string()
                 };
 
                 let wrapped = wrap_text(&text_to_wrap, body_w);
@@ -1903,7 +1925,7 @@ impl App {
                 }
             }
             // Show a spinner when there is nothing to display yet
-            if self.streaming.is_empty() && self.streaming_thinking.is_empty() {
+            if self.streaming.is_empty() && self.stream_parser.current_thinking().is_empty() {
                 let frame = SPINNER[self.spinner % SPINNER.len()];
                 lines.push(Line::from(Span::styled(
                     format!(" {frame} Loading model & thinking..."),
@@ -2097,9 +2119,16 @@ async fn run_with(
 
     let result = run_loop(&mut terminal, agent, cfg, allowlist, llm_client, confirm_rx).await;
 
-    terminal.show_cursor().ok();
-    disable_raw_mode().ok();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).ok();
+    // Best-effort terminal cleanup — log errors but don't fail.
+    if let Err(e) = terminal.show_cursor() {
+        eprintln!("warning: failed to show cursor: {e}");
+    }
+    if let Err(e) = disable_raw_mode() {
+        eprintln!("warning: failed to disable raw mode: {e}");
+    }
+    if let Err(e) = execute!(terminal.backend_mut(), LeaveAlternateScreen) {
+        eprintln!("warning: failed to leave alternate screen: {e}");
+    }
     result
 }
 

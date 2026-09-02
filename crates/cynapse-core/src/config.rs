@@ -297,12 +297,24 @@ impl Default for OcrConfig {
 pub struct TuiConfig {
     /// Theme name: "default", "tokyonight", "catppuccin", "dracula", etc.
     pub theme: String,
+    /// Sidebar width in columns. Default: 28.
+    pub sidebar_width: u16,
+    /// Minimum terminal width before showing a "too small" message. Default: 60.
+    pub min_width: u16,
+    /// Minimum terminal height before showing a "too small" message. Default: 20.
+    pub min_height: u16,
+    /// Max messages kept in the TUI display buffer. 0 = unlimited. Default: 200.
+    pub max_messages: usize,
 }
 
 impl Default for TuiConfig {
     fn default() -> Self {
         TuiConfig {
             theme: "default".to_string(),
+            sidebar_width: 28,
+            min_width: 60,
+            min_height: 20,
+            max_messages: 200,
         }
     }
 }

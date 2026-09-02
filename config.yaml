@@ -19,7 +19,7 @@ llm:
     local_gpu_layers: 0
     local_context_size: 8192
     local_threads: 10
-    models_dir: ""
+    models_dir: ~/Downloads/models
     max_tokens: 4096
     temperature: 0.7
     max_retries: 3
